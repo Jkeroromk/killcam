@@ -1235,7 +1235,7 @@ fn default_library_dir(app: AppHandle) -> String {
 // ---------------------------------------------------------------------------
 // updates (GitHub releases, signed; see tauri.conf.json > plugins.updater)
 
-#[derive(Serialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct UpdateInfo {
     version: String,
@@ -1246,10 +1246,12 @@ struct UpdateInfo {
 async fn check_for_update(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
     use tauri_plugin_updater::UpdaterExt;
     let updater = app.updater().map_err(|e| e.to_string())?;
-    let found = updater
-        .check()
-        .await
-        .map_err(|e| format!("检查更新失败：{e}"))?;
+    let found = match updater.check().await {
+        Ok(f) => f,
+        // no release published yet (latest.json 404s): nothing newer
+        Err(e) if e.to_string().contains("valid release JSON") => None,
+        Err(e) => return Err(format!("检查更新失败：{e}")),
+    };
     Ok(found.map(|u| UpdateInfo {
         version: u.version.clone(),
         current: u.current_version.clone(),
