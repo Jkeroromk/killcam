@@ -1,0 +1,686 @@
+//! Real-time screen reading for PUBG prompts: kills, knocks, deaths and chicken dinner.
+//!
+//! A second, tiny ffmpeg process duplicates only one band of the screen
+//! (ddagrab crops on the GPU) at a few frames per second, downloads it as RGB
+//! and pipes it here. Each frame becomes binary colour masks (orange-red
+//! prompt text, white prompt text, yellow banner text) that are compared with
+//! templates cut from the player's own recordings (normalized correlation,
+//! with an integral-image pre-filter so empty areas cost nothing).
+//!
+//! Three kinds of prompt behave differently:
+//! * counter ("12 淘汰数" under the crosshair): stays up, only the number
+//!   changes. A settled change of the number region = a new kill.
+//! * lines ("你用 Beryl M762 击倒了 XXX"): several can be stacked and they move
+//!   when new ones arrive. Every line is fingerprinted by the name next to the
+//!   matched words; a fingerprint not seen in the last seconds = a new knock.
+//! * appear ("大吉大利！今晚吃鸡！", "X 用 Y 淘汰了你"): one detection per
+//!   appearance, with an optional cooldown and a second glyph group that has to
+//!   sit next to the match (the red "淘汰" before the white "了你").
+//!
+//! Templates live in `detector/pack.bin` (embedded at compile time).
+
+use crate::ffmpeg;
+use std::io::Read;
+use std::path::Path;
+use std::process::{Child, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+
+static PACK: &[u8] = include_bytes!("../detector/pack.bin");
+
+const FPS: u32 = 6;
+/// patch similarity below this = "different"
+const CHANGE: f32 = 0.85;
+/// line fingerprints closer than this are the same line
+const SAME_LINE: f32 = 0.7;
+
+const FEAT_RED: u32 = 1;
+const FEAT_WHITE: u32 = 2;
+const FEAT_YELLOW: u32 = 3;
+
+const MODE_APPEAR: u32 = 0;
+const MODE_COUNTER: u32 = 1;
+const MODE_LINES: u32 = 2;
+
+#[derive(Debug, Clone)]
+pub struct Template {
+    pub kind: String,
+    pub feature: u32,
+    pub mode: u32,
+    /// left edge relative to the screen centre (reference pixels)
+    pub cx: i32,
+    pub y: i32,
+    pub w: usize,
+    pub h: usize,
+    pub threshold: f32,
+    pub search_x: i32,
+    pub search_y: i32,
+    /// counter: number region x0..x1 relative to the template's left edge.
+    /// lines: p0 = width of the fingerprint region right of the template.
+    pub p0: i32,
+    pub p1: i32,
+    /// on-pixels of the binary template, (row, col)
+    on: Vec<(usize, usize)>,
+    /// a second glyph group that must sit next to a match (cx/y = offset from the
+    /// match, any feature), e.g. the red "淘汰" left of the white "了你"
+    pub confirm: Option<Box<Template>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Pack {
+    pub ref_h: u32,
+    pub scale: f32,
+    pub templates: Vec<Template>,
+}
+
+fn rd_u32(b: &[u8], p: &mut usize) -> Option<u32> {
+    let v = b.get(*p..*p + 4)?;
+    *p += 4;
+    Some(u32::from_le_bytes([v[0], v[1], v[2], v[3]]))
+}
+
+fn rd_i32(b: &[u8], p: &mut usize) -> Option<i32> {
+    rd_u32(b, p).map(|v| v as i32)
+}
+
+fn rd_f32(b: &[u8], p: &mut usize) -> Option<f32> {
+    rd_u32(b, p).map(f32::from_bits)
+}
+
+fn rd_bits(b: &[u8], p: &mut usize, w: usize, h: usize) -> Option<Vec<(usize, usize)>> {
+    let data = b.get(*p..*p + w * h)?;
+    *p += w * h;
+    let mut on = Vec::new();
+    for r in 0..h {
+        for c in 0..w {
+            if data[r * w + c] > 127 {
+                on.push((r, c));
+            }
+        }
+    }
+    Some(on)
+}
+
+/// Pack v3/v4 (little endian):
+/// "KCDT" | u32 3 | u32 ref_h | f32 scale | u32 count |
+///   per template: u32 kind_len | kind | u32 feature | u32 mode | i32 cx | i32 y |
+///   u32 w | u32 h | f32 threshold | i32 search_x | i32 search_y | i32 p0 | i32 p1 |
+///   w*h bytes (0 / 255) |
+///   v4 only: u32 has_confirm | [u32 feature | i32 dx | i32 dy | u32 w | u32 h |
+///   f32 threshold | w*h bytes]
+/// appear mode: p0 = cooldown in ms after a detection
+pub fn load_pack() -> Option<Pack> {
+    let b = PACK;
+    if b.len() < 20 || &b[0..4] != b"KCDT" {
+        return None;
+    }
+    let mut p = 4usize;
+    let version = rd_u32(b, &mut p)?;
+    if version != 3 && version != 4 {
+        return None;
+    }
+    let ref_h = rd_u32(b, &mut p)?;
+    let scale = rd_f32(b, &mut p)?;
+    let count = rd_u32(b, &mut p)? as usize;
+    let mut templates = Vec::with_capacity(count);
+    for _ in 0..count {
+        let kl = rd_u32(b, &mut p)? as usize;
+        let kind = String::from_utf8_lossy(b.get(p..p + kl)?).to_string();
+        p += kl;
+        let feature = rd_u32(b, &mut p)?;
+        let mode = rd_u32(b, &mut p)?;
+        let cx = rd_i32(b, &mut p)?;
+        let y = rd_i32(b, &mut p)?;
+        let w = rd_u32(b, &mut p)? as usize;
+        let h = rd_u32(b, &mut p)? as usize;
+        let threshold = rd_f32(b, &mut p)?;
+        let search_x = rd_i32(b, &mut p)?;
+        let search_y = rd_i32(b, &mut p)?;
+        let p0 = rd_i32(b, &mut p)?;
+        let p1 = rd_i32(b, &mut p)?;
+        let on = rd_bits(b, &mut p, w, h)?;
+        let mut confirm = None;
+        if version >= 4 && rd_u32(b, &mut p)? == 1 {
+            let feature = rd_u32(b, &mut p)?;
+            let dx = rd_i32(b, &mut p)?;
+            let dy = rd_i32(b, &mut p)?;
+            let cw = rd_u32(b, &mut p)? as usize;
+            let ch = rd_u32(b, &mut p)? as usize;
+            let threshold = rd_f32(b, &mut p)?;
+            let on = rd_bits(b, &mut p, cw, ch)?;
+            if !on.is_empty() {
+                confirm = Some(Box::new(Template {
+                    kind: String::new(),
+                    feature,
+                    mode: MODE_APPEAR,
+                    cx: dx,
+                    y: dy,
+                    w: cw,
+                    h: ch,
+                    threshold,
+                    search_x: 2,
+                    search_y: 1,
+                    p0: 0,
+                    p1: 0,
+                    on,
+                    confirm: None,
+                }));
+            }
+        }
+        if on.is_empty() {
+            continue;
+        }
+        templates.push(Template {
+            kind,
+            feature,
+            mode,
+            cx,
+            y,
+            w,
+            h,
+            threshold,
+            search_x,
+            search_y,
+            p0,
+            p1,
+            on,
+            confirm,
+        });
+    }
+    if templates.is_empty() {
+        None
+    } else {
+        Some(Pack {
+            ref_h,
+            scale,
+            templates,
+        })
+    }
+}
+
+pub fn ready() -> bool {
+    load_pack().is_some()
+}
+
+/// A binary mask with an integral image for O(1) window counts.
+struct Mask {
+    w: usize,
+    h: usize,
+    px: Vec<u8>,
+    /// (w+1)*(h+1) summed-area table
+    sat: Vec<u32>,
+}
+
+impl Mask {
+    fn build(rgb: &[u8], w: usize, h: usize, feature: u32) -> Mask {
+        let mut px = Vec::with_capacity(w * h);
+        for c in rgb.chunks_exact(3) {
+            let (r, g, b) = (c[0] as i32, c[1] as i32, c[2] as i32);
+            let on = match feature {
+                FEAT_RED => r > 190 && g < 150 && b < 130 && r - g > 80,
+                FEAT_WHITE => {
+                    let mn = r.min(g).min(b);
+                    let mx = r.max(g).max(b);
+                    mn > 200 && mx - mn < 40
+                }
+                FEAT_YELLOW => r > 200 && g > 150 && b < 90,
+                _ => false,
+            };
+            px.push(on as u8);
+        }
+        let mut sat = vec![0u32; (w + 1) * (h + 1)];
+        for y in 0..h {
+            let mut row = 0u32;
+            for x in 0..w {
+                row += px[y * w + x] as u32;
+                sat[(y + 1) * (w + 1) + x + 1] = sat[y * (w + 1) + x + 1] + row;
+            }
+        }
+        Mask { w, h, px, sat }
+    }
+
+    fn count(&self, x: usize, y: usize, w: usize, h: usize) -> u32 {
+        let s = &self.sat;
+        let ww = self.w + 1;
+        s[(y + h) * ww + x + w] + s[y * ww + x] - s[y * ww + x + w] - s[(y + h) * ww + x]
+    }
+
+    /// Normalized correlation of a binary template at (x, y).
+    fn score(&self, t: &Template, x: usize, y: usize) -> f32 {
+        let n = (t.w * t.h) as f32;
+        let tc = t.on.len() as f32;
+        let s = self.count(x, y, t.w, t.h) as f32;
+        // windows with far too few or too many lit pixels cannot match
+        if s < tc * 0.4 || s > tc * 2.5 {
+            return 0.0;
+        }
+        let mut hit = 0u32;
+        for &(r, c) in &t.on {
+            hit += self.px[(y + r) * self.w + x + c] as u32;
+        }
+        let num = hit as f32 - s * tc / n;
+        let den = (s * (1.0 - s / n)).max(1e-6).sqrt() * (tc * (1.0 - tc / n)).max(1e-6).sqrt();
+        num / den
+    }
+
+    fn patch(&self, x0: i32, y0: i32, w: i32, h: i32) -> Option<Vec<f32>> {
+        if x0 < 0 || y0 < 0 || w <= 0 || h <= 0 {
+            return None;
+        }
+        let (x0, y0, w, h) = (x0 as usize, y0 as usize, w as usize, h as usize);
+        if y0 + h > self.h || x0 >= self.w {
+            return None;
+        }
+        let mut out = Vec::with_capacity(w * h);
+        for r in 0..h {
+            for c in 0..w {
+                let x = x0 + c;
+                out.push(if x < self.w {
+                    self.px[(y0 + r) * self.w + x] as f32
+                } else {
+                    0.0
+                });
+            }
+        }
+        Some(out)
+    }
+}
+
+/// NCC between two equally sized patches.
+fn ncc2(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let n = a.len() as f32;
+    let ma = a.iter().sum::<f32>() / n;
+    let mb = b.iter().sum::<f32>() / n;
+    let (mut num, mut da, mut db) = (0f32, 0f32, 0f32);
+    for (x, y) in a.iter().zip(b.iter()) {
+        let (p, q) = (x - ma, y - mb);
+        num += p * q;
+        da += p * p;
+        db += q * q;
+    }
+    if da <= 1e-6 || db <= 1e-6 {
+        return if da <= 1e-6 && db <= 1e-6 { 1.0 } else { 0.0 };
+    }
+    num / (da.sqrt() * db.sqrt())
+}
+
+#[derive(Debug, Clone)]
+pub struct Detection {
+    pub kind: String,
+    pub at_ms: i64,
+    pub score: f32,
+}
+
+struct Line {
+    sig: Vec<f32>,
+    y: i32,
+    first_ms: i64,
+    seen_ms: i64,
+}
+
+#[derive(Default)]
+struct Track {
+    absent: u32,
+    // appear
+    last_fire: Option<i64>,
+    // counter
+    prev: Option<Vec<f32>>,
+    reference: Option<Vec<f32>>,
+    drop_at: Option<i64>,
+    drop_frames: u32,
+    // lines
+    recent: Vec<Line>,
+    pending: Vec<(Vec<f32>, i64)>,
+}
+
+struct Placed {
+    t: Template,
+    px: i32,
+    py: i32,
+}
+
+/// All matches of a template above threshold, best first, at most one per row band.
+/// Whether the confirm glyphs sit next to a match at (x, y).
+fn confirmed(cm: Option<&Mask>, c: &Template, x: i32, y: i32) -> bool {
+    let Some(cm) = cm else { return false };
+    for dy in -c.search_y..=c.search_y {
+        for dx in -c.search_x..=c.search_x {
+            let (cx, cy) = (x + c.cx + dx, y + c.y + dy);
+            if cx < 0 || cy < 0 || cx as usize + c.w > cm.w || cy as usize + c.h > cm.h {
+                continue;
+            }
+            if cm.score(c, cx as usize, cy as usize) >= c.threshold {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn matches(m: &Mask, cm: Option<&Mask>, p: &Placed, max: usize) -> Vec<(f32, i32, i32)> {
+    let t = &p.t;
+    let mut found: Vec<(f32, i32, i32)> = Vec::new();
+    let mut all: Vec<(f32, i32, i32)> = Vec::new();
+    for dy in -t.search_y..=t.search_y {
+        let y = p.py + dy;
+        if y < 0 || y as usize + t.h > m.h {
+            continue;
+        }
+        for dx in -t.search_x..=t.search_x {
+            let x = p.px + dx;
+            if x < 0 || x as usize + t.w > m.w {
+                continue;
+            }
+            let s = m.score(t, x as usize, y as usize);
+            if s >= t.threshold {
+                all.push((s, x, y));
+            }
+        }
+    }
+    all.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    for c in all {
+        if found.iter().all(|f| (f.2 - c.2).abs() > 15) {
+            if let Some(conf) = &t.confirm {
+                if !confirmed(cm, conf, c.1, c.2) {
+                    continue;
+                }
+            }
+            found.push(c);
+            if found.len() >= max {
+                break;
+            }
+        }
+    }
+    found
+}
+
+fn step(p: &Placed, tr: &mut Track, m: &Mask, cm: Option<&Mask>, now_ms: i64) -> Vec<Detection> {
+    let t = &p.t;
+    let hits = matches(m, cm, p, if t.mode == MODE_LINES { 4 } else { 1 });
+    let mut out = Vec::new();
+    if hits.is_empty() {
+        tr.absent += 1;
+        tr.prev = None;
+        tr.reference = None;
+        tr.drop_at = None;
+        tr.pending.clear();
+        tr.recent.retain(|l| now_ms - l.seen_ms < 8_000);
+        return out;
+    }
+    let appeared = tr.absent >= 2;
+    tr.absent = 0;
+    let det = |at: i64, s: f32| Detection {
+        kind: t.kind.clone(),
+        at_ms: at,
+        score: s,
+    };
+
+    match t.mode {
+        MODE_APPEAR => {
+            let cooling = tr
+                .last_fire
+                .map(|at| now_ms - at < t.p0.max(0) as i64)
+                .unwrap_or(false);
+            if appeared && !cooling {
+                tr.last_fire = Some(now_ms);
+                out.push(det(now_ms, hits[0].0));
+            }
+        }
+        MODE_COUNTER => {
+            let (s, bx, by) = hits[0];
+            let Some(nm) = m.patch(bx + t.p0, by, t.p1 - t.p0, t.h as i32) else {
+                return out;
+            };
+            if appeared || tr.reference.is_none() || tr.prev.is_none() {
+                tr.reference = Some(nm.clone());
+                tr.prev = Some(nm);
+                tr.drop_at = None;
+                if appeared {
+                    out.push(det(now_ms, s));
+                }
+                return out;
+            }
+            let c_prev = ncc2(&nm, tr.prev.as_deref().unwrap_or(&[]));
+            match tr.drop_at {
+                None => {
+                    if c_prev < CHANGE {
+                        tr.drop_at = Some(now_ms);
+                        tr.drop_frames = 0;
+                    } else {
+                        tr.reference = Some(nm.clone());
+                    }
+                }
+                Some(at) => {
+                    tr.drop_frames += 1;
+                    if c_prev >= CHANGE {
+                        if ncc2(&nm, tr.reference.as_deref().unwrap_or(&[])) < CHANGE {
+                            out.push(det(at, s));
+                        }
+                        tr.reference = Some(nm.clone());
+                        tr.drop_at = None;
+                    } else if tr.drop_frames > 8 {
+                        tr.reference = Some(nm.clone());
+                        tr.drop_at = None;
+                    }
+                }
+            }
+            tr.prev = Some(nm);
+        }
+        MODE_LINES => {
+            let sig_w = t.p0.max(8);
+            let mut next_pending: Vec<(Vec<f32>, i64)> = Vec::new();
+            for &(s, x, y) in &hits {
+                let Some(sig) = m.patch(x + t.w as i32, y - 2, sig_w, t.h as i32 + 4) else {
+                    continue;
+                };
+                // a line we already know (maybe moved up the stack)
+                if let Some(l) = tr
+                    .recent
+                    .iter_mut()
+                    .find(|l| ncc2(&sig, &l.sig) >= SAME_LINE)
+                {
+                    l.seen_ms = now_ms;
+                    continue;
+                }
+                // still animating in: same row as a line that just appeared
+                if let Some(l) = tr
+                    .recent
+                    .iter_mut()
+                    .find(|l| (l.y - y).abs() <= 8 && now_ms - l.first_ms < 1_500)
+                {
+                    l.sig = sig;
+                    l.seen_ms = now_ms;
+                    continue;
+                }
+                // new: confirm on the next frame
+                if let Some(pos) = tr
+                    .pending
+                    .iter()
+                    .position(|q| ncc2(&sig, &q.0) >= SAME_LINE)
+                {
+                    let first = tr.pending[pos].1;
+                    out.push(det(first, s));
+                    tr.recent.push(Line {
+                        sig,
+                        y,
+                        first_ms: first,
+                        seen_ms: now_ms,
+                    });
+                } else {
+                    next_pending.push((sig, now_ms));
+                }
+            }
+            tr.pending = next_pending;
+            tr.recent.retain(|l| now_ms - l.seen_ms < 8_000);
+        }
+        _ => {}
+    }
+    out
+}
+
+pub struct Detector {
+    stop: Arc<AtomicBool>,
+    child: Arc<Mutex<Child>>,
+    handle: Option<JoinHandle<()>>,
+    pub error: Arc<Mutex<Option<String>>>,
+}
+
+impl Detector {
+    pub fn stop(mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Ok(mut c) = self.child.lock() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
+}
+
+/// Start watching. `on_detect` is called from the reader thread.
+pub fn start<F>(
+    ffmpeg_path: &Path,
+    monitor_index: u32,
+    screen_w: u32,
+    screen_h: u32,
+    on_detect: F,
+) -> Result<Detector, String>
+where
+    F: Fn(Detection) + Send + 'static,
+{
+    let pack = load_pack().ok_or("还没有识别样本")?;
+    if screen_w == 0 || screen_h == 0 {
+        return Err("还没有识别显示器分辨率".into());
+    }
+    // f: screen pixels -> analysis pixels (= reference pixels). The HUD scales with height.
+    let f = pack.scale * pack.ref_h as f32 / screen_h as f32;
+    let center = screen_w as f32 / 2.0;
+
+    // one band covering every template, its search window and side regions (screen px)
+    let mut x0 = f32::MAX;
+    let mut y0 = f32::MAX;
+    let mut x1 = f32::MIN;
+    let mut y1 = f32::MIN;
+    for t in &pack.templates {
+        let (mut extra_l, mut extra_r) = match t.mode {
+            MODE_COUNTER => (t.p0.min(0), t.p1.max(t.w as i32)),
+            MODE_LINES => (0, t.w as i32 + t.p0),
+            _ => (0, t.w as i32),
+        };
+        if let Some(c) = &t.confirm {
+            extra_l = extra_l.min(c.cx - c.search_x);
+            extra_r = extra_r.max(c.cx + c.w as i32 + c.search_x);
+        }
+        let left = (t.cx - t.search_x + extra_l) as f32 - 2.0;
+        let right = (t.cx + t.search_x + extra_r) as f32 + 2.0;
+        x0 = x0.min(center + left / f);
+        x1 = x1.max(center + right / f);
+        y0 = y0.min((t.y - t.search_y - 4) as f32 / f);
+        y1 = y1.max((t.y + t.h as i32 + t.search_y + 4) as f32 / f);
+    }
+    let bx = (x0.max(0.0) as u32) & !1;
+    let by = (y0.max(0.0) as u32) & !1;
+    let bw = ((x1.min(screen_w as f32) as u32).saturating_sub(bx) + 1) & !1;
+    let bh = ((y1.min(screen_h as f32) as u32).saturating_sub(by) + 1) & !1;
+    if bw < 8 || bh < 8 {
+        return Err("识别区域无效".into());
+    }
+    let aw = ((bw as f32 * f).round() as usize).max(8);
+    let ah = ((bh as f32 * f).round() as usize).max(8);
+
+    let scale_filter = if (aw as u32, ah as u32) == (bw, bh) {
+        String::new()
+    } else {
+        format!(",scale={aw}:{ah}:flags=area")
+    };
+    let args: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-loglevel".into(),
+        "error".into(),
+        "-filter_complex".into(),
+        format!(
+            "ddagrab=output_idx={monitor_index}:framerate={FPS}:draw_mouse=0:video_size={bw}x{bh}:offset_x={bx}:offset_y={by},hwdownload,format=bgra{scale_filter},format=rgb24"
+        ),
+        "-f".into(),
+        "rawvideo".into(),
+        "-pix_fmt".into(),
+        "rgb24".into(),
+        "pipe:1".into(),
+    ];
+    let mut child = ffmpeg::command(ffmpeg_path, ffmpeg::BELOW_NORMAL_PRIORITY_CLASS)
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("无法启动识别进程：{e}"))?;
+    let mut out = child.stdout.take().ok_or("识别进程没有输出")?;
+
+    let placed: Vec<Placed> = pack
+        .templates
+        .iter()
+        .map(|t| Placed {
+            t: t.clone(),
+            px: (t.cx as f32 - (bx as f32 - center) * f).round() as i32,
+            py: (t.y as f32 - by as f32 * f).round() as i32,
+        })
+        .collect();
+    let mut features: Vec<u32> = placed
+        .iter()
+        .flat_map(|p| std::iter::once(p.t.feature).chain(p.t.confirm.as_ref().map(|c| c.feature)))
+        .collect();
+    features.sort();
+    features.dedup();
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let error = Arc::new(Mutex::new(None));
+    let child = Arc::new(Mutex::new(child));
+    let handle = {
+        let stop = stop.clone();
+        let error = error.clone();
+        thread::Builder::new()
+            .name("detector".into())
+            .spawn(move || {
+                let mut frame = vec![0u8; aw * ah * 3];
+                let mut tracks: Vec<Track> = placed.iter().map(|_| Track::default()).collect();
+                while !stop.load(Ordering::Relaxed) {
+                    if out.read_exact(&mut frame).is_err() {
+                        if !stop.load(Ordering::Relaxed) {
+                            if let Ok(mut e) = error.lock() {
+                                *e = Some("识别进程退出了".into());
+                            }
+                        }
+                        break;
+                    }
+                    let now_ms = crate::recorder::now_ms() - 80;
+                    let masks: Vec<(u32, Mask)> = features
+                        .iter()
+                        .map(|&f| (f, Mask::build(&frame, aw, ah, f)))
+                        .collect();
+                    for (p, tr) in placed.iter().zip(tracks.iter_mut()) {
+                        let Some((_, m)) = masks.iter().find(|(f, _)| *f == p.t.feature) else {
+                            continue;
+                        };
+                        let cm = p.t.confirm.as_ref().and_then(|c| {
+                            masks.iter().find(|(f, _)| *f == c.feature).map(|(_, m)| m)
+                        });
+                        for d in step(p, tr, m, cm, now_ms) {
+                            on_detect(d);
+                        }
+                    }
+                }
+            })
+            .map_err(|e| e.to_string())?
+    };
+
+    Ok(Detector {
+        stop,
+        child,
+        handle: Some(handle),
+        error,
+    })
+}

@@ -1,0 +1,53 @@
+import type { EventKind } from "./api";
+
+export const KIND_LABEL: Record<EventKind, string> = {
+  kill: "击杀",
+  knock: "击倒",
+  death: "阵亡",
+  knocked: "被击倒",
+  win: "吃鸡",
+  manual: "手动标记",
+};
+
+export const KIND_ORDER: EventKind[] = ["kill", "knock", "win", "manual", "death", "knocked"];
+
+export function clock(s: number): string {
+  if (!isFinite(s) || s < 0) s = 0;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  const mm = String(m).padStart(h ? 2 : 1, "0");
+  const ss = String(sec).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+export function bytes(n: number): string {
+  if (!n) return "0 MB";
+  const gb = n / 1024 ** 3;
+  if (gb >= 1) return `${gb.toFixed(gb >= 100 ? 0 : 1)} GB`;
+  return `${(n / 1024 ** 2).toFixed(0)} MB`;
+}
+
+export function when(ms: number): string {
+  const d = new Date(ms);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const yest = new Date(now.getTime() - 86400000).toDateString() === d.toDateString();
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  if (sameDay) return `今天 ${hm}`;
+  if (yest) return `昨天 ${hm}`;
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+}
+
+export function eventLine(e: { kind: EventKind; victim: string | null; weapon: string | null; distanceM: number | null; headshot: boolean }): string {
+  const parts: string[] = [];
+  if (e.kind === "death" || e.kind === "knocked") {
+    if (e.victim) parts.push(`被 ${e.victim}`);
+  } else if (e.victim) {
+    parts.push(e.victim);
+  }
+  if (e.weapon) parts.push(e.weapon);
+  if (e.distanceM != null && e.distanceM > 0) parts.push(`${Math.round(e.distanceM)} 米`);
+  if (e.headshot) parts.push("爆头");
+  return parts.join("，");
+}

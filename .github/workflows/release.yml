@@ -1,0 +1,52 @@
+# Push a tag like v0.2.0 (scripts/release.ps1 does it) -> GitHub builds the
+# installer, signs the update and publishes a release with latest.json, which
+# installed copies of KillCam check for updates.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install npm packages
+        run: npm ci
+
+      - name: Bundle FFmpeg
+        shell: pwsh
+        run: ./scripts/prepare-ffmpeg.ps1
+
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: KillCam ${{ github.ref_name }}
+          releaseBody: |
+            第一次安装如果出现「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」。
+            已经装过的话，KillCam 会自己提示更新。
+          releaseDraft: false
+          prerelease: false
+          args: --config src-tauri/tauri.release.json
