@@ -35,6 +35,23 @@ jobs:
         shell: pwsh
         run: ./scripts/prepare-ffmpeg.ps1
 
+      - name: FFmpeg smoke test (the options KillCam records with)
+        shell: pwsh
+        run: |
+          $ff = "src-tauri/bin/ffmpeg.exe"
+          & $ff -version | Select-Object -First 1
+          & $ff -hide_banner -loglevel error -y `
+            -f lavfi -i "color=c=black:s=320x240:r=30" `
+            -f lavfi -i "anullsrc=r=48000:cl=quad" -t 2 `
+            -filter_complex "[1:a]asplit=2[a1][a2];[a1]pan=stereo|c0=c0|c1=c1[ga];[a2]pan=stereo|c0=c2|c1=c3[ma]" `
+            -map 0:v -map "[ga]" -map "[ma]" -c:v libx264 -c:a aac -b:a 160k `
+            -f segment -segment_time 10 -segment_format mpegts -reset_timestamps 1 `
+            -segment_list smoke.csv -segment_list_type csv smoke_%05d.ts
+          if ($LASTEXITCODE -ne 0) { throw "ffmpeg smoke test failed" }
+          & $ff -hide_banner -loglevel error -f f32le -ar 48000 -ch_layout quad -i NUL -t 0.1 -f null -
+          if ($LASTEXITCODE -ne 0) { throw "ffmpeg raw audio input options failed" }
+          Remove-Item smoke* -ErrorAction SilentlyContinue
+
       - name: Build and publish
         uses: tauri-apps/tauri-action@v0
         env:

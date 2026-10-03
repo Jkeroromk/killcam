@@ -426,9 +426,10 @@ fn launch(
         s("pipe:1"),
     ];
     if has_audio {
+        if ffmpeg::input_queue_supported(ffmpeg_path) {
+            args.extend([s("-thread_queue_size"), s("4096")]);
+        }
         args.extend([
-            s("-thread_queue_size"),
-            s("4096"),
             s("-f"),
             s("f32le"),
             s("-ar"),

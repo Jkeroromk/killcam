@@ -19,7 +19,8 @@ if ((Test-Path $dest) -and (Test-Ffmpeg $dest)) {
     exit 0
 }
 
-$onPath = Get-Command ffmpeg -ErrorAction SilentlyContinue
+# on GitHub Actions always use the pinned download, never whatever the runner has
+$onPath = if ($env:CI -eq "true") { $null } else { Get-Command ffmpeg -ErrorAction SilentlyContinue }
 if ($onPath -and (Test-Ffmpeg $onPath.Source)) {
     Copy-Item $onPath.Source $dest -Force
     # a package-manager shim does not work on its own once copied
@@ -29,7 +30,8 @@ if ($onPath -and (Test-Ffmpeg $onPath.Source)) {
     }
 }
 
-$url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+# a released version, not "master": master changes options under us
+$url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-8.1.zip"
 $zip = Join-Path $env:TEMP "killcam-ffmpeg.zip"
 $tmp = Join-Path $env:TEMP "killcam-ffmpeg"
 Write-Host "下载 ffmpeg：$url"

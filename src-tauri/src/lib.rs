@@ -75,6 +75,8 @@ pub struct AppState {
     sync_requested: AtomicBool,
     /// newest release found by the update check
     update: Mutex<Option<UpdateInfo>>,
+    /// recording stopped itself after failing for a while (retried later)
+    gave_up_at: Mutex<Option<Instant>>,
     version: String,
 }
 
@@ -365,6 +367,7 @@ fn spawn_status_loop(app: AppHandle, st: St) {
             // ffmpeg exits when Windows takes the screen capture away (display mode
             // change, alt-tab out of fullscreen, UAC). Start the next part.
             let mut give_up: Option<String> = None;
+            let mut retry_later = false;
             let mut resumed = false;
             {
                 let mut rec = lk(&st.recording);
@@ -379,7 +382,21 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                                 exit_seen = None;
                                 let tail = r.log_tail(8);
                                 let quick = r.part_started.elapsed() < Duration::from_secs(10);
-                                if quick && r.last_good.elapsed() > Duration::from_secs(120) {
+                                // ffmpeg rejecting its arguments won't fix itself by retrying
+                                let bad_args = [
+                                    "Error parsing options",
+                                    "Unrecognized option",
+                                    "Option not found",
+                                ]
+                                .iter()
+                                .any(|m| tail.contains(m));
+                                if bad_args {
+                                    give_up = Some(format!(
+                                        "这个 FFmpeg 不认 KillCam 的录制参数（版本不兼容）\n{tail}"
+                                    ));
+                                } else if quick && r.last_good.elapsed() > Duration::from_secs(120)
+                                {
+                                    retry_later = true;
                                     give_up = Some(format!("{why}\n{tail}"));
                                 } else {
                                     match r.restart() {
@@ -401,8 +418,14 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                 );
             }
             if let Some(msg) = give_up {
-                *lk(&st.last_error) = Some(format!("录制意外停止，两分钟内一直没法恢复：{msg}"));
+                *lk(&st.last_error) = Some(if retry_later {
+                    format!("录制意外停止，两分钟内一直没法恢复（3 分钟后会自动再试）：{msg}")
+                } else {
+                    format!("录制没法开始：{msg}")
+                });
                 stop_session(&app, &st);
+                // e.g. the screen was off or locked: the game watcher tries again later
+                *lk(&st.gave_up_at) = retry_later.then(Instant::now);
             }
             // the detector's capture dies the same way
             let detector_dead = lk(&st.detector)
@@ -459,8 +482,23 @@ fn spawn_game_watcher(app: AppHandle, st: St) {
                         *lk(&st.last_error) = Some(e);
                     }
                 }
+            } else if pid.is_some()
+                && onboarded
+                && auto
+                && lk(&st.recording).is_none()
+                && lk(&st.gave_up_at)
+                    .map(|t| t.elapsed() > Duration::from_secs(180))
+                    .unwrap_or(false)
+            {
+                // recording gave up earlier in this game: try again
+                *lk(&st.gave_up_at) = None;
+                *lk(&st.last_error) = None;
+                if let Err(e) = start_session(&app, &st, pid, true) {
+                    *lk(&st.last_error) = Some(e);
+                }
             } else if pid.is_none() && last.is_some() {
                 let _ = app.emit("game", false);
+                *lk(&st.gave_up_at) = None;
                 if st.mini_open.swap(false, Ordering::Relaxed) {
                     mini::close(&app, &st.config_dir, true);
                 }
@@ -1330,6 +1368,31 @@ async fn install_update(app: AppHandle, st: State<'_, St>) -> Result<(), String>
         .map_err(|e| format!("更新失败：{e}"))
 }
 
+/// While the game runs, putting the main window away brings the mini window
+/// back (e.g. after it was closed with its own ×).
+fn bring_back_mini(app: &AppHandle) {
+    let app = app.clone();
+    // never build windows inside a window-event handler (deadlocks on Windows)
+    thread::spawn(move || {
+        let Some(st) = app.try_state::<St>().map(|s| s.inner().clone()) else {
+            return;
+        };
+        let (on, game_size) = {
+            let s = lk(&st.settings);
+            (
+                s.onboarded && s.mini_window,
+                (s.video.monitor_width, s.video.monitor_height),
+            )
+        };
+        if !on || lk(&st.game_pid).is_none() || app.get_webview_window(mini::LABEL).is_some() {
+            return;
+        }
+        if mini::open(&app, &st.config_dir, game_size).is_ok() {
+            st.mini_open.store(true, Ordering::Relaxed);
+        }
+    });
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -1384,6 +1447,7 @@ pub fn run() {
                 hw_cache: Mutex::new(None),
                 sync_requested: AtomicBool::new(false),
                 update: Mutex::new(None),
+                gave_up_at: Mutex::new(None),
                 version: app.package_info().version.to_string(),
             });
             app.manage(state.clone());
@@ -1445,12 +1509,21 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
+            if window.label() != "main" {
+                return;
+            }
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
                     // keep running in the tray so recording continues
                     let _ = window.hide();
                     api.prevent_close();
+                    bring_back_mini(window.app_handle());
                 }
+                // minimized (Windows reports it as a resize)
+                tauri::WindowEvent::Resized(_) if window.is_minimized().unwrap_or(false) => {
+                    bring_back_mini(window.app_handle());
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![

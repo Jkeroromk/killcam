@@ -87,7 +87,7 @@ export default function Mini() {
         <button type="button" className="iconbtn xs" title="打开 KillCam" onClick={() => api.showMainWindow()}>
           <Maximize2 size={13} />
         </button>
-        <button type="button" className="iconbtn xs" title="这局先关掉小窗口" onClick={() => api.closeMini()}>
+        <button type="button" className="iconbtn xs" title="关掉小窗口（把 KillCam 最小化或关到托盘时会再出现）" onClick={() => api.closeMini()}>
           <X size={14} />
         </button>
       </div>

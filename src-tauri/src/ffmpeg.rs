@@ -53,6 +53,45 @@ fn works(p: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether this ffmpeg still takes `-thread_queue_size` as an input option.
+/// Newer builds moved it to the muxer and refuse it in front of `-i`, which
+/// would make every recording fail to start. Probed once per ffmpeg path.
+pub fn input_queue_supported(ffmpeg: &Path) -> bool {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, bool>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(v) = cache.lock().ok().and_then(|c| c.get(ffmpeg).copied()) {
+        return v;
+    }
+    let ok = command(ffmpeg, 0)
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-thread_queue_size",
+            "64",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=48000",
+            "-t",
+            "0.05",
+            "-f",
+            "null",
+            "-",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if let Ok(mut c) = cache.lock() {
+        c.insert(ffmpeg.to_path_buf(), ok);
+    }
+    ok
+}
+
 /// Find a usable ffmpeg: explicit setting, next to the exe, ./bin, then PATH.
 pub fn locate(explicit: Option<&str>) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
