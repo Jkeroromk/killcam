@@ -15,6 +15,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # full history + tags, for the commit list in the release notes
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -51,6 +54,32 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "ffmpeg raw audio input options failed" }
           Remove-Item smoke* -ErrorAction SilentlyContinue
 
+      # What changed, shown on the Release page and in KillCam's update prompt:
+      # the notes written on the Release page if it was created there first,
+      # otherwise the commit messages since the previous version.
+      - name: Release notes
+        id: notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          # no Release yet (tag pushed by `npm run release`) -> the call fails, body stays empty
+          body="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.body // ""' 2>/dev/null)" || body=""
+          if [ -z "$body" ]; then
+            prev="$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || true)"
+            if [ -n "$prev" ]; then
+              body="$(git log "$prev..$tag" --no-merges --pretty='- %s' | grep -v -E '^- (v[0-9]+\.[0-9]+\.[0-9]+$|Website)' || true)"
+            fi
+          fi
+          [ -z "$body" ] && body="KillCam $tag"
+          {
+            echo "body<<__KILLCAM_NOTES__"
+            echo "$body"
+            echo "__KILLCAM_NOTES__"
+          } >> "$GITHUB_OUTPUT"
+          echo "$body"
+
       - name: Build and publish
         uses: tauri-apps/tauri-action@v0
         env:
@@ -60,9 +89,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: KillCam ${{ github.ref_name }}
-          releaseBody: |
-            第一次安装如果出现「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」。
-            已经装过的话，KillCam 会自己提示更新。
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           args: --config src-tauri/tauri.release.json
