@@ -96,58 +96,13 @@ KillCam 不注入游戏、不读写游戏内存、不修改任何游戏文件。
 
 遇到问题或者有想要的功能，欢迎在 [Issues](https://github.com/Jkeroromk/killcam/issues) 里提。附上截图和大概发生的时间会更好查。
 
----
+## 隐私与安全
 
-## 开发
-
-需要：Rust、Visual Studio Build Tools（C++ 桌面开发）、Node.js、FFmpeg（需要 ddagrab 和 h264_nvenc，例如 gyan.dev git-full，放进 PATH）。
-
-```powershell
-npm install
-npm run tauri dev
-```
-
-开发版不会注册开机自启，也不会检查更新。
-
-### 本地打包安装程序
-
-```powershell
-npm run installer
-```
-
-先把 ffmpeg.exe 放进 `src-tauri/bin`（优先用 PATH 里的，没有就下载 BtbN 的 GPL 版），再打包成
-`src-tauri/target/release/bundle/nsis/KillCam_<版本>_x64-setup.exe`，安装到当前用户。
-
-### 发布新版本
-
-```powershell
-npm run release -- 0.2.0
-```
-
-改好三处版本号、提交、打 `v0.2.0` 标签并推送。GitHub Actions 会在云端打包，用仓库 Secrets 里的
-`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 给更新签名，发布到 Releases 并生成 `latest.json`，
-已安装的 KillCam 会据此提示更新。
-
-### 工作原理
-
-- **录制**：FFmpeg `ddagrab`（Windows 桌面复制，画面留在显卡里）→ NVENC 编码，10 秒一段写成 TS；画面中断（切全屏、改分辨率）会自动接着录。
-- **声音**：WASAPI 只录 PUBG 进程（或选定的输出设备）+ 麦克风，4 声道送进 FFmpeg，输出时分成独立音轨。
-- **读屏**：另开一个只截屏幕中间一条区域、每秒 6 帧的采集，按颜色二值化后和模板做归一化相关匹配（`src-tauri/detector/pack.bin`）。
-- **对局划分**：PUBG 日志里每次加入服务器都会写一行模式（`JoinToDedicatedServer [GameModeAliase=…]`），用来把连续的游戏切成一局一局。
-- **官方数据**：PUBG API 的 telemetry 给出击杀 / 击倒 / 阵亡 / 吃鸡的精确时间，再用读屏识别到的击杀自动校准时间差。
-
-### 代码结构
-
-- `src-tauri/src/recorder.rs` 录制会话：FFmpeg 进程、分段、进度、中断后续录
-- `src-tauri/src/audio.rs` WASAPI 采集和混合写入
-- `src-tauri/src/detector.rs` 读屏识别
-- `src-tauri/src/gamelog.rs` 读取 PUBG 日志里的对局切换
-- `src-tauri/src/pubg.rs` PUBG API 和 telemetry 解析
-- `src-tauri/src/library.rs` 会话 → 对局记录、高光、片段、导出、存储清理
-- `src-tauri/src/mini.rs` 游戏时的迷你窗口
-- `src-tauri/src/lib.rs` 状态、命令、游戏检测、后台处理、快捷键、托盘、更新
-- `src/onboarding` 首次使用引导
-- `src/pages` 总览 / 录像库 / 单局回放 / 设置 / 迷你窗口
+- **不上传任何东西**：录像、截图、设置都只存在你自己电脑上，KillCam 没有服务器，也不收集使用数据。
+- **只连两个地方**：填了 API Key 时去 PUBG 官方接口查你自己的对局数据；另外定期去本仓库的 Releases 检查有没有新版本。
+- **API Key 只存在本机**：保存在你电脑的设置文件里，不会发给除 PUBG 官方以外的任何地方。
+- **不碰游戏**：不注入游戏、不读写游戏内存、不修改游戏文件（见上面的[常见问题](#常见问题)）。
+- **代码公开**：全部源代码都在这个仓库里，MIT 许可证，可以自己检查或编译。
 
 ## 许可证
 

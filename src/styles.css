@@ -43,7 +43,8 @@
   --ok-line: rgba(255, 255, 255, 0.3);
   --bad-line: rgba(255, 107, 94, 0.35);
 
-  --font: "Inter", "Noto Sans SC", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+  /* system fonts only: nothing is fetched from the internet */
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
   --mono: "JetBrains Mono", "Cascadia Mono", "Consolas", monospace;
 
   --r-sm: 6px;
