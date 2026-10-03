@@ -34,11 +34,8 @@ export function MatchTimeline(props: { t: Dict["timeline"]; locale: Locale; init
 
   const play = useCallback(() => {
     if (raf.current) cancelAnimationFrame(raf.current);
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
-      setNow(MATCH_LENGTH);
-      return;
-    }
+    // Plays even with reduced motion turned on: the playhead sweeping the
+    // match is the demo itself (the CSS drops the small bounces instead).
     setNow(0);
     userScrolled.current = false;
     let begin: number | null = null;

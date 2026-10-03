@@ -1361,6 +1361,11 @@ html[data-reveal="on"] .privacy li[data-reveal]:not(.is-in)::before {
   }
 }
 
+/* reduced motion: fade only, no movement */
+html[data-reveal="fade"] [data-reveal]:not(.is-in) {
+  opacity: 0;
+}
+
 /* screenshots settle in from slightly larger, like a camera finding focus */
 html[data-reveal="on"] .shot[data-reveal]:not(.is-in) {
   transform: translateY(28px) scale(1.02);
@@ -1510,5 +1515,11 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+
+  /* fading in is fine; the 0.01ms rule above would make it a pop */
+  html[data-reveal="fade"] [data-reveal] {
+    transition-property: opacity !important;
+    transition-duration: 0.5s !important;
   }
 }
