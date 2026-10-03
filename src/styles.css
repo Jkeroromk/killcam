@@ -2816,3 +2816,32 @@ button.st-best:hover {
     animation: none;
   }
 }
+
+/* release notes inside the rail update card */
+.update-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  list-style: none;
+}
+.update-details summary::-webkit-details-marker {
+  display: none;
+}
+.update-details summary::before {
+  content: "▸ ";
+}
+.update-details[open] summary::before {
+  content: "▾ ";
+}
+.update-details summary:hover {
+  color: var(--text);
+}
+.update-notes-rail {
+  margin-top: 6px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}

@@ -67,12 +67,18 @@ export function UpdateCard(props: { status: Status | null }) {
   };
 
   return (
-    <div className="update-card" title={u.notes ?? undefined}>
+    <div className="update-card">
       <div className="update-head">
         <ArrowUpCircle size={15} />
         <b>新版本 {u.version}</b>
         <span className="update-ver">当前 v{props.status?.version ?? "–"}</span>
       </div>
+      {u.notes?.trim() && (
+        <details className="update-details">
+          <summary>更新了什么</summary>
+          <div className="update-notes-rail">{u.notes.trim()}</div>
+        </details>
+      )}
       {busy ? (
         <div className="update-progress">
           <div className="update-bar">
