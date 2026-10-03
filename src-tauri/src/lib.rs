@@ -114,6 +114,19 @@ impl AppState {
         ok
     }
 
+    /// Whether this encoder has to be fed from the CPU on this machine (found
+    /// by the encoder test; the software encoder always is).
+    fn cpu_feed_for(&self, encoder: &str) -> bool {
+        if encoder == ffmpeg::SOFTWARE_ENCODER {
+            return true;
+        }
+        lk(&self.hw_cache)
+            .as_ref()
+            .and_then(|h| h.encoders.iter().find(|e| e.id == encoder))
+            .map(|e| e.available && e.cpu_feed)
+            .unwrap_or(false)
+    }
+
     fn trigger_processing(&self, force_final: bool) {
         if let Some(tx) = lk(&self.process_tx).as_ref() {
             let _ = tx.send(force_final);
@@ -263,6 +276,7 @@ fn start_session(app: &AppHandle, st: &St, pid: Option<u32>, auto: bool) -> Resu
     let ff = st.ffmpeg()?;
     let id = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let gpu_scale = st.gpu_scale(&ff, settings.video.monitor_index);
+    let cpu_feed = st.cpu_feed_for(&settings.video.encoder);
     let rec = recorder::start(
         &ff,
         &settings,
@@ -273,6 +287,7 @@ fn start_session(app: &AppHandle, st: &St, pid: Option<u32>, auto: bool) -> Resu
             limit_seconds: None,
             test: false,
             gpu_scale,
+            cpu_feed,
         },
     )?;
     *slot = Some(rec);
@@ -402,6 +417,17 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                                     give_up = Some(format!(
                                         "这个 FFmpeg 不认 KillCam 的录制参数（版本不兼容）\n{tail}"
                                     ));
+                                } else if enc_failed
+                                    && !r.cpu_feed()
+                                    && r.encoder() != ffmpeg::SOFTWARE_ENCODER
+                                {
+                                    // first try the same encoder with the image
+                                    // converted on the CPU (some AMD drivers need it)
+                                    let enc = r.encoder().to_string();
+                                    match r.switch_encoder(&enc, true) {
+                                        Ok(_) => switched = Some((enc.clone(), enc)),
+                                        Err(e) => give_up = Some(e),
+                                    }
                                 } else if enc_failed {
                                     let failed = r.encoder().to_string();
                                     tried_encoders.push(failed.clone());
@@ -420,8 +446,12 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                                             &tried_encoders,
                                         )
                                     };
+                                    let next_cpu = next
+                                        .as_deref()
+                                        .map(|n| st.cpu_feed_for(n))
+                                        .unwrap_or(false);
                                     match next {
-                                        Some(n) => match r.switch_encoder(&n) {
+                                        Some(n) => match r.switch_encoder(&n, next_cpu) {
                                             Ok(_) => switched = Some((failed, n)),
                                             Err(e) => give_up = Some(e),
                                         },
@@ -451,19 +481,34 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                 }
             }
             if let Some((failed, next)) = switched {
-                // remember it, so the next recording starts with the working one
-                let saved = {
-                    let mut s = lk(&st.settings);
-                    s.video.encoder = next.clone();
-                    settings::save(&st.config_dir, &s)
-                };
-                if let Err(e) = saved {
-                    push_notice(&st, format!("编码器设置没能保存：{e}"));
+                if failed == next {
+                    // same encoder, fed from the CPU now: remember that for next time
+                    if let Some(h) = lk(&st.hw_cache).as_mut() {
+                        for e in h.encoders.iter_mut() {
+                            if e.id == next {
+                                e.cpu_feed = true;
+                            }
+                        }
+                    }
+                    push_notice(
+                        &st,
+                        format!("显卡驱动不接受直接送画面，已改成先由 CPU 转换格式再交给 {next} 编码，继续录制"),
+                    );
+                } else {
+                    // remember it, so the next recording starts with the working one
+                    let saved = {
+                        let mut s = lk(&st.settings);
+                        s.video.encoder = next.clone();
+                        settings::save(&st.config_dir, &s)
+                    };
+                    if let Err(e) = saved {
+                        push_notice(&st, format!("编码器设置没能保存：{e}"));
+                    }
+                    push_notice(
+                        &st,
+                        format!("编码器 {failed} 在这台电脑上用不了这块屏幕的画面，已自动换成 {next} 继续录制"),
+                    );
                 }
-                push_notice(
-                    &st,
-                    format!("编码器 {failed} 在这台电脑上用不了这块屏幕的画面，已自动换成 {next} 继续录制"),
-                );
                 // the settings page shows the new encoder instead of saving the old one back
                 let _ = app.emit("settings-changed", ());
                 emit_status(&app, &st);
@@ -838,11 +883,11 @@ async fn detect_hardware(st: State<'_, St>, force: Option<bool>) -> Result<Hardw
         // encoder on another GPU doesn't show up as usable
         let encoders = match &ff {
             Ok(p) => {
-                let capture = info
+                let screen = info
                     .as_ref()
                     .filter(|i| i.has_ddagrab)
-                    .map(|_| ffmpeg::probe_capture_filter(monitor, gpu_scale_works));
-                ffmpeg::probe_encoders(p, capture.as_deref())
+                    .map(|_| monitor);
+                ffmpeg::probe_encoders(p, screen, gpu_scale_works)
             }
             Err(_) => Vec::new(),
         };
@@ -994,6 +1039,7 @@ async fn run_perf_test(
         let dir = base.join(format!("perf_{}", now_ms()));
         let pid = *lk(&st.game_pid);
         let gpu_scale = st.gpu_scale(&ff, settings.video.monitor_index);
+        let cpu_feed = st.cpu_feed_for(&settings.video.encoder);
         let rec = recorder::start(
             &ff,
             &settings,
@@ -1004,6 +1050,7 @@ async fn run_perf_test(
                 limit_seconds: Some(secs),
                 test: true,
                 gpu_scale,
+                cpu_feed,
             },
         )?;
         let mut watcher = game::Watcher::new();

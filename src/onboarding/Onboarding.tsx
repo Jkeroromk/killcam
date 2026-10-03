@@ -24,6 +24,7 @@ import {
   VideoSection,
   outputSize,
   presetsFor,
+  scaleWorks,
   type SetSettings,
 } from "../components/sections";
 
@@ -62,15 +63,17 @@ export default function Onboarding(props: { initial: Settings; onDone: (s: Setti
       .detectHardware(true)
       .then((h) => {
         setHardware(h);
+        // NVENC first, then any other hardware encoder; the CPU encoder is listed last
         const enc = h.encoders.find((e) => e.available && e.id === "h264_nvenc") ?? h.encoders.find((e) => e.available);
-        if (enc) set((s) => ({ ...s, video: { ...s.video, encoder: h.encoders.some((e) => e.available && e.id === s.video.encoder) ? s.video.encoder : enc.id } }));
-        if (!h.gpuScaleWorks) {
-          set((s) => {
-            if (s.video.preset === "custom") return s;
-            const p = presetsFor(h)[s.video.preset];
-            return { ...s, video: { ...s.video, height: p.height, fps: p.fps, bitrateMbps: p.bitrateMbps } };
-          });
-        }
+        set((s) => {
+          const encoder = h.encoders.some((e) => e.available && e.id === s.video.encoder) ? s.video.encoder : (enc?.id ?? s.video.encoder);
+          let video = { ...s.video, encoder };
+          if (!scaleWorks(h, encoder) && video.preset !== "custom") {
+            const p = presetsFor(h, encoder)[video.preset];
+            video = { ...video, height: p.height, fps: p.fps, bitrateMbps: p.bitrateMbps };
+          }
+          return { ...s, video };
+        });
       })
       .catch((e) => setHwError(errText(e)));
     if (!props.initial.libraryDir) {
@@ -181,7 +184,7 @@ export default function Onboarding(props: { initial: Settings; onDone: (s: Setti
               <VideoSection settings={settings} set={set} hardware={hardware} />
             </Step>
           )}
-          {key === "perf" && <PerfStep settings={settings} gpuScale={hardware?.gpuScaleWorks ?? true} result={perf} onResult={setPerf} goBack={() => setStep(3)} />}
+          {key === "perf" && <PerfStep settings={settings} gpuScale={scaleWorks(hardware, settings.video.encoder)} result={perf} onResult={setPerf} goBack={() => setStep(3)} />}
           {key === "audio" && (
             <Step title="声音" lead="游戏和麦克风分成两条音轨录，后期可以单独调音量。对着麦克风说句话，看看电平条有没有动。">
               <AudioSection settings={settings} set={set} gameRunning={!!game?.running} />
@@ -205,7 +208,7 @@ export default function Onboarding(props: { initial: Settings; onDone: (s: Setti
               <HotkeySection settings={settings} set={set} />
             </Step>
           )}
-          {key === "done" && <DoneStep settings={settings} perf={perf} gpuScale={hardware?.gpuScaleWorks ?? true} />}
+          {key === "done" && <DoneStep settings={settings} perf={perf} gpuScale={scaleWorks(hardware, settings.video.encoder)} />}
         </div>
 
         <footer className="ob-foot">
@@ -279,7 +282,7 @@ function HardwareStep(props: { hw: HardwareInfo | null; err: string | null; sett
             <div>
               <b>{hw.gpu}</b>
               <span>
-                {hw.encoders.filter((e) => e.available).map((e) => e.label).join("、") || "没有可用的硬件编码器"}
+                {hw.encoders.filter((e) => e.available).map((e) => e.label).join("、") || "没有可用的编码器"}
               </span>
             </div>
             {hw.encoders.some((e) => e.available) ? <Check className="ok" size={18} /> : <AlertTriangle className="bad" size={18} />}

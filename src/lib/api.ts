@@ -103,6 +103,8 @@ export interface EncoderInfo {
   label: string;
   vendor: string;
   available: boolean;
+  /** works only with the image converted on the CPU first (some AMD drivers) */
+  cpuFeed?: boolean;
 }
 
 export interface DiskInfo {

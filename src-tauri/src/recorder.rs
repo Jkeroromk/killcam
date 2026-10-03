@@ -117,6 +117,7 @@ pub struct Recording {
     settings: Settings,
     game_pid: Option<u32>,
     gpu_scale: bool,
+    cpu_feed: bool,
     limit_seconds: Option<u32>,
     pub part: u32,
     pub part_started: Instant,
@@ -207,10 +208,15 @@ impl Recording {
         &self.settings.video.encoder
     }
 
+    pub fn cpu_feed(&self) -> bool {
+        self.cpu_feed
+    }
+
     /// The encoder can't work on this machine / screen: continue the session
-    /// in a new part with another one.
-    pub fn switch_encoder(&mut self, encoder: &str) -> Result<(), String> {
+    /// in a new part with another one (or the same one fed from the CPU).
+    pub fn switch_encoder(&mut self, encoder: &str, cpu_feed: bool) -> Result<(), String> {
         self.settings.video.encoder = encoder.to_string();
+        self.cpu_feed = cpu_feed;
         if let Ok(mut m) = self.meta.lock() {
             m.encoder = encoder.to_string();
         }
@@ -246,6 +252,7 @@ impl Recording {
             &self.dir,
             self.part,
             self.gpu_scale,
+            self.cpu_feed,
             self.limit_seconds,
             self.game_pid,
             self.meta.clone(),
@@ -309,6 +316,8 @@ pub struct StartOptions {
     pub test: bool,
     /// scale_d3d11 verified to work on this machine
     pub gpu_scale: bool,
+    /// copy the image to the CPU before encoding (see ffmpeg::capture_plan)
+    pub cpu_feed: bool,
 }
 
 fn game_source(settings: &Settings, pid: Option<u32>) -> Option<Source> {
@@ -346,12 +355,9 @@ pub fn start(
             "当前 FFmpeg 不支持 ddagrab（显卡抓屏），请换用 gyan.dev 的 git-full 版本".into(),
         );
     }
-    let plan = ffmpeg::capture_plan(&settings.video, opts.gpu_scale);
-    let fps = if settings.video.fps == 0 {
-        60
-    } else {
-        settings.video.fps
-    };
+    let plan = ffmpeg::capture_plan(&settings.video, opts.gpu_scale, opts.cpu_feed);
+    let video = ffmpeg::effective_video(&settings.video);
+    let fps = if video.fps == 0 { 60 } else { video.fps };
     let launch_ms = now_ms();
     let meta = SessionMeta {
         id: opts.session_id.clone(),
@@ -379,6 +385,7 @@ pub fn start(
         &opts.dir,
         0,
         opts.gpu_scale,
+        opts.cpu_feed,
         opts.limit_seconds,
         opts.game_pid,
         meta.clone(),
@@ -398,6 +405,7 @@ pub fn start(
         settings: settings.clone(),
         game_pid: opts.game_pid,
         gpu_scale: opts.gpu_scale,
+        cpu_feed: opts.cpu_feed,
         limit_seconds: opts.limit_seconds,
         part: 0,
         part_started: now,
@@ -414,11 +422,12 @@ fn launch(
     dir: &Path,
     part: u32,
     gpu_scale: bool,
+    cpu_feed: bool,
     limit_seconds: Option<u32>,
     game_pid: Option<u32>,
     meta: Arc<Mutex<SessionMeta>>,
 ) -> Result<Launched, String> {
-    let plan = ffmpeg::capture_plan(&settings.video, gpu_scale);
+    let plan = ffmpeg::capture_plan(&settings.video, gpu_scale, cpu_feed);
     let game = game_source(settings, game_pid);
     let mic = if settings.audio.mic_enabled {
         Some(Source::Mic(settings.audio.mic_device_id.clone()))
@@ -473,11 +482,8 @@ fn launch(
     }
     args.extend([s("-filter_complex"), graph]);
     args.extend(maps);
-    let fps = if settings.video.fps == 0 {
-        60
-    } else {
-        settings.video.fps
-    };
+    let video = ffmpeg::effective_video(&settings.video);
+    let fps = if video.fps == 0 { 60 } else { video.fps };
     args.extend(ffmpeg::encoder_args(
         &settings.video.encoder,
         settings.video.bitrate_mbps,

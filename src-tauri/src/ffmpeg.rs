@@ -174,65 +174,115 @@ pub struct EncoderInfo {
     pub label: String,
     pub vendor: String,
     pub available: bool,
+    /// Works only when the screen image is first copied to the CPU and
+    /// converted there (some AMD drivers can't take the GPU texture directly).
+    pub cpu_feed: bool,
 }
 
-/// Hardware encoders KillCam can record with: (id, label, vendor).
-pub const ENCODERS: [(&str, &str, &str); 6] = [
+/// The CPU fallback encoder: always works, but costs CPU, so recordings with
+/// it are capped (see `effective_video`).
+pub const SOFTWARE_ENCODER: &str = "libx264";
+
+/// Encoders KillCam can record with: (id, label, vendor). Software last.
+pub const ENCODERS: [(&str, &str, &str); 7] = [
     ("h264_nvenc", "H.264 (NVENC)", "nvidia"),
     ("hevc_nvenc", "HEVC / H.265 (NVENC)", "nvidia"),
     ("av1_nvenc", "AV1 (NVENC)", "nvidia"),
     ("h264_amf", "H.264 (AMD AMF)", "amd"),
     ("hevc_amf", "HEVC (AMD AMF)", "amd"),
     ("av1_amf", "AV1 (AMD AMF)", "amd"),
+    (SOFTWARE_ENCODER, "H.264（CPU 软件编码）", "cpu"),
 ];
 
-/// Try a tiny real encode with each hardware encoder.
+/// Pixel format an encoder wants when frames come from the CPU.
+fn cpu_pix_fmt(encoder: &str) -> &'static str {
+    if encoder == SOFTWARE_ENCODER {
+        "yuv420p"
+    } else {
+        "nv12"
+    }
+}
+
+fn try_encode(ffmpeg: &Path, input: &[String], encoder: &str) -> bool {
+    let mut args = vec![s("-hide_banner"), s("-loglevel"), s("error")];
+    args.extend(input.iter().cloned());
+    args.extend([s("-frames:v"), s("10"), s("-c:v"), s(encoder)]);
+    if encoder == SOFTWARE_ENCODER {
+        args.extend([s("-preset"), s("ultrafast")]);
+    }
+    args.extend([s("-f"), s("null"), s("-")]);
+    run(ffmpeg, &args, 0)
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Try a tiny real encode with each encoder.
 ///
-/// With `capture` (the ddagrab filter for the recording screen) the test frames
-/// come from the screen itself, the same way the recording gets them. That
-/// matters on machines with two GPUs: an encoder on the other GPU (e.g. AMD
-/// AMF on the CPU's integrated graphics while the screen hangs off an NVIDIA
-/// card) passes a synthetic test but can't take the screen's frames
-/// ("SubmitInput() failed with error 18").
-pub fn probe_encoders(ffmpeg: &Path, capture: Option<&str>) -> Vec<EncoderInfo> {
+/// With `monitor` (ddagrab available) the test frames come from the recording
+/// screen itself, the same way the recording gets them. That matters:
+/// - an encoder on another GPU (AMD AMF on a CPU's integrated graphics while
+///   the screen hangs off an NVIDIA card) passes a synthetic test but can't
+///   take the screen's frames ("SubmitInput() failed with error 18");
+/// - some AMD drivers (e.g. Vega 6, 2022 driver) can't take the GPU texture
+///   at all, but encode fine once the image is converted on the CPU. Those
+///   are marked `cpu_feed` and recorded that way.
+pub fn probe_encoders(ffmpeg: &Path, monitor: Option<u32>, gpu_scale: bool) -> Vec<EncoderInfo> {
     ENCODERS
         .iter()
         .map(|(id, label, vendor)| {
-            let mut args = vec![s("-hide_banner"), s("-loglevel"), s("error")];
-            match capture {
-                Some(f) => args.extend([s("-filter_complex"), f.to_string()]),
-                None => args.extend([
-                    s("-f"),
-                    s("lavfi"),
-                    s("-i"),
-                    s("color=c=black:s=1280x720:r=30"),
-                ]),
-            }
-            args.extend([
-                s("-frames:v"),
-                s("10"),
-                s("-c:v"),
-                s(id),
-                s("-f"),
-                s("null"),
-                s("-"),
-            ]);
-            let available = run(ffmpeg, &args, 0)
-                .map(|o| o.status.success())
-                .unwrap_or(false);
+            let (available, cpu_feed) = match monitor {
+                Some(m) => {
+                    let gpu = || {
+                        try_encode(
+                            ffmpeg,
+                            &[s("-filter_complex"), gpu_probe_filter(m, gpu_scale)],
+                            id,
+                        )
+                    };
+                    let cpu = || {
+                        try_encode(
+                            ffmpeg,
+                            &[s("-filter_complex"), cpu_probe_filter(m, cpu_pix_fmt(id))],
+                            id,
+                        )
+                    };
+                    if *id == SOFTWARE_ENCODER {
+                        (cpu(), true)
+                    } else if gpu() {
+                        (true, false)
+                    } else if cpu() {
+                        (true, true)
+                    } else {
+                        (false, false)
+                    }
+                }
+                None => (
+                    try_encode(
+                        ffmpeg,
+                        &[
+                            s("-f"),
+                            s("lavfi"),
+                            s("-i"),
+                            s("color=c=black:s=1280x720:r=30"),
+                        ],
+                        id,
+                    ),
+                    *id == SOFTWARE_ENCODER,
+                ),
+            };
             EncoderInfo {
                 id: s(id),
                 label: s(label),
                 vendor: s(vendor),
                 available,
+                cpu_feed,
             }
         })
         .collect()
 }
 
-/// The capture filter used to test encoders: like the recording, but small
-/// and short. Frames stay on the GPU that drives this screen.
-pub fn probe_capture_filter(monitor_index: u32, gpu_scale: bool) -> String {
+/// Test capture with frames kept on the GPU (like the normal recording).
+fn gpu_probe_filter(monitor_index: u32, gpu_scale: bool) -> String {
     if gpu_scale {
         format!(
             "ddagrab=output_idx={monitor_index}:framerate=30:draw_mouse=0,scale_d3d11=width=1280:height=720:format=nv12"
@@ -240,6 +290,13 @@ pub fn probe_capture_filter(monitor_index: u32, gpu_scale: bool) -> String {
     } else {
         format!("ddagrab=output_idx={monitor_index}:framerate=30:draw_mouse=0")
     }
+}
+
+/// Test capture with the image copied to the CPU and converted there.
+fn cpu_probe_filter(monitor_index: u32, pix: &str) -> String {
+    format!(
+        "ddagrab=output_idx={monitor_index}:framerate=30:draw_mouse=0,hwdownload,format=bgra,scale=1280:720,format={pix}"
+    )
 }
 
 /// Lines ffmpeg prints when the encoder itself can't work with the frames or
@@ -267,7 +324,14 @@ pub fn fallback_encoder(
     probed: Option<&[EncoderInfo]>,
     tried: &[String],
 ) -> Option<String> {
-    let codec = failed.split('_').next().unwrap_or("");
+    let family = |id: &str| -> String {
+        if id == SOFTWARE_ENCODER {
+            s("h264")
+        } else {
+            id.split('_').next().unwrap_or("").to_string()
+        }
+    };
+    let codec = family(failed);
     let all: Vec<EncoderInfo> = match probed {
         Some(p) => p.to_vec(),
         None => ENCODERS
@@ -277,6 +341,7 @@ pub fn fallback_encoder(
                 label: s(label),
                 vendor: s(vendor),
                 available: true,
+                cpu_feed: *id == SOFTWARE_ENCODER,
             })
             .collect(),
     };
@@ -284,11 +349,33 @@ pub fn fallback_encoder(
         .iter()
         .filter(|e| e.available && e.id != failed && !tried.contains(&e.id))
         .collect();
-    ok.iter()
-        .find(|e| e.id.starts_with(codec))
-        .or_else(|| ok.iter().find(|e| e.id.starts_with("h264")))
-        .or_else(|| ok.first())
+    // hardware first, same codec first; software H.264 is the last resort
+    let hw: Vec<&&EncoderInfo> = ok.iter().filter(|e| e.id != SOFTWARE_ENCODER).collect();
+    hw.iter()
+        .find(|e| family(&e.id) == codec)
+        .or_else(|| hw.iter().find(|e| family(&e.id) == "h264"))
+        .or_else(|| hw.first())
         .map(|e| e.id.clone())
+        .or_else(|| {
+            ok.iter()
+                .find(|e| e.id == SOFTWARE_ENCODER)
+                .map(|e| e.id.clone())
+        })
+}
+
+/// What the recording actually uses: the software encoder is capped to
+/// 720p / 30 fps so a laptop CPU keeps up while a game runs.
+pub fn effective_video(v: &VideoSettings) -> VideoSettings {
+    let mut v = v.clone();
+    if v.encoder == SOFTWARE_ENCODER {
+        if v.height == 0 || v.height > 720 {
+            v.height = 720;
+        }
+        if v.fps == 0 || v.fps > 30 {
+            v.fps = 30;
+        }
+    }
+    v
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -399,16 +486,25 @@ pub struct CapturePlan {
     pub out_height: u32,
 }
 
-/// Build the GPU-only capture filter for the recording.
-pub fn capture_plan(v: &VideoSettings, has_scale_d3d11: bool) -> CapturePlan {
+/// Build the capture filter for the recording.
+///
+/// Normally the frames stay on the GPU the whole way (ddagrab -> scale_d3d11
+/// -> hardware encoder). With `cpu_feed` the image is copied to the CPU and
+/// scaled / converted there: needed by the software encoder and by hardware
+/// encoders whose driver can't take the GPU texture.
+pub fn capture_plan(v: &VideoSettings, has_scale_d3d11: bool, cpu_feed: bool) -> CapturePlan {
+    let v = &effective_video(v);
     let fps = if v.fps == 0 { 60 } else { v.fps };
     let mut f = format!(
         "ddagrab=output_idx={}:framerate={}:draw_mouse=0",
         v.monitor_index, fps
     );
+    let pix = cpu_pix_fmt(&v.encoder);
     let (sw, sh) = (v.monitor_width, v.monitor_height);
     if sw == 0 || sh == 0 {
-        if has_scale_d3d11 {
+        if cpu_feed {
+            f.push_str(&format!(",hwdownload,format=bgra,format={pix}"));
+        } else if has_scale_d3d11 {
             f.push_str(",scale_d3d11=format=nv12");
         }
         return CapturePlan {
@@ -434,7 +530,18 @@ pub fn capture_plan(v: &VideoSettings, has_scale_d3d11: bool) -> CapturePlan {
     };
     let tw = even(((cw as f64) * (th as f64) / (sh as f64)).round() as u32);
     let th = even(th);
-    if has_scale_d3d11 {
+    if cpu_feed {
+        f.push_str(",hwdownload,format=bgra");
+        if th != sh || tw != cw {
+            f.push_str(&format!(",scale={tw}:{th}:flags=bilinear"));
+        }
+        f.push_str(&format!(",format={pix}"));
+        CapturePlan {
+            filter: f,
+            out_width: tw,
+            out_height: th,
+        }
+    } else if has_scale_d3d11 {
         if th == sh && tw == cw {
             f.push_str(",scale_d3d11=format=nv12");
         } else {
@@ -498,6 +605,19 @@ pub fn encoder_args(encoder: &str, bitrate_mbps: u32, fps: u32) -> Vec<String> {
             format!("{}M", b),
             s("-maxrate"),
             format!("{}M", b * 3 / 2),
+        ]);
+    } else if encoder == SOFTWARE_ENCODER {
+        // live capture on a CPU that's also running the game: fast preset,
+        // bitrate capped like the hardware encoders
+        a.extend([
+            s("-preset"),
+            s("superfast"),
+            s("-crf"),
+            s("23"),
+            s("-maxrate"),
+            format!("{}M", b),
+            s("-bufsize"),
+            format!("{}M", b * 2),
         ]);
     } else {
         a.extend([s("-b:v"), format!("{}M", b)]);

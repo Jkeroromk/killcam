@@ -20,12 +20,27 @@ export type SetSettings = (fn: (s: Settings) => Settings) => void;
 
 const even = (n: number) => n - (n % 2);
 
-export function outputSize(v: Settings["video"], gpuScale = true): { w: number; h: number } | null {
+export const SOFTWARE_ENCODER = "libx264";
+
+/** The software encoder records at most 720p / 30 fps (same caps as the backend). */
+export function effectiveVideo(v: Settings["video"]): Settings["video"] {
+  if (v.encoder !== SOFTWARE_ENCODER) return v;
+  return { ...v, height: v.height === 0 || v.height > 720 ? 720 : v.height, fps: v.fps === 0 || v.fps > 30 ? 30 : v.fps };
+}
+
+/** Can the recording be scaled down: on the GPU, or on the CPU when the encoder is fed from there. */
+export function scaleWorks(hw: HardwareInfo | null | undefined, encoder: string): boolean {
+  if (!hw) return true;
+  return hw.gpuScaleWorks || !!hw.encoders.find((e) => e.id === encoder)?.cpuFeed || encoder === SOFTWARE_ENCODER;
+}
+
+export function outputSize(video: Settings["video"], gpuScale = true): { w: number; h: number } | null {
+  const v = effectiveVideo(video);
   const { monitorWidth: sw, monitorHeight: sh } = v;
   if (!sw || !sh) return null;
   let cw = sw;
   if (v.aspect === "16:9" && sw * 9 > sh * 16) cw = even(Math.floor((sh * 16) / 9));
-  if (!gpuScale) return { w: cw, h: sh };
+  if (!gpuScale && v.encoder !== SOFTWARE_ENCODER) return { w: cw, h: sh };
   const th = v.height === 0 || v.height >= sh ? sh : v.height;
   return { w: even(Math.round((cw * th) / sh)), h: even(th) };
 }
@@ -43,8 +58,8 @@ export const NATIVE_PRESETS = {
   quality: { height: 0, fps: 60, bitrateMbps: 45, label: "画质", hint: "原生 · 45 Mbps" },
 } as const;
 
-export function presetsFor(hw: HardwareInfo | null) {
-  return hw && !hw.gpuScaleWorks ? NATIVE_PRESETS : PRESETS;
+export function presetsFor(hw: HardwareInfo | null, encoder: string) {
+  return scaleWorks(hw, encoder) ? PRESETS : NATIVE_PRESETS;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,16 +112,18 @@ export function MonitorPicker(props: { settings: Settings; set: SetSettings; mon
 export function VideoSection(props: { settings: Settings; set: SetSettings; hardware: HardwareInfo | null; onRedetect?: () => void }) {
   const { settings, set, hardware } = props;
   const v = settings.video;
-  const scale = hardware?.gpuScaleWorks ?? true;
-  const P = presetsFor(hardware);
+  const scale = scaleWorks(hardware, v.encoder);
+  const P = presetsFor(hardware, v.encoder);
   const out = outputSize(v, scale);
+  const sw = v.encoder === SOFTWARE_ENCODER;
+  const current = hardware?.encoders.find((e) => e.id === v.encoder);
   const ultrawide = v.monitorWidth * 9 > v.monitorHeight * 16 + 10;
   const encoders = hardware?.encoders.filter((e) => e.available) ?? [];
   const setV = (patch: Partial<Settings["video"]>) => set((s) => ({ ...s, video: { ...s.video, ...patch } }));
 
   return (
     <div className="stack">
-      <Field label="画质预设" hint={out ? `输出 ${out.w}×${out.h} · ${v.fps} 帧 · 约 ${v.bitrateMbps} Mbps` : undefined}>
+      <Field label="画质预设" hint={out ? `输出 ${out.w}×${out.h} · ${effectiveVideo(v).fps} 帧 · 约 ${v.bitrateMbps} Mbps` : undefined}>
         <Segmented
           wide
           value={v.preset}
@@ -175,14 +192,23 @@ export function VideoSection(props: { settings: Settings; set: SetSettings; hard
         </div>
       )}
 
-      <Field label="编码器" hint="用显卡的硬件编码器，不占 CPU">
+      <Field
+        label="编码器"
+        hint={
+          sw
+            ? "CPU 软件编码：任何电脑都能录，但比较占 CPU，所以最高 720p · 30 帧"
+            : current?.cpuFeed
+              ? "显卡编码；这台电脑的显卡驱动要先由 CPU 转一下格式，会多占一点 CPU"
+              : "用显卡的硬件编码器，几乎不占 CPU"
+        }
+      >
         {!hardware ? (
           <p className="muted small">
             <Spinner /> 正在检测显卡编码器…
           </p>
         ) : encoders.length === 0 ? (
           <p className="warn-text">
-            没有检测到可用的硬件编码器。
+            没有检测到可用的编码器，可能是 FFmpeg 没装好，或者显卡驱动太旧。
             {props.onRedetect && (
               <button type="button" className="linkbtn" onClick={props.onRedetect}>
                 重新检测
@@ -196,7 +222,14 @@ export function VideoSection(props: { settings: Settings; set: SetSettings; hard
             options={encoders.map((e) => ({
               value: e.id,
               label: e.label,
-              hint: e.id.startsWith("h264") ? "兼容性最好" : e.id.startsWith("av1") ? "体积最小，部分播放器不支持" : "体积更小",
+              hint:
+                e.id === SOFTWARE_ENCODER
+                  ? "保底，占 CPU"
+                  : e.id.startsWith("h264")
+                    ? "兼容性最好"
+                    : e.id.startsWith("av1")
+                      ? "体积最小，部分播放器不支持"
+                      : "体积更小",
             }))}
           />
         )}

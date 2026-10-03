@@ -6,6 +6,7 @@ import {
   EventsSection,
   HotkeySection,
   MonitorPicker,
+  scaleWorks,
   StorageSection,
   VideoSection,
   type SetSettings,
@@ -143,7 +144,7 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
       </Card>
 
       <Card id="perf" title="性能测试" note={dirty ? "用的是下面还没保存的设置" : undefined}>
-        {recording ? <p className="muted">正在录制，停止后才能测试。</p> : <PerfStep settings={draft} gpuScale={hw?.gpuScaleWorks ?? true} result={perf} onResult={setPerf} goBack={() => document.getElementById("video")?.scrollIntoView()} />}
+        {recording ? <p className="muted">正在录制，停止后才能测试。</p> : <PerfStep settings={draft} gpuScale={scaleWorks(hw, draft.video.encoder)} result={perf} onResult={setPerf} goBack={() => document.getElementById("video")?.scrollIntoView()} />}
       </Card>
 
       <Card id="advanced" title="高级">
