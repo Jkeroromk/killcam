@@ -84,6 +84,8 @@ pub struct MatchRecord {
     pub encoder: String,
     /// absolute folder, filled in when loading
     pub dir: String,
+    /// absolute folder of the still images, filled in when loading
+    pub thumb_dir: String,
 }
 
 pub struct Lib {
@@ -171,6 +173,8 @@ impl Lib {
         let s = fs::read_to_string(dir.join("match.json")).ok()?;
         let mut m: MatchRecord = serde_json::from_str(&s).ok()?;
         m.dir = dir.to_string_lossy().to_string();
+        let name = dir.file_name()?.to_string_lossy().to_string();
+        m.thumb_dir = self.thumbs_dir(&name).to_string_lossy().to_string();
         Some(m)
     }
 
@@ -183,6 +187,7 @@ impl Lib {
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let mut copy = m.clone();
         copy.dir = String::new();
+        copy.thumb_dir = String::new();
         let j = serde_json::to_string_pretty(&copy).map_err(|e| e.to_string())?;
         fs::write(dir.join("match.json"), j).map_err(|e| e.to_string())
     }
@@ -191,7 +196,53 @@ impl Lib {
         if id.is_empty() || id.contains("..") || id.contains('/') || id.contains('\\') {
             return Err("bad id".into());
         }
+        let _ = fs::remove_dir_all(self.thumbs_dir(id));
         fs::remove_dir_all(self.matches_dir().join(id)).map_err(|e| e.to_string())
+    }
+
+    /// Hide KillCam's working folders in Explorer; only `matches` and `exports`
+    /// are meant for people.
+    pub fn hide_internal_dirs(&self) {
+        #[cfg(windows)]
+        for d in ["_cache", "_sessions", "_tmp"] {
+            let p = self.root.join(d);
+            if p.exists() {
+                let _ = ffmpeg::hidden("attrib").arg("+h").arg(&p).status();
+            }
+        }
+    }
+
+    /// Still images live outside the match folder, so that folder only holds
+    /// the videos (and match.json).
+    pub fn thumbs_dir(&self, id: &str) -> PathBuf {
+        self.root.join("_cache").join("thumbs").join(id)
+    }
+
+    /// Move stills left in match folders by older versions into the cache.
+    pub fn migrate_thumbs(&self) {
+        let Ok(rd) = fs::read_dir(self.matches_dir()) else {
+            return;
+        };
+        for e in rd.flatten() {
+            let dir = e.path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let id = e.file_name().to_string_lossy().to_string();
+            let Ok(files) = fs::read_dir(&dir) else {
+                continue;
+            };
+            for f in files.flatten() {
+                let name = f.file_name().to_string_lossy().to_string();
+                if !name.to_ascii_lowercase().ends_with(".jpg") {
+                    continue;
+                }
+                let to = self.thumbs_dir(&id);
+                if fs::create_dir_all(&to).is_ok() {
+                    let _ = fs::rename(f.path(), to.join(&name));
+                }
+            }
+        }
     }
 
     /// Short folder name for a match: `261001-2130`, `-2`, `-3`… on a clash.
@@ -216,6 +267,7 @@ impl Lib {
             }
             let new = self.new_id(m.created_at_ms);
             if fs::rename(&m.dir, self.matches_dir().join(&new)).is_ok() {
+                let _ = fs::rename(self.thumbs_dir(&m.id), self.thumbs_dir(&new));
                 let mut r = m.clone();
                 r.id = new;
                 let _ = self.save(&r);
@@ -713,12 +765,14 @@ pub fn build_record(
                 .map(|f| (dir.join(f), moment(h) - h.file_start.unwrap_or(h.start)))
         }
     };
+    let tdir = lib.thumbs_dir(&id);
+    let _ = fs::create_dir_all(&tdir);
     for h in highlights.iter_mut() {
         let name = format!("{}.jpg", h.id);
         if let Some((src, t)) = still_src(h) {
-            make_thumb(ffmpeg_path, &src, t, &dir.join(&name));
+            make_thumb(ffmpeg_path, &src, t, &tdir.join(&name));
         }
-        if dir.join(&name).exists() {
+        if tdir.join(&name).exists() {
             h.thumb = Some(name);
         }
     }
@@ -734,7 +788,7 @@ pub fn build_record(
             })
             .sum()
     };
-    let thumb = dir.join("thumb.jpg");
+    let thumb = tdir.join("thumb.jpg");
     match highlights
         .iter()
         .max_by_key(|h| score(h))
@@ -793,10 +847,12 @@ pub fn build_record(
         height: meta.height,
         encoder: meta.encoder.clone(),
         dir: String::new(),
+        thumb_dir: String::new(),
     };
     lib.save(&rec)?;
     let mut out = rec;
     out.dir = dir.to_string_lossy().to_string();
+    out.thumb_dir = tdir.to_string_lossy().to_string();
     Ok(Some(out))
 }
 
@@ -1481,7 +1537,6 @@ pub fn ensure_thumbs(lib: &Lib, ffmpeg_path: &Path, id: &str) -> Option<MatchRec
     if rec.highlights.iter().all(|h| h.thumb.is_some()) {
         return Some(rec);
     }
-    let dir = PathBuf::from(&rec.dir);
     let events = rec.events.clone();
     let mut changed = false;
     for i in 0..rec.highlights.len() {
@@ -1501,8 +1556,10 @@ pub fn ensure_thumbs(lib: &Lib, ffmpeg_path: &Path, id: &str) -> Option<MatchRec
             continue;
         };
         let name = format!("{}.jpg", h.id);
-        make_thumb(ffmpeg_path, &src, local, &dir.join(&name));
-        if dir.join(&name).exists() {
+        let tdir = PathBuf::from(&rec.thumb_dir);
+        let _ = fs::create_dir_all(&tdir);
+        make_thumb(ffmpeg_path, &src, local, &tdir.join(&name));
+        if tdir.join(&name).exists() {
             rec.highlights[i].thumb = Some(name);
             changed = true;
         }

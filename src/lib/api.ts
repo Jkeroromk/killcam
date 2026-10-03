@@ -238,6 +238,8 @@ export interface MatchRecord {
   stats: MatchStats | null;
   favorite: boolean;
   thumbnail: string | null;
+  /** folder of the still images (outside the match folder) */
+  thumbDir: string;
   sizeBytes: number;
   hasGameAudio: boolean;
   hasMic: boolean;

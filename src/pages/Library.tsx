@@ -13,7 +13,7 @@ export function MatchCard(props: { m: MatchRecord; onOpen: () => void; onFavorit
   return (
     <div className="mcard" role="button" tabIndex={0} onClick={props.onOpen} onKeyDown={(e) => e.key === "Enter" && props.onOpen()}>
       <div className="mcard-thumb">
-        {m.thumbnail ? <img src={fileUrl(joinPath(m.dir, m.thumbnail))} alt="" loading="lazy" /> : null}
+        {m.thumbnail ? <img src={fileUrl(joinPath(m.thumbDir, m.thumbnail))} alt="" loading="lazy" /> : null}
         <div className="mcard-top">
           {st && st.place > 0 && <span className={"place" + (won ? " is-win" : "")}>#{st.place}</span>}
           {won && <span className="chip">吃鸡</span>}

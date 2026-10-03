@@ -1345,11 +1345,11 @@ html.is-mini .spinner {
   font-size: 11px;
   color: var(--faint);
 }
+/* one column: the video gets the full width, highlights sit underneath */
 .match-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 20px;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 .player {
   display: flex;
@@ -1364,7 +1364,7 @@ html.is-mini .spinner {
 .player-frame video {
   width: 100%;
   display: block;
-  max-height: 64vh;
+  max-height: 70vh;
   background: #000;
 }
 .player-empty {
@@ -1414,12 +1414,7 @@ html.is-mini .spinner {
 .side {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  position: sticky;
-  top: 0;
-  max-height: calc(100vh - 120px);
-  overflow: auto;
-  padding-right: 2px;
+  gap: 12px;
 }
 .side-head {
   display: flex;
@@ -1435,15 +1430,23 @@ html.is-mini .spinner {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+}
+.hl-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.ev-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 2px 16px;
 }
 .hl {
-  display: grid;
-  grid-template-columns: 112px 1fr;
-  gap: 10px;
-  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 6px 10px;
+  height: 100%;
   border-radius: var(--r-md);
   background: var(--panel);
   border: 1px solid transparent;
@@ -1495,9 +1498,9 @@ html.is-mini .spinner {
 .hl-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
-  padding-top: 2px;
+  padding: 0 4px;
 }
 .hl-title {
   font-weight: 600;
@@ -1514,9 +1517,12 @@ html.is-mini .spinner {
 }
 .hl-pick {
   position: absolute;
-  right: 8px;
-  top: 8px;
+  right: 12px;
+  top: 12px;
+  width: 16px;
+  height: 16px;
   accent-color: var(--accent);
+  cursor: pointer;
 }
 .ev-list button {
   width: 100%;
@@ -2108,15 +2114,6 @@ html.is-mini .spinner {
   margin: 0;
 }
 
-@media (max-width: 1180px) {
-  .match-grid {
-    grid-template-columns: 1fr;
-  }
-  .side {
-    position: static;
-    max-height: none;
-  }
-}
 
 /* ---------- in-game mini window ---------- */
 

@@ -1467,6 +1467,8 @@ pub fn run() {
                 let _ = std::fs::remove_dir_all(lib.tmp_dir());
                 let _ = std::fs::create_dir_all(lib.tmp_dir());
                 lib.migrate_ids();
+                lib.migrate_thumbs();
+                lib.hide_internal_dirs();
             }
 
             let handle = app.handle().clone();

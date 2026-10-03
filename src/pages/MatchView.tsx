@@ -160,7 +160,7 @@ export default function MatchView(props: { id: string; back: () => void }) {
   const st = m.stats;
   const hasRange = range.a != null && range.b != null && Math.abs((range.b ?? 0) - (range.a ?? 0)) >= 1;
 
-  const thumbOf = (h: Highlight) => (h.thumb ? fileUrl(joinPath(m.dir, h.thumb)) : m.thumbnail ? fileUrl(joinPath(m.dir, m.thumbnail)) : null);
+  const thumbOf = (h: Highlight) => (h.thumb ? fileUrl(joinPath(m.thumbDir, h.thumb)) : m.thumbnail ? fileUrl(joinPath(m.thumbDir, m.thumbnail)) : null);
 
   return (
     <div className="page match">
