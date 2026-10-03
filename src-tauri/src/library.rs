@@ -1212,6 +1212,11 @@ pub fn process_sessions(
                     continue;
                 }
                 progress("正在生成这局的高光");
+                let title_ms = if piece.from == i64::MIN {
+                    w0.max(meta.start_ms)
+                } else {
+                    piece.from
+                };
                 match build_record(
                     lib,
                     ffmpeg_path,
@@ -1221,11 +1226,7 @@ pub fn process_sessions(
                     &segs,
                     BuildInput {
                         kind: "session",
-                        title_time_ms: if piece.from == i64::MIN {
-                            w0.max(meta.start_ms)
-                        } else {
-                            piece.from
-                        },
+                        title_time_ms: title_ms,
                         window: (w0, w1),
                         events: Vec::new(),
                         pubg: None,
@@ -1308,6 +1309,17 @@ pub fn process_sessions(
             } else {
                 piece.from
             };
+            // bits of a game whose real record exists (e.g. a marker in the lobby)
+            let labels = if piece.official
+                && meta
+                    .built_windows
+                    .iter()
+                    .any(|(a, b)| *a < piece.to && *b > piece.from)
+            {
+                Some(("普通对局".to_string(), String::new()))
+            } else {
+                piece.labels.clone()
+            };
             match build_record(
                 lib,
                 ffmpeg_path,
@@ -1323,17 +1335,7 @@ pub fn process_sessions(
                     pubg: None,
                     stats: None,
                     clips_only: !full_session,
-                    // bits of a game whose real record exists (e.g. a marker in the lobby)
-                    labels: if piece.official
-                        && meta
-                            .built_windows
-                            .iter()
-                            .any(|(a, b)| *a < piece.to && *b > piece.from)
-                    {
-                        Some(("普通对局".into(), String::new()))
-                    } else {
-                        piece.labels.clone()
-                    },
+                    labels,
                     reuse_id: None,
                     pending_api: false,
                     mark_used: true,
