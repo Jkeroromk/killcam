@@ -184,7 +184,14 @@ export default function Onboarding(props: { initial: Settings; onDone: (s: Setti
               <VideoSection settings={settings} set={set} hardware={hardware} />
             </Step>
           )}
-          {key === "perf" && <PerfStep settings={settings} gpuScale={scaleWorks(hardware, settings.video.encoder)} result={perf} onResult={setPerf} goBack={() => setStep(3)} />}
+          {key === "perf" && <PerfStep
+              settings={settings}
+              gpuScale={scaleWorks(hardware, settings.video.encoder)}
+              result={perf}
+              onResult={setPerf}
+              goBack={() => setStep(3)}
+              onApply={(patch) => set((s) => ({ ...s, video: { ...s.video, ...patch } }))}
+            />}
           {key === "audio" && (
             <Step title="声音" lead="游戏和麦克风分成两条音轨录，后期可以单独调音量。对着麦克风说句话，看看电平条有没有动。">
               <AudioSection settings={settings} set={set} gameRunning={!!game?.running} />
@@ -346,7 +353,38 @@ function GameCard(props: { game: GameInfo | null; settings: Settings }) {
   );
 }
 
-export function PerfStep(props: { settings: Settings; gpuScale?: boolean; result: PerfResult | null; onResult: (r: PerfResult | null) => void; goBack: () => void }) {
+type VideoPatch = Partial<Settings["video"]>;
+
+/**
+ * The next step down when the test couldn't keep up (or used a lot of CPU):
+ * lower resolution first (keeps 60 fps for aiming), then 30 fps.
+ */
+export function perfAdvice(r: PerfResult, v: Settings["video"], canScale: boolean): { patch: VideoPatch; text: string } | null {
+  const heavyCpu = r.cpuPercent >= 25;
+  if (r.ok && !heavyCpu) return null;
+  // what was actually recorded (0 / native in the settings means the screen height)
+  const h = r.height || v.height || v.monitorHeight;
+  if (canScale && h > 1080) {
+    return { patch: { preset: "balanced", height: 1080, fps: v.fps, bitrateMbps: 20 }, text: "降到 1080p（帧率不变）" };
+  }
+  if (canScale && h > 720) {
+    return { patch: { preset: "performance", height: 720, fps: v.fps, bitrateMbps: 10 }, text: "降到 720p（帧率不变）" };
+  }
+  if (v.fps > 30) {
+    return { patch: { preset: "custom", fps: 30, bitrateMbps: Math.max(6, Math.round(v.bitrateMbps * 0.6)) }, text: "降到 30 帧" };
+  }
+  return null;
+}
+
+export function PerfStep(props: {
+  settings: Settings;
+  gpuScale?: boolean;
+  result: PerfResult | null;
+  onResult: (r: PerfResult | null) => void;
+  goBack: () => void;
+  /** apply a suggested lower setting (then the test runs again with it) */
+  onApply?: (patch: VideoPatch) => void;
+}) {
   const [running, setRunning] = useState(false);
   const [prog, setProg] = useState<PerfProgress | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -365,14 +403,15 @@ export function PerfStep(props: { settings: Settings; gpuScale?: boolean; result
     };
   }, []);
 
-  const run = async () => {
+  const run = async (patch?: VideoPatch) => {
     setRunning(true);
     setErr(null);
     props.onResult(null);
     setProg(null);
     unRef.current = on<PerfProgress>("perf-progress", setProg);
     try {
-      const res = await api.runPerfTest(props.settings, 12);
+      const s = patch ? { ...props.settings, video: { ...props.settings.video, ...patch } } : props.settings;
+      const res = await api.runPerfTest(s, 12);
       props.onResult(res);
     } catch (e) {
       setErr(errText(e));
@@ -391,7 +430,7 @@ export function PerfStep(props: { settings: Settings; gpuScale?: boolean; result
 
       {!running && !r && (
         <div className="perf-start">
-          <Button kind="primary" onClick={run}>
+          <Button kind="primary" onClick={() => run()}>
             <Play size={16} /> 开始 12 秒测试
           </Button>
           <span className="muted">
@@ -426,14 +465,36 @@ export function PerfStep(props: { settings: Settings; gpuScale?: boolean; result
             <Num label="每分钟" value={`${r.mbPerMinute.toFixed(0)} MB`} sub={`${r.bitrateMbps.toFixed(1)} Mbps`} />
           </div>
           {r.videoPath && <video className="perf-video" src={fileUrl(r.videoPath)} controls />}
-          {!r.ok && (
-            <div className="perf-advice">
-              <p>建议先降一档画质再测：</p>
-              <Button kind="ghost" small onClick={props.goBack}>
-                回到画质设置
-              </Button>
-            </div>
-          )}
+          {(() => {
+            const a = perfAdvice(r, props.settings.video, props.gpuScale ?? true);
+            if (!a && r.ok) return null;
+            return (
+              <div className="perf-advice">
+                <p>
+                  {!r.ok
+                    ? a
+                      ? `这台电脑现在的设置跟不上，建议${a.text}再测一次。`
+                      : "已经是最低一档了还跟不上：关掉其他占资源的程序，或更新显卡驱动后再试。"
+                    : `录制占了整台电脑 ${r.cpuPercent.toFixed(0)}% 的 CPU，打游戏时可能会卡，建议${a!.text}。`}
+                </p>
+                {a && props.onApply && (
+                  <Button
+                    kind={r.ok ? "ghost" : "primary"}
+                    small
+                    onClick={() => {
+                      props.onApply!(a.patch);
+                      run(a.patch);
+                    }}
+                  >
+                    {a.text}并重测
+                  </Button>
+                )}
+                <Button kind="ghost" small onClick={props.goBack}>
+                  自己调画质
+                </Button>
+              </div>
+            );
+          })()}
           {r.warnings.length > 0 && (
             <ul className="warn-list">
               {r.warnings.map((w) => (
@@ -442,7 +503,7 @@ export function PerfStep(props: { settings: Settings; gpuScale?: boolean; result
             </ul>
           )}
           {!r.ok && r.log && <pre className="log">{r.log}</pre>}
-          <Button kind="ghost" small onClick={run}>
+          <Button kind="ghost" small onClick={() => run()}>
             再测一次
           </Button>
         </div>

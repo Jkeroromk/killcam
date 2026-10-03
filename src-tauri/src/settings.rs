@@ -191,6 +191,8 @@ pub struct Settings {
     pub mini_window: bool,
     /// start with Windows, hidden in the tray
     pub launch_at_login: bool,
+    /// short sound when F9 marks a highlight (a low one when nothing is recording)
+    pub marker_sound: bool,
 }
 
 impl Default for Settings {
@@ -211,6 +213,7 @@ impl Default for Settings {
             screen_detect: true,
             mini_window: true,
             launch_at_login: true,
+            marker_sound: true,
         }
     }
 }

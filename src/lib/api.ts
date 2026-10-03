@@ -35,6 +35,8 @@ export interface Settings {
   screenDetect: boolean;
   miniWindow: boolean;
   launchAtLogin: boolean;
+  /** short sound when F9 marks a highlight */
+  markerSound: boolean;
 }
 
 export interface AudioSettings {
@@ -255,6 +257,8 @@ export interface ExportOptions {
   aspect: "source" | "16:9" | "9:16";
   height: number;
   audio: "mix" | "all";
+  /** keep the file under this many MB (Discord / WeChat); 0 = no limit */
+  sizeMb: number;
 }
 
 export interface StorageInfo {
@@ -299,6 +303,7 @@ export const api = {
   exportMontage: (id: string, highlightIds: string[], options: ExportOptions) =>
     invoke<string>("export_montage", { id, highlightIds, options }),
   reveal: (path: string) => invoke<void>("reveal", { path }),
+  exportDiagnostics: (path: string) => invoke<void>("export_diagnostics", { path }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   storageInfo: () => invoke<StorageInfo>("storage_info"),
   checkFfmpeg: (path: string | null) => invoke<FfmpegInfo | null>("check_ffmpeg", { path }),

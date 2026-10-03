@@ -414,6 +414,33 @@ pub fn start(
     })
 }
 
+/// `<library>/_cache/logs/<session>-<part>ffmpeg.log` for a session folder
+/// `<library>/_sessions/<session>` (or `<library>/_tmp/<perf test>`).
+fn keep_log_path(session_dir: &Path, prefix: &str) -> Option<PathBuf> {
+    let name = session_dir.file_name()?.to_string_lossy().to_string();
+    let root = session_dir.parent()?.parent()?;
+    let logs = root.join("_cache").join("logs");
+    fs::create_dir_all(&logs).ok()?;
+    Some(logs.join(format!("{name}-{prefix}ffmpeg.log")))
+}
+
+/// Keep the newest 12 kept logs.
+fn prune_logs(dir: Option<&Path>) {
+    let Some(dir) = dir else { return };
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    let mut files: Vec<(std::time::SystemTime, PathBuf)> = rd
+        .flatten()
+        .filter_map(|e| {
+            let m = e.metadata().ok()?.modified().ok()?;
+            Some((m, e.path()))
+        })
+        .collect();
+    files.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, p) in files.into_iter().skip(12) {
+        let _ = fs::remove_file(p);
+    }
+}
+
 /// Spawn one ffmpeg part writing `pNN_seg_xxxxx.ts` into the session folder.
 #[allow(clippy::too_many_arguments)]
 fn launch(
@@ -588,6 +615,10 @@ fn launch(
         let log = log.clone();
         let head = log_head.clone();
         let logfile = dir.join(format!("{prefix}ffmpeg.log"));
+        // the session folder is deleted once it's processed: keep a copy of
+        // each part's log for "export diagnostics"
+        let keep = keep_log_path(dir, &prefix);
+        let cmdline = args.join(" ");
         thread::spawn(move || {
             let mut buf = Vec::new();
             let mut chunk = [0u8; 4096];
@@ -622,7 +653,12 @@ fn launch(
                 .lock()
                 .map(|l| l.iter().cloned().collect::<Vec<_>>().join("\n"))
                 .unwrap_or_default();
-            let _ = fs::write(logfile, format!("{h}\n----- tail -----\n{t}"));
+            let text = format!("{h}\n----- tail -----\n{t}");
+            if let Some(k) = keep {
+                let _ = fs::write(&k, format!("$ ffmpeg {cmdline}\n\n{text}"));
+                prune_logs(k.parent());
+            }
+            let _ = fs::write(logfile, text);
         });
     }
 

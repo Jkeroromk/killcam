@@ -12,6 +12,38 @@ import {
   type SetSettings,
 } from "../components/sections";
 import { PerfStep } from "../onboarding/Onboarding";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+
+/** One text file with versions, hardware, encoder test and recent logs, for bug reports. */
+function DiagnosticsField() {
+  const [state, setState] = useState<{ busy: boolean; ok?: string; err?: string }>({ busy: false });
+  const run = async () => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const name = `KillCam-诊断-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.txt`;
+    const path = await saveDialog({ defaultPath: name, filters: [{ name: "文本", extensions: ["txt"] }] });
+    if (!path) return;
+    setState({ busy: true });
+    try {
+      await api.exportDiagnostics(path);
+      setState({ busy: false, ok: "已导出" });
+      api.reveal(path).catch(() => {});
+    } catch (e) {
+      setState({ busy: false, err: errText(e) });
+    }
+  };
+  return (
+    <Field label="诊断信息" hint="遇到问题时导出，发到 GitHub Issues 或发给作者。里面有显卡、编码器检测和最近的录制日志，不含 API Key">
+      <div className="row">
+        <Button kind="ghost" small onClick={run} disabled={state.busy}>
+          {state.busy ? <Spinner /> : "导出诊断信息"}
+        </Button>
+        {state.ok && <span className="ok-text small">{state.ok}</span>}
+        {state.err && <span className="warn-text small">{state.err}</span>}
+      </div>
+    </Field>
+  );
+}
 
 function Card(props: { id: string; title: string; children: ReactNode; note?: string }) {
   return (
@@ -137,6 +169,9 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
 
       <Card id="hotkeys" title="快捷键">
         <HotkeySection settings={draft} set={set} />
+        <Field label="标记提示音" hint="按标记键时「叮咚」一声确认标上了；没在录制时会响一声低音。游戏声音选「只录 PUBG」时不会被录进视频">
+          <Toggle checked={draft.markerSound} onChange={(v) => set((s) => ({ ...s, markerSound: v }))} label={draft.markerSound ? "开启" : "关闭"} />
+        </Field>
       </Card>
 
       <Card id="storage" title="存储">
@@ -144,7 +179,14 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
       </Card>
 
       <Card id="perf" title="性能测试" note={dirty ? "用的是下面还没保存的设置" : undefined}>
-        {recording ? <p className="muted">正在录制，停止后才能测试。</p> : <PerfStep settings={draft} gpuScale={scaleWorks(hw, draft.video.encoder)} result={perf} onResult={setPerf} goBack={() => document.getElementById("video")?.scrollIntoView()} />}
+        {recording ? <p className="muted">正在录制，停止后才能测试。</p> : <PerfStep
+            settings={draft}
+            gpuScale={scaleWorks(hw, draft.video.encoder)}
+            result={perf}
+            onResult={setPerf}
+            goBack={() => document.getElementById("video")?.scrollIntoView()}
+            onApply={(patch) => set((s) => ({ ...s, video: { ...s.video, ...patch } }))}
+          />}
       </Card>
 
       <Card id="advanced" title="高级">
@@ -179,6 +221,7 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
             重新走一遍初次设置
           </Button>
         </Field>
+        <DiagnosticsField />
       </Card>
 
       <div className={"savebar" + (dirty || msg ? " is-shown" : "")}>

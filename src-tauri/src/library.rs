@@ -1245,6 +1245,46 @@ pub struct ExportOptions {
     pub height: u32,
     /// mix | all
     pub audio: String,
+    /// keep the file under this many MB (10^6 bytes) for Discord / WeChat; 0 = no limit
+    #[serde(default)]
+    pub size_mb: u32,
+}
+
+/// Bitrates that fit `dur` seconds into the size limit.
+#[derive(Debug, Clone, Copy)]
+struct Budget {
+    video_kbps: u32,
+    audio_kbps: u32,
+    /// highest output height that still looks fine at this bitrate
+    max_height: u32,
+    /// halve the frame rate when bits are scarce
+    fps30: bool,
+}
+
+fn budget_for(size_mb: u32, dur: f64, margin: f64) -> Result<Budget, String> {
+    let dur = dur.max(1.0);
+    let total = size_mb as f64 * 8000.0 * margin / dur;
+    let audio = if total < 800.0 { 64 } else { 96 };
+    let video = total - audio as f64;
+    if video < 250.0 {
+        let max_s = (size_mb as f64 * 8000.0 * 0.9 / 650.0).floor();
+        return Err(format!(
+            "这段有 {dur:.0} 秒，压到 {size_mb} MB 以内画面会糊掉。建议剪到 {max_s:.0} 秒以内，或者选大一点的上限"
+        ));
+    }
+    let max_height = if video >= 3500.0 {
+        1080
+    } else if video >= 1500.0 {
+        720
+    } else {
+        480
+    };
+    Ok(Budget {
+        video_kbps: video as u32,
+        audio_kbps: audio,
+        max_height,
+        fps30: video < 2500.0,
+    })
 }
 
 fn even(v: u32) -> u32 {
@@ -1293,6 +1333,7 @@ fn export_filter(rec: &MatchRecord, o: &ExportOptions) -> Option<String> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn encode_range(
     ffmpeg_path: &Path,
     encoder: &str,
@@ -1302,7 +1343,25 @@ fn encode_range(
     end: f64,
     o: &ExportOptions,
     out: &Path,
+    budget: Option<Budget>,
 ) -> Result<(), String> {
+    // a size limit: lower the resolution if needed, one mixed audio track
+    let limited;
+    let o = match budget {
+        Some(b) => {
+            limited = ExportOptions {
+                height: if o.height == 0 || o.height > b.max_height {
+                    b.max_height
+                } else {
+                    o.height
+                },
+                audio: "mix".into(),
+                ..o.clone()
+            };
+            &limited
+        }
+        None => o,
+    };
     let mut a: Vec<String> = vec![
         "-hide_banner".into(),
         "-loglevel".into(),
@@ -1324,14 +1383,39 @@ fn encode_range(
     } else {
         a.extend(["-map".to_string(), "0:a:0?".to_string()]);
     }
-    a.extend(ffmpeg::export_encoder_args(encoder));
+    let audio_rate = match budget {
+        Some(b) => {
+            // software x264 with a hard rate cap: the size comes out predictable,
+            // which the hardware encoders don't guarantee
+            a.extend([
+                "-c:v".to_string(),
+                "libx264".to_string(),
+                "-preset".to_string(),
+                "veryfast".to_string(),
+                "-b:v".to_string(),
+                format!("{}k", b.video_kbps),
+                "-maxrate".to_string(),
+                format!("{}k", b.video_kbps),
+                "-bufsize".to_string(),
+                format!("{}k", b.video_kbps * 2),
+            ]);
+            if b.fps30 {
+                a.extend(["-r".to_string(), "30".to_string()]);
+            }
+            format!("{}k", b.audio_kbps)
+        }
+        None => {
+            a.extend(ffmpeg::export_encoder_args(encoder));
+            "192k".to_string()
+        }
+    };
     a.extend([
         "-pix_fmt".to_string(),
         "yuv420p".to_string(),
         "-c:a".to_string(),
         "aac".to_string(),
         "-b:a".to_string(),
-        "192k".to_string(),
+        audio_rate,
         "-movflags".to_string(),
         "+faststart".to_string(),
         out.to_string_lossy().to_string(),
@@ -1418,11 +1502,15 @@ fn source_for(rec: &MatchRecord, start: f64, end: f64) -> Option<(PathBuf, f64, 
 }
 
 pub fn export_name(rec: &MatchRecord, title: &str, o: &ExportOptions) -> String {
-    let tag = match o.aspect.as_str() {
+    let mut tag = match o.aspect.as_str() {
         "9:16" => "_竖屏",
         "16:9" => "_16x9",
         _ => "",
-    };
+    }
+    .to_string();
+    if o.size_mb > 0 {
+        tag.push_str(&format!("_{}MB", o.size_mb));
+    }
     sanitize(&format!(
         "{}_{}_{}{}_{}.mp4",
         local_stamp(rec.created_at_ms, "%Y%m%d-%H%M"),
@@ -1445,8 +1533,23 @@ pub fn export_range(
 ) -> Result<PathBuf, String> {
     let (src, a, b) = source_for(rec, start, end).ok_or("这段没有可用的录像")?;
     let out = lib.exports_dir().join(export_name(rec, title, o));
-    encode_range(ffmpeg_path, encoder, rec, &src, a, b, o, &out)?;
-    Ok(out)
+    if o.size_mb == 0 {
+        encode_range(ffmpeg_path, encoder, rec, &src, a, b, o, &out, None)?;
+        return Ok(out);
+    }
+    // aim a little under the limit; if the encoder still overshoots, once more with less
+    let limit = o.size_mb as u64 * 1_000_000;
+    for margin in [0.92, 0.78] {
+        let budget = budget_for(o.size_mb, b - a, margin)?;
+        encode_range(ffmpeg_path, encoder, rec, &src, a, b, o, &out, Some(budget))?;
+        if fs::metadata(&out).map(|m| m.len()).unwrap_or(0) <= limit {
+            return Ok(out);
+        }
+    }
+    Err(format!(
+        "压不到 {} MB 以内，建议剪短一点再试",
+        o.size_mb
+    ))
 }
 
 pub fn export_montage(
@@ -1459,6 +1562,18 @@ pub fn export_montage(
 ) -> Result<PathBuf, String> {
     let tmp = lib.tmp_dir().join(format!("montage_{}", now_ms()));
     fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+    // with a size limit every part gets the same bitrate, from the total length
+    let budget = if o.size_mb > 0 {
+        let total: f64 = rec
+            .highlights
+            .iter()
+            .filter(|h| ids.contains(&h.id))
+            .map(|h| (h.end - h.start).max(0.5))
+            .sum();
+        Some(budget_for(o.size_mb, total, 0.88)?)
+    } else {
+        None
+    };
     let mut parts = Vec::new();
     for (i, h) in rec
         .highlights
@@ -1470,7 +1585,7 @@ pub fn export_montage(
             continue;
         };
         let p = tmp.join(format!("part_{:03}.mp4", i));
-        encode_range(ffmpeg_path, encoder, rec, &src, a, b, o, &p)?;
+        encode_range(ffmpeg_path, encoder, rec, &src, a, b, o, &p, budget)?;
         parts.push(format!("part_{:03}.mp4", i));
     }
     if parts.is_empty() {

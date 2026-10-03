@@ -8,6 +8,7 @@ mod mini;
 mod pubg;
 mod recorder;
 mod settings;
+mod sound;
 
 use library::{ExportOptions, Lib, MatchRecord};
 use recorder::{now_ms, LiveStats, Recording, StartOptions};
@@ -359,6 +360,9 @@ fn add_marker_now(app: &AppHandle, st: &St) -> bool {
         }
         None => false,
     };
+    if lk(&st.settings).marker_sound {
+        sound::marker(ok);
+    }
     if ok {
         let _ = app.emit("marker", now_ms());
         emit_status(app, st);
@@ -1300,6 +1304,124 @@ async fn export_montage(
     .await
 }
 
+/// Everything useful for figuring out a problem on someone else's computer,
+/// in one text file: versions, hardware, encoder test, settings (without the
+/// API key), recent errors and the last recording logs.
+#[tauri::command]
+async fn export_diagnostics(st: State<'_, St>, path: String) -> Result<(), String> {
+    let st = st.inner().clone();
+    blocking(move || {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        let line = |o: &mut String, k: &str, v: &str| {
+            let _ = writeln!(o, "{k}: {v}");
+        };
+        let _ = writeln!(out, "===== KillCam 诊断信息 =====");
+        line(&mut out, "导出时间", &chrono::Local::now().format("%Y-%m-%d %H:%M:%S %z").to_string());
+        line(&mut out, "KillCam 版本", &st.version);
+        line(
+            &mut out,
+            "系统",
+            &sysinfo::System::long_os_version().unwrap_or_default(),
+        );
+        {
+            let mut sys = sysinfo::System::new();
+            sys.refresh_cpu_all();
+            sys.refresh_memory();
+            let cpu = sys
+                .cpus()
+                .first()
+                .map(|c| c.brand().trim().to_string())
+                .unwrap_or_default();
+            line(&mut out, "CPU", &format!("{cpu}（{} 线程）", sys.cpus().len()));
+            line(
+                &mut out,
+                "内存",
+                &format!("{:.1} GB", sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0),
+            );
+        }
+        // every GPU with its driver version (laptops often have two)
+        let gpus = ffmpeg::hidden("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name + '  驱动 ' + $_.DriverVersion }",
+            ])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default();
+        let _ = writeln!(out, "显卡:\n{gpus}");
+
+        let _ = writeln!(out, "\n===== FFmpeg =====");
+        match st.ffmpeg() {
+            Ok(p) => {
+                line(&mut out, "位置", &p.to_string_lossy());
+                let info = ffmpeg::info(&p);
+                let _ = writeln!(out, "{info:?}");
+            }
+            Err(e) => line(&mut out, "错误", &e),
+        }
+
+        let _ = writeln!(out, "\n===== 显卡 / 编码器检测 =====");
+        match lk(&st.hw_cache).clone() {
+            Some(h) => {
+                let _ = writeln!(out, "{}", serde_json::to_string_pretty(&h).unwrap_or_default());
+            }
+            None => {
+                let _ = writeln!(out, "（还没检测过：在 设置 → 画质 里点「重新检测」后再导出）");
+            }
+        }
+
+        let _ = writeln!(out, "\n===== 设置（不含 API Key）=====");
+        let mut s = lk(&st.settings).clone();
+        if !s.pubg.api_key.is_empty() {
+            s.pubg.api_key = "（已填写，已隐藏）".into();
+        }
+        let _ = writeln!(out, "{}", serde_json::to_string_pretty(&s).unwrap_or_default());
+
+        let _ = writeln!(out, "\n===== 状态 =====");
+        line(&mut out, "正在录制", &lk(&st.recording).is_some().to_string());
+        line(&mut out, "最近错误", &lk(&st.last_error).clone().unwrap_or_else(|| "无".into()));
+        for n in lk(&st.notices).iter() {
+            line(&mut out, "提示", n);
+        }
+        if let Some(r) = lk(&st.recording).as_ref() {
+            let _ = writeln!(out, "当前录制日志:\n{}", r.log_tail(30));
+        }
+
+        let _ = writeln!(out, "\n===== 最近的录制日志 =====");
+        let logs_dir = st.lib().ok().map(|l| l.root.join("_cache").join("logs"));
+        let mut files: Vec<(std::time::SystemTime, PathBuf)> = logs_dir
+            .and_then(|d| std::fs::read_dir(d).ok())
+            .map(|rd| {
+                rd.flatten()
+                    .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+                    .collect()
+            })
+            .unwrap_or_default();
+        files.sort_by(|a, b| b.0.cmp(&a.0));
+        if files.is_empty() {
+            let _ = writeln!(out, "（没有：还没录过，或者是 0.1.4 之前录的）");
+        }
+        for (_, f) in files.iter().take(6) {
+            let text = std::fs::read_to_string(f).unwrap_or_default();
+            let lines: Vec<&str> = text.lines().collect();
+            let keep = if lines.len() > 160 {
+                lines[..40].join("\n") + "\n…\n" + &lines[lines.len() - 120..].join("\n")
+            } else {
+                lines.join("\n")
+            };
+            let _ = writeln!(
+                out,
+                "\n--- {} ---\n{keep}",
+                f.file_name().unwrap_or_default().to_string_lossy()
+            );
+        }
+        std::fs::write(&path, out).map_err(|e| format!("保存失败：{e}"))
+    })
+    .await
+}
+
 #[tauri::command]
 fn reveal(path: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
@@ -1678,6 +1800,7 @@ pub fn run() {
             export_clip,
             export_montage,
             reveal,
+            export_diagnostics,
             open_url,
             storage_info,
             check_ffmpeg,

@@ -11,7 +11,7 @@ export default function MatchView(props: { id: string; back: () => void }) {
   const [active, setActive] = useState<string | null>(null);
   const [t, setT] = useState(0);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [opts, setOpts] = useState<ExportOptions>({ aspect: "source", height: 1080, audio: "mix" });
+  const [opts, setOpts] = useState<ExportOptions>({ aspect: "source", height: 1080, audio: "mix", sizeMb: 0 });
   const [range, setRange] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
   const [exporting, setExporting] = useState<string | null>(null);
   const [exported, setExported] = useState<string | null>(null);
@@ -358,11 +358,21 @@ export default function MatchView(props: { id: string; back: () => void }) {
                 ]}
               />
               <Segmented
-                value={opts.audio}
+                value={opts.sizeMb > 0 ? "mix" : opts.audio}
                 onChange={(a) => setOpts({ ...opts, audio: a })}
                 options={[
                   { value: "mix", label: "混音" },
-                  { value: "all", label: "分轨" },
+                  { value: "all", label: "分轨", disabled: opts.sizeMb > 0 },
+                ]}
+              />
+              <Segmented
+                value={opts.sizeMb}
+                onChange={(n) => setOpts({ ...opts, sizeMb: n })}
+                options={[
+                  { value: 0, label: "不限大小" },
+                  { value: 10, label: "10MB" },
+                  { value: 25, label: "25MB" },
+                  { value: 50, label: "50MB" },
                 ]}
               />
               <span className="grow" />
@@ -373,6 +383,12 @@ export default function MatchView(props: { id: string; back: () => void }) {
                 <Layers size={14} /> 合集 · {picked.size}
               </Button>
             </div>
+            {opts.sizeMb > 0 && (
+              <p className="muted small">
+                {opts.sizeMb === 10 ? "10MB 是 Discord 免费用户的上限。" : opts.sizeMb === 25 ? "25MB 适合大多数聊天软件，画质好一些。" : "50MB 适合 Discord Nitro Basic。"}
+                会自动降低分辨率和帧率来压到这个大小以内，片段越长越模糊，建议 30 秒以内。
+              </p>
+            )}
             {!clipsOnly && (
               <div className="export-row">
                 <span className="muted small">自选区间</span>

@@ -2066,8 +2066,13 @@ html.is-mini .spinner {
 }
 .perf-advice {
   display: flex;
-  gap: 12px;
+  gap: 10px 12px;
   align-items: center;
+  flex-wrap: wrap;
+}
+.perf-advice p {
+  margin: 0;
+  flex-basis: 100%;
 }
 .warn-list {
   margin: 0;
