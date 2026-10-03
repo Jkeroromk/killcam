@@ -114,7 +114,8 @@ export default function StatsPage(props: { libVersion: number; openMatch: (id: s
     if (!all) return null;
     // newest first from the backend
     const official = all.filter((m) => m.stats && m.stats.place > 0);
-    const others = all.filter((m) => !(m.stats && m.stats.place > 0));
+    // quick records still waiting for PUBG's data are neither yet
+    const others = all.filter((m) => !(m.stats && m.stats.place > 0) && !m.pendingApi);
     const pick = range ? official.slice(0, range) : official;
     const n = pick.length;
     const sum = (f: (m: MatchRecord) => number) => pick.reduce((a, m) => a + f(m), 0);

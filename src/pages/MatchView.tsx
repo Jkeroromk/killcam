@@ -5,7 +5,7 @@ import { KIND_LABEL, bytes, clock, eventLine, when } from "../lib/format";
 import { Button, KindIcon, Segmented, Spinner } from "../components/ui";
 import { Timeline } from "../components/Timeline";
 
-export default function MatchView(props: { id: string; back: () => void }) {
+export default function MatchView(props: { id: string; back: () => void; libVersion?: number }) {
   const [m, setM] = useState<MatchRecord | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState<string | null>(null);
@@ -38,6 +38,21 @@ export default function MatchView(props: { id: string; back: () => void }) {
       })
       .catch((e) => setErr(errText(e)));
   }, [props.id]);
+
+  // a quick record gets replaced when PUBG's match data arrives: show the new one
+  useEffect(() => {
+    if (!m?.pendingApi) return;
+    api
+      .getMatch(props.id)
+      .then((r) => {
+        if (r.pendingApi) return;
+        setM(r);
+        setPicked(new Set(r.highlights.map((h) => h.id)));
+        setActive(r.highlights[0]?.id ?? null);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.libVersion]);
 
   const clipsOnly = !!m && !m.video;
   const activeH = useMemo(() => m?.highlights.find((h) => h.id === active) ?? null, [m, active]);
@@ -179,6 +194,11 @@ export default function MatchView(props: { id: string; back: () => void }) {
           </span>
         </div>
         <span className="grow" />
+        {m.pendingApi && (
+          <p className="pending-note">
+            高光是读屏先剪好的。PUBG 官方数据到了以后（一般几分钟），会自动补上地图、排名、伤害和每次击杀的武器距离，高光也会按官方数据重新剪一次。
+          </p>
+        )}
         {st && (
           <div className="match-stats">
             <div className="mstat">

@@ -665,6 +665,10 @@ fn spawn_processor(app: AppHandle, st: St) {
             force = false;
             *lk(&st.processing) = None;
             *lk(&st.waiting) = res.waiting_minutes;
+            // waiting for PUBG's match data: look a bit more often
+            if res.waiting_minutes.is_some() {
+                wait = Duration::from_secs(60);
+            }
             // remember the account id we looked up
             if settings.pubg.account_id.is_some() {
                 let mut s = lk(&st.settings);

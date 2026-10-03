@@ -115,11 +115,11 @@ export default function Dashboard(props: {
       {s?.waitingMinutes != null && !s.processing && (
         <section className="processing is-wait">
           <span>
-            刚才那局在等 PUBG 官方数据，最多还要 {s.waitingMinutes} 分钟。自定义房间和训练模式没有官方数据，不用等。
+            高光已经按读屏先剪好了，可以直接看。PUBG 官方数据到了会自动补上地图、排名和击杀详情（最多还要 {s.waitingMinutes} 分钟）。
           </span>
           <span className="grow" />
-          <Button small kind="primary" onClick={() => api.syncNow(true)}>
-            不等了，现在处理
+          <Button small kind="ghost" onClick={() => api.syncNow(true)}>
+            不用官方数据了
           </Button>
         </section>
       )}

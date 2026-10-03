@@ -48,6 +48,11 @@ export function MatchCard(props: { m: MatchRecord; onOpen: () => void; onFavorit
         <div className="mcard-title">
           <b>{m.mapLabel}</b>
           {m.gameMode && <span className="tag">{m.gameMode}</span>}
+          {m.pendingApi && (
+            <span className="tag tag-pending" title="高光已经可以看了；PUBG 官方数据到了会自动补上地图、排名和击杀详情">
+              等官方数据
+            </span>
+          )}
         </div>
         <div className="mcard-meta">
           <span>{when(m.createdAtMs)}</span>

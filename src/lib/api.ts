@@ -244,6 +244,8 @@ export interface MatchRecord {
   thumbnail: string | null;
   /** folder of the still images (outside the match folder) */
   thumbDir: string;
+  /** made from screen reading right after the game; PUBG's data replaces it soon */
+  pendingApi?: boolean;
   sizeBytes: number;
   hasGameAudio: boolean;
   hasMic: boolean;

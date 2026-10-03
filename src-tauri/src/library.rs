@@ -86,6 +86,9 @@ pub struct MatchRecord {
     pub dir: String,
     /// absolute folder of the still images, filled in when loading
     pub thumb_dir: String,
+    /// built from screen reading right after the game; PUBG's match data
+    /// (map, placement, exact events) replaces it when it arrives
+    pub pending_api: bool,
 }
 
 pub struct Lib {
@@ -623,6 +626,13 @@ pub struct BuildInput<'a> {
     pub clips_only: bool,
     /// (map label, mode label) from PUBG's log for games without API data
     pub labels: Option<(String, String)>,
+    /// replace this existing record (keeps its id and favorite flag)
+    pub reuse_id: Option<String>,
+    /// a quick record that PUBG's data will replace
+    pub pending_api: bool,
+    /// mark the markers / screen detections it used as taken (not for quick records:
+    /// the real record still needs them)
+    pub mark_used: bool,
 }
 
 /// Build one library entry from session segments within [window].
@@ -654,7 +664,17 @@ pub fn build_record(
     let duration: f64 = chosen.iter().map(|s| s.end - s.start).sum();
     let to_t = |wall: i64| wall_to_t(&chosen, start_ms, wall);
 
-    let id = lib.new_id(input.title_time_ms);
+    let mut favorite = false;
+    let id = match &input.reuse_id {
+        Some(old) => {
+            if let Some(r) = lib.get(old) {
+                favorite = r.favorite;
+                let _ = lib.delete(old);
+            }
+            old.clone()
+        }
+        None => lib.new_id(input.title_time_ms),
+    };
     let dir = lib.matches_dir().join(&id);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
@@ -674,13 +694,17 @@ pub fn build_record(
                 source: "hotkey".into(),
                 ..Default::default()
             });
-            meta.used_markers.push(mk);
+            if input.mark_used {
+                meta.used_markers.push(mk);
+            }
         }
     }
     // screen detections: used directly when there is no telemetry for this span
     for d in meta.detections.clone().iter() {
         if d.at_ms >= w0 && d.at_ms <= w1 && !meta.used_detections.contains(&d.at_ms) {
-            meta.used_detections.push(d.at_ms);
+            if input.mark_used {
+                meta.used_detections.push(d.at_ms);
+            }
             if input.pubg.is_some() {
                 continue;
             }
@@ -834,7 +858,7 @@ pub fn build_record(
         events,
         highlights,
         stats: input.stats,
-        favorite: false,
+        favorite,
         thumbnail: if thumb.exists() {
             Some("thumb.jpg".into())
         } else {
@@ -848,6 +872,7 @@ pub fn build_record(
         encoder: meta.encoder.clone(),
         dir: String::new(),
         thumb_dir: String::new(),
+        pending_api: input.pending_api,
     };
     lib.save(&rec)?;
     let mut out = rec;
@@ -1043,6 +1068,12 @@ pub fn process_sessions(
                         longest_kill: p.longest_kill,
                     });
                     progress("正在生成录像和高光");
+                    // the quick record for this game (if any) becomes the real one
+                    let reuse = meta
+                        .provisional
+                        .iter()
+                        .position(|p| p.from < w1 && p.to > w0)
+                        .map(|i| meta.provisional.remove(i).id);
                     match build_record(
                         lib,
                         ffmpeg_path,
@@ -1059,9 +1090,15 @@ pub fn process_sessions(
                             stats,
                             clips_only: false,
                             labels: None,
+                            reuse_id: reuse,
+                            pending_api: false,
+                            mark_used: true,
                         },
                     ) {
-                        Ok(Some(rec)) => result.new_records.push(rec),
+                        Ok(Some(rec)) => {
+                            meta.built_windows.push((w0, w1));
+                            result.new_records.push(rec)
+                        }
                         Ok(None) => {}
                         Err(e) => result.messages.push(e),
                     }
@@ -1071,17 +1108,18 @@ pub fn process_sessions(
             }
         }
 
-        // finalize ended sessions. PUBG's log says which games were played: only
-        // battle royale ones ever show up in the API, so arcade / custom / training
-        // sessions need no waiting. (Deaths can't tell: battle royale has recalls too.)
-        let joins = if ended {
-            gamelog::joins(
-                meta.start_ms - 120_000,
-                meta.ended_ms.unwrap_or_else(now_ms) + 5_000,
-            )
-        } else {
-            Vec::new()
-        };
+        // Ended sessions. PUBG's log says which games were played: only battle
+        // royale ones ever show up in the API, so arcade / custom / training games
+        // are final right away. Battle royale games get a quick record from screen
+        // reading right away too, and the real one replaces it when PUBG's match
+        // data arrives (or the quick one stays, if it never does).
+        if !ended {
+            continue;
+        }
+        let joins = gamelog::joins(
+            meta.start_ms - 120_000,
+            meta.ended_ms.unwrap_or_else(now_ms) + 5_000,
+        );
         let official_built = meta
             .processed_matches
             .iter()
@@ -1095,81 +1133,85 @@ pub fn process_sessions(
                 .ended_ms
                 .map(|e| now_ms() - e > 15 * 60_000)
                 .unwrap_or(false);
-        if ended && api.is_some() && !waited_enough && !force_final {
+        let final_now = api.is_none() || waited_enough || force_final;
+        if !final_now {
             let left = 15 - meta.ended_ms.map(|e| (now_ms() - e) / 60_000).unwrap_or(0);
             let left = left.clamp(1, 15);
             result.waiting_minutes = Some(result.waiting_minutes.map_or(left, |w| w.max(left)));
         }
-        if ended && (api.is_none() || waited_enough || force_final) {
-            let mut left: Vec<i64> = meta
-                .markers
-                .iter()
-                .copied()
-                .filter(|m| !meta.used_markers.contains(m))
-                .collect();
-            left.extend(
-                meta.detections
-                    .iter()
-                    .map(|d| d.at_ms)
-                    .filter(|t| !meta.used_detections.contains(t)),
-            );
-            left.sort();
-            let full_session = api.is_none() && settings.capture_mode == "full";
-            let mut failed = false;
 
-            // one piece per game the log knows about (or the whole session)
-            struct Piece {
-                from: i64,
-                to: i64,
-                labels: Option<(String, String)>,
-            }
-            let mut pieces: Vec<Piece> = Vec::new();
-            if joins.is_empty() {
+        let mut left: Vec<i64> = meta
+            .markers
+            .iter()
+            .copied()
+            .filter(|m| !meta.used_markers.contains(m))
+            .collect();
+        left.extend(
+            meta.detections
+                .iter()
+                .map(|d| d.at_ms)
+                .filter(|t| !meta.used_detections.contains(t)),
+        );
+        left.sort();
+        let full_session = api.is_none() && settings.capture_mode == "full";
+        let mut failed = false;
+
+        // one piece per game the log knows about (or the whole session)
+        struct Piece {
+            from: i64,
+            to: i64,
+            labels: Option<(String, String)>,
+            /// may show up in PUBG's API (unknown without the log)
+            official: bool,
+        }
+        let mut pieces: Vec<Piece> = Vec::new();
+        if joins.is_empty() {
+            pieces.push(Piece {
+                from: i64::MIN,
+                to: i64::MAX,
+                labels: None,
+                official: true,
+            });
+        } else {
+            for (i, j) in joins.iter().enumerate() {
                 pieces.push(Piece {
-                    from: i64::MIN,
-                    to: i64::MAX,
-                    labels: None,
+                    // anything before the first join belongs to the first game
+                    from: if i == 0 { i64::MIN } else { j.at_ms },
+                    to: joins.get(i + 1).map(|n| n.at_ms).unwrap_or(i64::MAX),
+                    labels: Some(j.labels()),
+                    official: j.official(),
                 });
-            } else {
-                for (i, j) in joins.iter().enumerate() {
-                    pieces.push(Piece {
-                        // anything before the first join belongs to the first game
-                        from: if i == 0 { i64::MIN } else { j.at_ms },
-                        to: joins.get(i + 1).map(|n| n.at_ms).unwrap_or(i64::MAX),
-                        labels: Some(j.labels()),
-                    });
-                }
             }
-            let pre = settings.events.manual.pre.max(15.0) as i64 * 1000;
-            let post = settings.events.manual.post.max(10.0) as i64 * 1000;
-            for piece in &pieces {
-                let ev: Vec<i64> = left
-                    .iter()
-                    .copied()
-                    .filter(|t| *t >= piece.from && *t < piece.to)
-                    .collect();
-                let (w0, w1) = if full_session {
-                    (
-                        piece.from.max(meta.start_ms - 1),
-                        piece.to.min(recorded_until + 1),
-                    )
-                } else if let (Some(a), Some(b)) = (ev.first(), ev.last()) {
-                    (
-                        (a - pre - 5_000).max(piece.from.saturating_sub(2_000)),
-                        (b + post + 5_000).min(piece.to),
-                    )
-                } else {
+        }
+        let pre = settings.events.manual.pre.max(15.0) as i64 * 1000;
+        let post = settings.events.manual.post.max(10.0) as i64 * 1000;
+        for piece in &pieces {
+            if meta.done_pieces.contains(&piece.from) {
+                continue;
+            }
+            let in_piece = |t: i64| t >= piece.from && t < piece.to;
+            let ev: Vec<i64> = left.iter().copied().filter(|t| in_piece(*t)).collect();
+            let quick = meta.provisional.iter().position(|p| p.from == piece.from);
+
+            if !final_now && piece.official {
+                // waiting for PUBG's data: show what screen reading found meanwhile
+                let built = !joins.is_empty()
+                    && meta
+                        .built_windows
+                        .iter()
+                        .any(|(a, b)| *a < piece.to && *b > piece.from);
+                if built || quick.is_some() || ev.is_empty() {
+                    continue;
+                }
+                let (Some(a), Some(b)) = (ev.first(), ev.last()) else {
                     continue;
                 };
+                let w0 = (a - pre - 5_000).max(piece.from.saturating_sub(2_000));
+                let w1 = (b + post + 5_000).min(piece.to);
                 if w1 - w0 < 2_000 {
                     continue;
                 }
-                progress("正在保存这次录制的片段");
-                let title_ms = if piece.from == i64::MIN {
-                    w0.max(meta.start_ms)
-                } else {
-                    piece.from
-                };
+                progress("正在生成这局的高光");
                 match build_record(
                     lib,
                     ffmpeg_path,
@@ -1179,46 +1221,161 @@ pub fn process_sessions(
                     &segs,
                     BuildInput {
                         kind: "session",
-                        title_time_ms: title_ms,
+                        title_time_ms: if piece.from == i64::MIN {
+                            w0.max(meta.start_ms)
+                        } else {
+                            piece.from
+                        },
                         window: (w0, w1),
                         events: Vec::new(),
                         pubg: None,
                         stats: None,
-                        clips_only: !full_session,
-                        labels: piece.labels.clone(),
+                        clips_only: true,
+                        labels: Some(("普通对局".into(), String::new())),
+                        reuse_id: None,
+                        pending_api: true,
+                        mark_used: false,
                     },
                 ) {
-                    Ok(Some(rec)) => result.new_records.push(rec),
-                    Ok(None) => {}
-                    Err(e) => {
-                        result.messages.push(e);
-                        failed = true;
+                    Ok(Some(rec)) => {
+                        meta.provisional.push(recorder::Provisional {
+                            from: piece.from,
+                            to: piece.to,
+                            id: rec.id.clone(),
+                        });
+                        meta.save(&dir);
+                        result.new_records.push(rec);
                     }
+                    Ok(None) => {}
+                    Err(e) => result.messages.push(e),
                 }
+                continue;
             }
-            if failed {
-                // keep the raw recording; retry on the next passes
-                meta.finalize_failures += 1;
-                meta.save(&dir);
-                if meta.finalize_failures < 3 {
-                    continue;
+
+            if let Some(i) = quick {
+                // PUBG's data never came (or we stopped waiting): the quick record is final
+                let q = meta.provisional.remove(i);
+                if let Some(mut rec) = lib.get(&q.id) {
+                    rec.pending_api = false;
+                    // waited it out and it never showed up in the API: a custom /
+                    // training game after all (not when the user just stopped waiting)
+                    if !force_final {
+                        if let Some((map, mode)) = &piece.labels {
+                            rec.map_label = map.clone();
+                            rec.game_mode = mode.clone();
+                        }
+                    }
+                    let _ = lib.save(&rec);
+                    result.new_records.push(rec);
                 }
-                result.messages.push(format!(
-                    "这次录制处理失败了 3 次，原始文件保留在 {}",
-                    dir.to_string_lossy()
-                ));
-                meta.finalized = true;
+                let taken: Vec<i64> = meta.markers.iter().copied().filter(|t| in_piece(*t)).collect();
+                meta.used_markers.extend(taken);
+                let seen: Vec<i64> = meta
+                    .detections
+                    .iter()
+                    .map(|d| d.at_ms)
+                    .filter(|t| in_piece(*t))
+                    .collect();
+                meta.used_detections.extend(seen);
+                meta.done_pieces.push(piece.from);
                 meta.save(&dir);
                 continue;
             }
+
+            let (w0, w1) = if full_session {
+                (
+                    piece.from.max(meta.start_ms - 1),
+                    piece.to.min(recorded_until + 1),
+                )
+            } else if let (Some(a), Some(b)) = (ev.first(), ev.last()) {
+                (
+                    (a - pre - 5_000).max(piece.from.saturating_sub(2_000)),
+                    (b + post + 5_000).min(piece.to),
+                )
+            } else {
+                // nothing left in this game
+                if final_now {
+                    meta.done_pieces.push(piece.from);
+                }
+                continue;
+            };
+            if w1 - w0 < 2_000 {
+                continue;
+            }
+            progress("正在保存这次录制的片段");
+            let title_ms = if piece.from == i64::MIN {
+                w0.max(meta.start_ms)
+            } else {
+                piece.from
+            };
+            match build_record(
+                lib,
+                ffmpeg_path,
+                settings,
+                &dir,
+                &mut meta,
+                &segs,
+                BuildInput {
+                    kind: "session",
+                    title_time_ms: title_ms,
+                    window: (w0, w1),
+                    events: Vec::new(),
+                    pubg: None,
+                    stats: None,
+                    clips_only: !full_session,
+                    // bits of a game whose real record exists (e.g. a marker in the lobby)
+                    labels: if piece.official
+                        && meta
+                            .built_windows
+                            .iter()
+                            .any(|(a, b)| *a < piece.to && *b > piece.from)
+                    {
+                        Some(("普通对局".into(), String::new()))
+                    } else {
+                        piece.labels.clone()
+                    },
+                    reuse_id: None,
+                    pending_api: false,
+                    mark_used: true,
+                },
+            ) {
+                Ok(Some(rec)) => {
+                    meta.done_pieces.push(piece.from);
+                    result.new_records.push(rec)
+                }
+                Ok(None) => meta.done_pieces.push(piece.from),
+                Err(e) => {
+                    result.messages.push(e);
+                    failed = true;
+                }
+            }
+        }
+        meta.save(&dir);
+        if !final_now {
+            continue;
+        }
+        if failed {
+            // keep the raw recording; retry on the next passes
+            meta.finalize_failures += 1;
+            meta.save(&dir);
+            if meta.finalize_failures < 3 {
+                continue;
+            }
+            result.messages.push(format!(
+                "这次录制处理失败了 3 次，原始文件保留在 {}",
+                dir.to_string_lossy()
+            ));
             meta.finalized = true;
             meta.save(&dir);
-            if fs::remove_dir_all(&dir).is_err() {
-                // usually Explorer holding a thumbnail open; try again later
-                result
-                    .messages
-                    .push("临时录像文件夹暂时删不掉（可能在资源管理器里开着），稍后会再试".into());
-            }
+            continue;
+        }
+        meta.finalized = true;
+        meta.save(&dir);
+        if fs::remove_dir_all(&dir).is_err() {
+            // usually Explorer holding a thumbnail open; try again later
+            result
+                .messages
+                .push("临时录像文件夹暂时删不掉（可能在资源管理器里开着），稍后会再试".into());
         }
     }
     if let Some(e) = api_error {

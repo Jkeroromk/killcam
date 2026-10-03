@@ -91,7 +91,7 @@ export default function App() {
           <Dashboard status={status} settings={settings} libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} openLibrary={() => nav("library")} />
         )}
         {page.name === "library" && <Library libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
-        {page.name === "match" && <MatchView id={page.id} back={() => nav("library")} />}
+        {page.name === "match" && <MatchView id={page.id} back={() => nav("library")} libVersion={libVersion} />}
         {page.name === "stats" && <StatsPage libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
         {page.name === "settings" && <SettingsPage settings={settings} onSaved={setSettings} status={status} />}
       </main>
