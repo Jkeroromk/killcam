@@ -6,7 +6,6 @@ import {
   EventsSection,
   HotkeySection,
   MonitorPicker,
-  PubgSection,
   StorageSection,
   VideoSection,
   type SetSettings,
@@ -31,52 +30,11 @@ const SECTIONS = [
   ["screen", "屏幕"],
   ["audio", "声音"],
   ["events", "高光规则"],
-  ["pubg", "PUBG 账号"],
   ["hotkeys", "快捷键"],
   ["storage", "存储"],
   ["perf", "性能测试"],
   ["advanced", "高级"],
-  ["about", "关于"],
 ] as const;
-
-function AboutSection(props: { status: Status | null }) {
-  const [state, setState] = useState<"idle" | "checking" | "latest" | "error">("idle");
-  const [msg, setMsg] = useState<string | null>(null);
-  const u = props.status?.update;
-  const check = async () => {
-    setState("checking");
-    setMsg(null);
-    try {
-      const found = await api.checkUpdate();
-      setState(found ? "idle" : "latest");
-    } catch (e) {
-      setState("error");
-      setMsg(errText(e));
-    }
-  };
-  return (
-    <>
-      <Field label="当前版本">
-        <span className="mono">KillCam {props.status?.version ?? "–"}</span>
-      </Field>
-      <Field label="更新" hint="有新版本时左下角会出现提示，点一下就会下载、安装并重启">
-        <div className="row">
-          <Button small kind="ghost" onClick={check} disabled={state === "checking"}>
-            {state === "checking" ? <Spinner /> : "检查更新"}
-          </Button>
-          {u ? (
-            <span className="ok-text small">有新版本 {u.version}，点左下角的「更新并重启」</span>
-          ) : state === "latest" ? (
-            <span className="muted small">已经是最新版本</span>
-          ) : state === "error" ? (
-            <span className="warn-text small">{msg}</span>
-          ) : null}
-        </div>
-        {u?.notes && <pre className="update-notes">{u.notes}</pre>}
-      </Field>
-    </>
-  );
-}
 
 export default function SettingsPage(props: { settings: Settings; onSaved: (s: Settings) => void; status: Status | null }) {
   const [draft, setDraft] = useState<Settings>(props.settings);
@@ -92,6 +50,11 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
   useEffect(() => {
     api.detectHardware().then(setHw).catch(() => {});
   }, []);
+
+  // the account is edited from the side rail; keep this page's draft in step
+  useEffect(() => {
+    setDraft((d) => ({ ...d, pubg: props.settings.pubg }));
+  }, [props.settings.pubg]);
 
   const save = async () => {
     setSaving(true);
@@ -166,10 +129,6 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
         <EventsSection settings={draft} set={set} detector={props.status?.detector} />
       </Card>
 
-      <Card id="pubg" title="PUBG 账号">
-        <PubgSection settings={draft} set={set} />
-      </Card>
-
       <Card id="hotkeys" title="快捷键">
         <HotkeySection settings={draft} set={set} />
       </Card>
@@ -214,10 +173,6 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
             重新走一遍初次设置
           </Button>
         </Field>
-      </Card>
-
-      <Card id="about" title="关于">
-        <AboutSection status={props.status} />
       </Card>
 
       <div className={"savebar" + (dirty || msg ? " is-shown" : "")}>

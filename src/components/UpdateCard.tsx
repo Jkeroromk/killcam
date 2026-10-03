@@ -1,18 +1,56 @@
 import { useEffect, useState } from "react";
-import { ArrowUpCircle } from "lucide-react";
+import { ArrowUpCircle, RefreshCw } from "lucide-react";
 import { api, errText, on, type Status } from "../lib/api";
 import { bytes } from "../lib/format";
+import { Spinner } from "./ui";
 
-/** Shown in the side rail when a newer release is out. */
+/** Side rail: the current version with a check button, or the update card
+ *  once a newer release is known. */
 export function UpdateCard(props: { status: Status | null }) {
   const u = props.status?.update;
   const [busy, setBusy] = useState(false);
   const [got, setGot] = useState<[number, number | null] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [check, setCheck] = useState<"idle" | "checking" | "latest" | "error">("idle");
 
   useEffect(() => on<[number, number | null]>("update-progress", setGot), []);
 
-  if (!u) return null;
+  // "已是最新" fades back to the plain button after a few seconds
+  useEffect(() => {
+    if (check !== "latest" && check !== "error") return;
+    const t = window.setTimeout(() => setCheck("idle"), 4000);
+    return () => window.clearTimeout(t);
+  }, [check]);
+
+  if (!u) {
+    const run = async () => {
+      setCheck("checking");
+      setErr(null);
+      try {
+        const found = await api.checkUpdate();
+        setCheck(found ? "idle" : "latest");
+      } catch (e) {
+        setErr(errText(e));
+        setCheck("error");
+      }
+    };
+    return (
+      <button type="button" className="update-check" onClick={run} disabled={check === "checking"} title={err ?? "检查有没有新版本"}>
+        {check === "checking" ? <Spinner /> : <RefreshCw size={13} />}
+        <span>
+          {check === "checking"
+            ? "正在检查…"
+            : check === "latest"
+              ? "已经是最新版本"
+              : check === "error"
+                ? "检查失败，点一下重试"
+                : "检查更新"}
+        </span>
+        <span className="update-ver">v{props.status?.version ?? "–"}</span>
+      </button>
+    );
+  }
+
   const recording = !!props.status?.recording;
   const pct = got && got[1] ? Math.min(100, Math.round((got[0] / got[1]) * 100)) : null;
 
@@ -33,6 +71,7 @@ export function UpdateCard(props: { status: Status | null }) {
       <div className="update-head">
         <ArrowUpCircle size={15} />
         <b>新版本 {u.version}</b>
+        <span className="update-ver">当前 v{props.status?.version ?? "–"}</span>
       </div>
       {busy ? (
         <div className="update-progress">

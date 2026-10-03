@@ -65,6 +65,9 @@ pub struct Template {
     /// a second glyph group that must sit next to a match (cx/y = offset from the
     /// match, any feature), e.g. the red "淘汰" left of the white "了你"
     pub confirm: Option<Box<Template>>,
+    /// the confirm glyphs must NOT be there (e.g. "你" right after "击倒了"
+    /// means someone knocked *you*, not the other way round)
+    pub confirm_negate: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -107,7 +110,7 @@ fn rd_bits(b: &[u8], p: &mut usize, w: usize, h: usize) -> Option<Vec<(usize, us
 ///   per template: u32 kind_len | kind | u32 feature | u32 mode | i32 cx | i32 y |
 ///   u32 w | u32 h | f32 threshold | i32 search_x | i32 search_y | i32 p0 | i32 p1 |
 ///   w*h bytes (0 / 255) |
-///   v4 only: u32 has_confirm | [u32 feature | i32 dx | i32 dy | u32 w | u32 h |
+///   v4 only: u32 has_confirm (0 none, 1 must match, 2 must not match) | [u32 feature | i32 dx | i32 dy | u32 w | u32 h |
 ///   f32 threshold | w*h bytes]
 /// appear mode: p0 = cooldown in ms after a detection
 pub fn load_pack() -> Option<Pack> {
@@ -141,7 +144,10 @@ pub fn load_pack() -> Option<Pack> {
         let p1 = rd_i32(b, &mut p)?;
         let on = rd_bits(b, &mut p, w, h)?;
         let mut confirm = None;
-        if version >= 4 && rd_u32(b, &mut p)? == 1 {
+        let mut confirm_negate = false;
+        let has_confirm = if version >= 4 { rd_u32(b, &mut p)? } else { 0 };
+        if has_confirm == 1 || has_confirm == 2 {
+            confirm_negate = has_confirm == 2;
             let feature = rd_u32(b, &mut p)?;
             let dx = rd_i32(b, &mut p)?;
             let dy = rd_i32(b, &mut p)?;
@@ -165,6 +171,7 @@ pub fn load_pack() -> Option<Pack> {
                     p1: 0,
                     on,
                     confirm: None,
+                    confirm_negate: false,
                 }));
             }
         }
@@ -186,6 +193,7 @@ pub fn load_pack() -> Option<Pack> {
             p1,
             on,
             confirm,
+            confirm_negate,
         });
     }
     if templates.is_empty() {
@@ -385,7 +393,7 @@ fn matches(m: &Mask, cm: Option<&Mask>, p: &Placed, max: usize) -> Vec<(f32, i32
     for c in all {
         if found.iter().all(|f| (f.2 - c.2).abs() > 15) {
             if let Some(conf) = &t.confirm {
-                if !confirmed(cm, conf, c.1, c.2) {
+                if confirmed(cm, conf, c.1, c.2) == t.confirm_negate {
                     continue;
                 }
             }

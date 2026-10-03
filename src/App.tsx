@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Crosshair, Film, Settings2 } from "lucide-react";
+import { BarChart3, Crosshair, Film, Settings2 } from "lucide-react";
 import { api, on, type Settings, type Status } from "./lib/api";
 import { clock } from "./lib/format";
 import Onboarding from "./onboarding/Onboarding";
@@ -7,10 +7,12 @@ import Dashboard from "./pages/Dashboard";
 import Library from "./pages/Library";
 import MatchView from "./pages/MatchView";
 import SettingsPage from "./pages/SettingsPage";
+import StatsPage from "./pages/StatsPage";
 import { Spinner } from "./components/ui";
 import { UpdateCard } from "./components/UpdateCard";
+import { AccountButton } from "./components/AccountButton";
 
-type Page = { name: "home" } | { name: "library" } | { name: "match"; id: string } | { name: "settings" };
+type Page = { name: "home" } | { name: "library" } | { name: "match"; id: string } | { name: "stats" } | { name: "settings" };
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -41,7 +43,7 @@ export default function App() {
     return <Onboarding initial={settings} onDone={(s) => setSettings(s)} />;
   }
 
-  const nav = (name: "home" | "library" | "settings") => setPage({ name } as Page);
+  const nav = (name: "home" | "library" | "stats" | "settings") => setPage({ name } as Page);
   const current = page.name === "match" ? "library" : page.name;
 
   return (
@@ -58,11 +60,15 @@ export default function App() {
           <button type="button" className={current === "library" ? "is-on" : ""} onClick={() => nav("library")}>
             <Film size={18} /> 录像库
           </button>
+          <button type="button" className={current === "stats" ? "is-on" : ""} onClick={() => nav("stats")}>
+            <BarChart3 size={18} /> 数据
+          </button>
           <button type="button" className={current === "settings" ? "is-on" : ""} onClick={() => nav("settings")}>
             <Settings2 size={18} /> 设置
           </button>
         </nav>
         <div className="rail-foot">
+          <AccountButton settings={settings} onSaved={setSettings} />
           <UpdateCard status={status} />
           {status?.recording ? (
             <div className="rec-pill is-rec">
@@ -83,6 +89,7 @@ export default function App() {
         )}
         {page.name === "library" && <Library libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
         {page.name === "match" && <MatchView id={page.id} back={() => nav("library")} />}
+        {page.name === "stats" && <StatsPage libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
         {page.name === "settings" && <SettingsPage settings={settings} onSaved={setSettings} status={status} />}
       </main>
     </div>
