@@ -47,25 +47,6 @@ pub struct SessionMeta {
     pub parts: Vec<PartMeta>,
     /// how many times turning this session into a library entry failed
     pub finalize_failures: u32,
-    /// quick records built from screen reading while PUBG's data isn't there yet
-    pub provisional: Vec<Provisional>,
-    /// pieces of this session (keyed by their start, see library::process_sessions)
-    /// that are already turned into their final records
-    pub done_pieces: Vec<i64>,
-    /// (from, to) of the records built from PUBG's data
-    pub built_windows: Vec<(i64, i64)>,
-}
-
-/// A quick record for one game of the session; replaced by the real one when
-/// PUBG's match data arrives, or kept as it is if it never does.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Provisional {
-    /// the game's time span in the session (wall clock ms)
-    pub from: i64,
-    pub to: i64,
-    /// library record id
-    pub id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

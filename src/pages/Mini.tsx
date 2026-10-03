@@ -54,6 +54,8 @@ export default function Mini() {
   const s = status;
   const rec = !!s?.recording;
   const elapsed = rec && s?.startedAtMs ? (now - s.startedAtMs) / 1000 : 0;
+  // counts and time are per game: they start over when the next game starts
+  const round = rec && s?.roundStartedMs ? Math.max(0, (now - s.roundStartedMs) / 1000) : null;
   const reading = s?.detector === "active";
   // the screen reader restarts itself after display-mode changes; only show real problems
   const problem = s?.lastError || s?.warnings[0] || null;
@@ -64,8 +66,10 @@ export default function Mini() {
         {rec ? (
           <>
             <span className="rec-dot" />
-            <b>录制中</b>
-            <span className="mono mini-clock">{clock(elapsed)}</span>
+            <b>{round != null ? "本局" : "录制中"}</b>
+            <span className="mono mini-clock" title={`这次一共录了 ${clock(elapsed)}`}>
+              {clock(round ?? elapsed)}
+            </span>
           </>
         ) : s?.gameRunning && autoRecord && !s.lastError ? (
           <>
@@ -93,17 +97,17 @@ export default function Mini() {
       </div>
 
       <div className="mini-stats">
-        <span className="mini-stat" title={reading ? "读屏识别到的击杀" : "读屏没开启，结束后用 PUBG 数据补上"}>
+        <span className="mini-stat" title={reading ? "这局读屏识别到的击杀" : "读屏没开启，结束后用 PUBG 数据补上"}>
           <Skull size={14} strokeWidth={2.4} />
           <b>{reading ? s!.liveKills : "–"}</b>
         </span>
-        <span className="mini-stat" title="读屏识别到的击倒">
+        <span className="mini-stat" title="这局读屏识别到的击倒">
           <Crosshair size={14} strokeWidth={2.4} />
           <b>{reading ? s!.liveKnocks : "–"}</b>
         </span>
-        <span className="mini-stat" title="手动标记">
+        <span className="mini-stat" title="这局的手动标记">
           <Bookmark size={14} strokeWidth={2.4} />
-          <b>{s?.markers ?? 0}</b>
+          <b>{s?.roundMarkers ?? s?.markers ?? 0}</b>
         </span>
         <span className="grow" />
         {rec && (

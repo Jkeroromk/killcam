@@ -72,6 +72,8 @@ pub struct AppState {
     mini_open: AtomicBool,
     /// last successful hardware probe
     hw_cache: Mutex<Option<HardwareInfo>>,
+    /// when the game being played started (PUBG's last server join), for the mini window
+    round_start: Mutex<Option<i64>>,
     /// "立即同步" pressed: process even while the game runs
     sync_requested: AtomicBool,
     /// newest release found by the update check
@@ -144,12 +146,16 @@ struct Status {
     recording: bool,
     session_id: Option<String>,
     started_at_ms: Option<i64>,
+    /// start of the game being played (resets every game); None = unknown
+    round_started_ms: Option<i64>,
     elapsed_s: f64,
     stats: LiveStats,
     width: u32,
     height: u32,
     encoder: String,
     markers: usize,
+    /// markers in the game being played
+    round_markers: usize,
     detections: usize,
     /// screen-read kills / knocks in the current recording
     live_kills: usize,
@@ -170,6 +176,8 @@ struct Status {
 }
 
 fn build_status(st: &AppState) -> Status {
+    let round = *lk(&st.round_start);
+    let in_round = |t: i64| round.map(|r| t >= r).unwrap_or(true);
     let rec = lk(&st.recording);
     let (
         recording,
@@ -181,6 +189,7 @@ fn build_status(st: &AppState) -> Status {
         height,
         encoder,
         markers,
+        round_markers,
         detections,
         live_kills,
         live_knocks,
@@ -204,9 +213,17 @@ fn build_status(st: &AppState) -> Status {
                 m.height,
                 m.encoder.clone(),
                 m.markers.len(),
+                m.markers.iter().filter(|t| in_round(**t)).count(),
                 m.detections.len(),
-                m.detections.iter().filter(|d| d.kind == "kill").count(),
-                m.detections.iter().filter(|d| d.kind == "knock").count(),
+                // the mini window counts the game being played
+                m.detections
+                    .iter()
+                    .filter(|d| d.kind == "kill" && in_round(d.at_ms))
+                    .count(),
+                m.detections
+                    .iter()
+                    .filter(|d| d.kind == "knock" && in_round(d.at_ms))
+                    .count(),
                 w,
             )
         }
@@ -219,6 +236,7 @@ fn build_status(st: &AppState) -> Status {
             0,
             0,
             String::new(),
+            0,
             0,
             0,
             0,
@@ -243,10 +261,12 @@ fn build_status(st: &AppState) -> Status {
         height,
         encoder,
         markers,
+        round_markers,
         detections,
         live_kills,
         live_knocks,
         detector: detector_state,
+        round_started_ms: if recording { round } else { None },
         game_running: lk(&st.game_pid).is_some(),
         auto_session: st.auto_session.load(Ordering::Relaxed),
         processing: lk(&st.processing).clone(),
@@ -560,9 +580,25 @@ fn spawn_game_watcher(app: AppHandle, st: St) {
     thread::spawn(move || {
         let mut w = game::Watcher::new();
         let mut last: Option<u32> = None;
+        let mut n: u64 = 0;
         loop {
             let pid = w.find();
             *lk(&st.game_pid) = pid;
+            // which game is being played: the mini window counts per game
+            n += 1;
+            if n % 4 == 1 {
+                let session_start = lk(&st.recording).as_ref().map(|r| lk(&r.meta).start_ms);
+                let round = session_start.and_then(|s0| {
+                    gamelog::joins(s0 - 120_000, now_ms() + 5_000)
+                        .last()
+                        .map(|j| j.at_ms.max(s0))
+                });
+                let changed = *lk(&st.round_start) != round;
+                *lk(&st.round_start) = round;
+                if changed {
+                    emit_status(&app, &st);
+                }
+            }
             let (onboarded, auto) = {
                 let s = lk(&st.settings);
                 (s.onboarded, s.auto_record)
@@ -642,11 +678,14 @@ fn spawn_processor(app: AppHandle, st: St) {
             if !settings.onboarded {
                 continue;
             }
-            // remuxing, cutting clips and parsing telemetry are heavy on the disk and
-            // CPU: while PUBG runs they wait, unless the user asked for it
+            // While PUBG runs only the light work happens: each game that is over gets
+            // its highlights cut (stream copy, idle priority), so they're ready in the
+            // lobby. Remuxing whole matches and PUBG's telemetry wait for the game to
+            // close, unless the user asked for it.
             let manual = st.sync_requested.swap(false, Ordering::Relaxed);
-            if lk(&st.game_pid).is_some() && !force && !manual {
-                continue;
+            let in_game = lk(&st.game_pid).is_some() && !force && !manual;
+            if in_game {
+                wait = Duration::from_secs(30);
             }
             let active = lk(&st.recording).as_ref().map(|r| lk(&r.meta).id.clone());
             let app2 = app.clone();
@@ -657,6 +696,7 @@ fn spawn_processor(app: AppHandle, st: St) {
                 &mut settings,
                 active.as_deref(),
                 force,
+                in_game,
                 move |msg| {
                     *lk(&st2.processing) = Some(msg.to_string());
                     emit_status(&app2, &st2);
@@ -666,7 +706,7 @@ fn spawn_processor(app: AppHandle, st: St) {
             *lk(&st.processing) = None;
             *lk(&st.waiting) = res.waiting_minutes;
             // waiting for PUBG's match data: look a bit more often
-            if res.waiting_minutes.is_some() {
+            if res.waiting_minutes.is_some() && !in_game {
                 wait = Duration::from_secs(60);
             }
             // remember the account id we looked up
@@ -1691,6 +1731,7 @@ pub fn run() {
                 waiting: Mutex::new(None),
                 mini_open: AtomicBool::new(false),
                 hw_cache: Mutex::new(None),
+                round_start: Mutex::new(None),
                 sync_requested: AtomicBool::new(false),
                 update: Mutex::new(None),
                 gave_up_at: Mutex::new(None),

@@ -63,12 +63,16 @@ export interface Status {
   recording: boolean;
   sessionId: string | null;
   startedAtMs: number | null;
+  /** start of the game being played (resets every game) */
+  roundStartedMs?: number | null;
   elapsedS: number;
   stats: LiveStats;
   width: number;
   height: number;
   encoder: string;
   markers: number;
+  /** markers in the game being played */
+  roundMarkers?: number;
   detections: number;
   liveKills: number;
   liveKnocks: number;

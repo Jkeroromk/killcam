@@ -884,6 +884,47 @@ pub fn build_record(
 // ---------------------------------------------------------------------------
 // processing pass over all pending sessions
 
+/// A quick record for one game of a session (screen reading + markers), made
+/// as soon as the game is over. Battle royale ones are replaced by the real
+/// record when PUBG's match data arrives.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct Quick {
+    /// the game's span in the session (wall clock ms)
+    from: i64,
+    to: i64,
+    /// last marker / detection it includes
+    upto: i64,
+    /// library record id
+    id: String,
+}
+
+/// What the processor has made of a session so far. Its own file
+/// (`pieces.json`): the recorder keeps writing `session.json` while it records.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct PieceState {
+    quick: Vec<Quick>,
+    /// games (by start) that have their final record
+    done_pieces: Vec<i64>,
+    /// (from, to) of the records built from PUBG's data
+    built_windows: Vec<(i64, i64)>,
+}
+
+impl PieceState {
+    fn load(dir: &Path) -> Self {
+        fs::read_to_string(dir.join("pieces.json"))
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+    fn save(&self, dir: &Path) {
+        if let Ok(j) = serde_json::to_string_pretty(self) {
+            let _ = fs::write(dir.join("pieces.json"), j);
+        }
+    }
+}
+
 pub struct PassResult {
     pub new_records: Vec<MatchRecord>,
     pub messages: Vec<String>,
@@ -898,6 +939,8 @@ pub fn process_sessions(
     settings: &mut Settings,
     active_session: Option<&str>,
     force_final: bool,
+    // PUBG is running: only cut the games that are over, quickly, no API calls
+    in_game: bool,
     mut progress: impl FnMut(&str),
 ) -> PassResult {
     let mut result = PassResult {
@@ -915,8 +958,10 @@ pub fn process_sessions(
         .collect();
     dirs.sort();
 
-    // fetch the player's recent matches once per pass
-    let api = if settings.pubg.configured() {
+    // fetch the player's recent matches once per pass (not while PUBG runs:
+    // telemetry is big and the quick records cover the wait)
+    let api_cfg = settings.pubg.configured();
+    let api = if api_cfg && !in_game {
         Some(pubg::Api::new(&settings.pubg.api_key, &settings.pubg.shard))
     } else {
         None
@@ -957,6 +1002,7 @@ pub fn process_sessions(
             continue;
         }
         let recorded_until = meta.start_ms + (segs[segs.len() - 1].end * 1000.0) as i64;
+        let mut ps = PieceState::load(&dir);
 
         if let Some(api) = &api {
             if recent.is_none() && api_error.is_none() {
@@ -1069,11 +1115,11 @@ pub fn process_sessions(
                     });
                     progress("正在生成录像和高光");
                     // the quick record for this game (if any) becomes the real one
-                    let reuse = meta
-                        .provisional
+                    let reuse = ps
+                        .quick
                         .iter()
                         .position(|p| p.from < w1 && p.to > w0)
-                        .map(|i| meta.provisional.remove(i).id);
+                        .map(|i| ps.quick.remove(i).id);
                     match build_record(
                         lib,
                         ffmpeg_path,
@@ -1096,7 +1142,8 @@ pub fn process_sessions(
                         },
                     ) {
                         Ok(Some(rec)) => {
-                            meta.built_windows.push((w0, w1));
+                            ps.built_windows.push((w0, w1));
+                            ps.save(&dir);
                             result.new_records.push(rec)
                         }
                         Ok(None) => {}
@@ -1108,17 +1155,14 @@ pub fn process_sessions(
             }
         }
 
-        // Ended sessions. PUBG's log says which games were played: only battle
-        // royale ones ever show up in the API, so arcade / custom / training games
-        // are final right away. Battle royale games get a quick record from screen
-        // reading right away too, and the real one replaces it when PUBG's match
-        // data arrives (or the quick one stays, if it never does).
-        if !ended {
-            continue;
-        }
+        // PUBG's log says which games were played (one piece each). Only battle
+        // royale games ever show up in the API. Every game gets a quick record
+        // from screen reading + markers as soon as it is over (even while PUBG
+        // still runs); battle royale ones are replaced by the real record when
+        // PUBG's match data arrives, the rest are final once the session ends.
         let joins = gamelog::joins(
             meta.start_ms - 120_000,
-            meta.ended_ms.unwrap_or_else(now_ms) + 5_000,
+            meta.ended_ms.filter(|_| ended).unwrap_or_else(now_ms) + 5_000,
         );
         let official_built = meta
             .processed_matches
@@ -1128,13 +1172,15 @@ pub fn process_sessions(
         let official_pending = joins.iter().filter(|j| j.official()).count() > official_built;
         // without the log we can't know, so wait for the API as before
         let nothing_to_wait_for = !joins.is_empty() && !official_pending;
-        let waited_enough = nothing_to_wait_for
-            || meta
+        // give up on PUBG's data after 15 minutes, but only once we actually
+        // looked (passes while PUBG runs don't ask the API)
+        let timed_out = !in_game
+            && meta
                 .ended_ms
                 .map(|e| now_ms() - e > 15 * 60_000)
                 .unwrap_or(false);
-        let final_now = api.is_none() || waited_enough || force_final;
-        if !final_now {
+        let final_now = ended && (!api_cfg || nothing_to_wait_for || timed_out || force_final);
+        if ended && !final_now {
             let left = 15 - meta.ended_ms.map(|e| (now_ms() - e) / 60_000).unwrap_or(0);
             let left = left.clamp(1, 15);
             result.waiting_minutes = Some(result.waiting_minutes.map_or(left, |w| w.max(left)));
@@ -1153,10 +1199,9 @@ pub fn process_sessions(
                 .filter(|t| !meta.used_detections.contains(t)),
         );
         left.sort();
-        let full_session = api.is_none() && settings.capture_mode == "full";
+        let full_session = !api_cfg && settings.capture_mode == "full";
         let mut failed = false;
 
-        // one piece per game the log knows about (or the whole session)
         struct Piece {
             from: i64,
             to: i64,
@@ -1178,44 +1223,76 @@ pub fn process_sessions(
                     // anything before the first join belongs to the first game
                     from: if i == 0 { i64::MIN } else { j.at_ms },
                     to: joins.get(i + 1).map(|n| n.at_ms).unwrap_or(i64::MAX),
-                    labels: Some(j.labels()),
+                    labels: Some(if j.official() && !api_cfg {
+                        // no API to tell normal from custom games
+                        ("大逃杀".to_string(), String::new())
+                    } else {
+                        j.labels()
+                    }),
                     official: j.official(),
                 });
             }
         }
         let pre = settings.events.manual.pre.max(15.0) as i64 * 1000;
         let post = settings.events.manual.post.max(10.0) as i64 * 1000;
+        let now = now_ms();
         for piece in &pieces {
-            if meta.done_pieces.contains(&piece.from) {
+            if ps.done_pieces.contains(&piece.from) {
                 continue;
             }
             let in_piece = |t: i64| t >= piece.from && t < piece.to;
             let ev: Vec<i64> = left.iter().copied().filter(|t| in_piece(*t)).collect();
-            let quick = meta.provisional.iter().position(|p| p.from == piece.from);
+            let quick = ps.quick.iter().position(|q| q.from == piece.from);
+            let has_real = !joins.is_empty()
+                && ps
+                    .built_windows
+                    .iter()
+                    .any(|(a, b)| *a < piece.to && *b > piece.from);
 
-            if !final_now && piece.official {
-                // waiting for PUBG's data: show what screen reading found meanwhile
-                let built = !joins.is_empty()
-                    && meta
-                        .built_windows
+            if !final_now {
+                // --- quick phase: the session is still recording, or waiting for PUBG ---
+                if full_session || has_real || ev.is_empty() {
+                    continue;
+                }
+                // is this game over yet?
+                let seen = |kind: &str| -> Option<i64> {
+                    meta.detections
                         .iter()
-                        .any(|(a, b)| *a < piece.to && *b > piece.from);
-                if built || quick.is_some() || ev.is_empty() {
-                    continue;
-                }
-                let (Some(a), Some(b)) = (ev.first(), ev.last()) else {
-                    continue;
+                        .filter(|d| d.kind == kind && in_piece(d.at_ms))
+                        .map(|d| d.at_ms)
+                        .max()
                 };
-                let w0 = (a - pre - 5_000).max(piece.from.saturating_sub(2_000));
-                let w1 = (b + post + 5_000).min(piece.to);
-                if w1 - w0 < 2_000 {
+                let last = *ev.last().unwrap_or(&0);
+                let over = ended
+                    || piece.to != i64::MAX // the next game has started
+                    || seen("win").is_some()
+                    // eliminated and nothing new for a while (battle royale has
+                    // recalls; arcade modes respawn, so they wait for the next game)
+                    || (piece.official && seen("death").is_some() && now - last > 90_000);
+                if !over {
                     continue;
                 }
+                if let Some(i) = quick {
+                    if last <= ps.quick[i].upto {
+                        continue; // nothing new since the quick record
+                    }
+                }
+                let w0 = (ev[0] - pre - 5_000).max(piece.from.saturating_sub(2_000));
+                let w1 = (last + post + 5_000).min(piece.to);
+                if w1 - w0 < 2_000 || w1 > recorded_until {
+                    continue; // the end isn't on disk yet
+                }
+                let pending = piece.official && api_cfg;
                 progress("正在生成这局的高光");
                 let title_ms = if piece.from == i64::MIN {
                     w0.max(meta.start_ms)
                 } else {
                     piece.from
+                };
+                let labels = if pending {
+                    Some(("普通对局".to_string(), String::new()))
+                } else {
+                    piece.labels.clone()
                 };
                 match build_record(
                     lib,
@@ -1232,19 +1309,26 @@ pub fn process_sessions(
                         pubg: None,
                         stats: None,
                         clips_only: true,
-                        labels: Some(("普通对局".into(), String::new())),
-                        reuse_id: None,
-                        pending_api: true,
+                        labels,
+                        reuse_id: quick.map(|i| ps.quick[i].id.clone()),
+                        pending_api: pending,
+                        // the session may still be recording: its file belongs
+                        // to the recorder, so nothing is marked as used here
                         mark_used: false,
                     },
                 ) {
                     Ok(Some(rec)) => {
-                        meta.provisional.push(recorder::Provisional {
+                        let q = Quick {
                             from: piece.from,
                             to: piece.to,
+                            upto: last,
                             id: rec.id.clone(),
-                        });
-                        meta.save(&dir);
+                        };
+                        match quick {
+                            Some(i) => ps.quick[i] = q,
+                            None => ps.quick.push(q),
+                        }
+                        ps.save(&dir);
                         result.new_records.push(rec);
                     }
                     Ok(None) => {}
@@ -1253,34 +1337,41 @@ pub fn process_sessions(
                 continue;
             }
 
+            // --- final: the session is over and nothing more to wait for ---
             if let Some(i) = quick {
-                // PUBG's data never came (or we stopped waiting): the quick record is final
-                let q = meta.provisional.remove(i);
-                if let Some(mut rec) = lib.get(&q.id) {
-                    rec.pending_api = false;
-                    // waited it out and it never showed up in the API: a custom /
-                    // training game after all (not when the user just stopped waiting)
-                    if !force_final {
-                        if let Some((map, mode)) = &piece.labels {
-                            rec.map_label = map.clone();
-                            rec.game_mode = mode.clone();
+                let q = ps.quick[i].clone();
+                let newer = ev.iter().any(|t| *t > q.upto);
+                if !newer {
+                    if let Some(mut rec) = lib.get(&q.id) {
+                        rec.pending_api = false;
+                        // waited it out and it never showed up in the API: a custom /
+                        // training game after all (not when the user just stopped waiting)
+                        if !force_final {
+                            if let Some((map, mode)) = &piece.labels {
+                                rec.map_label = map.clone();
+                                rec.game_mode = mode.clone();
+                            }
                         }
+                        let _ = lib.save(&rec);
+                        result.new_records.push(rec);
                     }
-                    let _ = lib.save(&rec);
-                    result.new_records.push(rec);
+                    let taken: Vec<i64> =
+                        meta.markers.iter().copied().filter(|t| in_piece(*t)).collect();
+                    meta.used_markers.extend(taken);
+                    let read: Vec<i64> = meta
+                        .detections
+                        .iter()
+                        .map(|d| d.at_ms)
+                        .filter(|t| in_piece(*t))
+                        .collect();
+                    meta.used_detections.extend(read);
+                    ps.quick.remove(i);
+                    ps.done_pieces.push(piece.from);
+                    ps.save(&dir);
+                    meta.save(&dir);
+                    continue;
                 }
-                let taken: Vec<i64> = meta.markers.iter().copied().filter(|t| in_piece(*t)).collect();
-                meta.used_markers.extend(taken);
-                let seen: Vec<i64> = meta
-                    .detections
-                    .iter()
-                    .map(|d| d.at_ms)
-                    .filter(|t| in_piece(*t))
-                    .collect();
-                meta.used_detections.extend(seen);
-                meta.done_pieces.push(piece.from);
-                meta.save(&dir);
-                continue;
+                // more happened after the quick record (e.g. a recall): rebuild it below
             }
 
             let (w0, w1) = if full_session {
@@ -1294,13 +1385,13 @@ pub fn process_sessions(
                     (b + post + 5_000).min(piece.to),
                 )
             } else {
-                // nothing left in this game
-                if final_now {
-                    meta.done_pieces.push(piece.from);
-                }
+                ps.done_pieces.push(piece.from);
+                ps.save(&dir);
                 continue;
             };
             if w1 - w0 < 2_000 {
+                ps.done_pieces.push(piece.from);
+                ps.save(&dir);
                 continue;
             }
             progress("正在保存这次录制的片段");
@@ -1310,16 +1401,12 @@ pub fn process_sessions(
                 piece.from
             };
             // bits of a game whose real record exists (e.g. a marker in the lobby)
-            let labels = if piece.official
-                && meta
-                    .built_windows
-                    .iter()
-                    .any(|(a, b)| *a < piece.to && *b > piece.from)
-            {
+            let labels = if piece.official && has_real {
                 Some(("普通对局".to_string(), String::new()))
             } else {
                 piece.labels.clone()
             };
+            let reuse = quick.map(|i| ps.quick[i].id.clone());
             match build_record(
                 lib,
                 ffmpeg_path,
@@ -1336,23 +1423,27 @@ pub fn process_sessions(
                     stats: None,
                     clips_only: !full_session,
                     labels,
-                    reuse_id: None,
+                    reuse_id: reuse,
                     pending_api: false,
                     mark_used: true,
                 },
             ) {
-                Ok(Some(rec)) => {
-                    meta.done_pieces.push(piece.from);
-                    result.new_records.push(rec)
+                Ok(rec) => {
+                    if let Some(i) = quick {
+                        ps.quick.remove(i);
+                    }
+                    ps.done_pieces.push(piece.from);
+                    ps.save(&dir);
+                    if let Some(rec) = rec {
+                        result.new_records.push(rec);
+                    }
                 }
-                Ok(None) => meta.done_pieces.push(piece.from),
                 Err(e) => {
                     result.messages.push(e);
                     failed = true;
                 }
             }
         }
-        meta.save(&dir);
         if !final_now {
             continue;
         }
