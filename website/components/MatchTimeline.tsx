@@ -7,10 +7,11 @@ import { EVENT_ICON, RotateCcw } from "./icons";
 
 // The hero: one match plays back in ~7 seconds. The playhead sweeps the
 // timeline, each event lights up as it's passed and lands in the feed, and
-// the highlight bands fill in. It plays once on load; "Replay" plays it again.
+// the highlight bands fill in. It plays once, when it first scrolls into view
+// (on phones it starts below the fold); "Replay" plays it again.
 
 const PLAY_MS = 7000;
-const START_DELAY_MS = 500;
+const START_DELAY_MS = 350;
 
 // Which icon a grouped marker shows: the most notable event in the clip.
 const RANK: Record<EventKind, number> = { win: 5, kill: 4, knock: 3, eliminated: 2, knocked: 1, manual: 0 };
@@ -27,6 +28,7 @@ export function MatchTimeline(props: { t: Dict["timeline"]; locale: Locale; init
   const { t: copy, locale } = props;
   const [now, setNow] = useState(Math.min(props.initial ?? 0, MATCH_LENGTH));
   const raf = useRef<number | null>(null);
+  const figure = useRef<HTMLElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const userScrolled = useRef(false);
 
@@ -52,9 +54,32 @@ export function MatchTimeline(props: { t: Dict["timeline"]; locale: Locale; init
   }, []);
 
   useEffect(() => {
-    const id = window.setTimeout(play, START_DELAY_MS);
+    const el = figure.current;
+    let timer: number | undefined;
+    const start = () => {
+      timer = window.setTimeout(play, START_DELAY_MS);
+    };
+    let io: IntersectionObserver | undefined;
+    if (el && "IntersectionObserver" in window) {
+      io = new IntersectionObserver(
+        (entries) => {
+          // most of the timeline has to be on screen before it plays (or as
+          // much as fits, on short landscape screens)
+          const need = Math.min(0.75, (window.innerHeight * 0.85) / el.offsetHeight);
+          if (entries.some((e) => e.isIntersecting && e.intersectionRatio >= need)) {
+            io?.disconnect();
+            start();
+          }
+        },
+        { threshold: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1] },
+      );
+      io.observe(el);
+    } else {
+      start();
+    }
     return () => {
-      window.clearTimeout(id);
+      io?.disconnect();
+      window.clearTimeout(timer);
       if (raf.current) cancelAnimationFrame(raf.current);
     };
   }, [play]);
@@ -83,7 +108,7 @@ export function MatchTimeline(props: { t: Dict["timeline"]; locale: Locale; init
   for (let s = 0; s <= MATCH_LENGTH; s += 60) ticks.push(s);
 
   return (
-    <figure className="scene" aria-label={copy.label}>
+    <figure className="scene" aria-label={copy.label} ref={figure}>
       <div className="scene-head">
         <span className="scene-match">
           <span className={done ? "rec-dot is-off" : "rec-dot"} aria-hidden="true" />

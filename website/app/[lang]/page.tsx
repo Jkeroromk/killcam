@@ -6,6 +6,11 @@ import { DownloadButton, SiteFooter, SiteNav } from "@/components/Chrome";
 import { MatchTimeline } from "@/components/MatchTimeline";
 import { SmartScreen } from "@/components/SmartScreen";
 import { ChevronDown, Github } from "@/components/icons";
+import { ScrollReveal } from "@/components/ScrollReveal";
+import type { CSSProperties } from "react";
+
+/** stagger index for siblings revealed together */
+const at = (i: number) => ({ "--i": i }) as CSSProperties;
 
 export const revalidate = 3600;
 
@@ -43,17 +48,17 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
 
         <section className="shots" aria-label="KillCam">
           <div className="wrap shots-grid">
-            <figure className="shot shot-main">
+            <figure className="shot shot-main" data-reveal>
               <Image src="/screens/match.jpg" alt={d.shots.match} width={1600} height={1000} sizes="(max-width: 900px) 100vw, 860px" priority />
               <figcaption>{d.shots.match}</figcaption>
             </figure>
             <div className="shots-side">
-              <figure className="shot">
+              <figure className="shot" data-reveal style={at(1)}>
                 <Image src="/screens/home.jpg" alt={d.shots.home} width={1600} height={1000} sizes="(max-width: 900px) 100vw, 380px" />
                 <figcaption>{d.shots.home}</figcaption>
               </figure>
-              <figure className="shot">
-                <Image src="/screens/mini.png" alt={d.shots.mini} width={600} height={216} sizes="(max-width: 900px) 100vw, 380px" />
+              <figure className="shot shot-mini" data-reveal style={at(2)}>
+                <Image src="/screens/mini.png" alt={d.shots.mini} width={600} height={216} sizes="360px" />
                 <figcaption>{d.shots.mini}</figcaption>
               </figure>
             </div>
@@ -62,13 +67,13 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
 
         <section id="features" className="block">
           <div className="wrap">
-            <header className="block-head">
+            <header className="block-head" data-reveal>
               <h2>{d.features.title}</h2>
               <p>{d.features.intro}</p>
             </header>
             <ul className="features">
               {d.features.items.map((f) => (
-                <li key={f.title}>
+                <li key={f.title} data-reveal>
                   <h3>{f.title}</h3>
                   <p>{f.body}</p>
                 </li>
@@ -80,10 +85,10 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
         <section id="install" className="block is-panel">
           <div className="wrap install">
             <div className="install-steps">
-              <h2>{d.install.title}</h2>
+              <h2 data-reveal>{d.install.title}</h2>
               <ol className="steps">
                 {d.install.steps.map((s, i) => (
-                  <li key={s.title}>
+                  <li key={s.title} data-reveal style={at(i)}>
                     <span className="step-n" aria-hidden="true">
                       {i + 1}
                     </span>
@@ -94,9 +99,9 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
                   </li>
                 ))}
               </ol>
-              <p className="install-after">{d.install.after}</p>
+              <p className="install-after" data-reveal>{d.install.after}</p>
             </div>
-            <div className="install-side">
+            <div className="install-side" data-reveal style={at(1)}>
               <SmartScreen s={d.install.smart} file={latest?.installer?.name} />
               <h3 className="reqs-title">{d.reqs.title}</h3>
               <dl className="reqs">
@@ -113,10 +118,10 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
 
         <section className="block is-privacy">
           <div className="wrap privacy">
-            <h2>{d.privacy.title}</h2>
+            <h2 data-reveal>{d.privacy.title}</h2>
             <ul>
-              {d.privacy.items.map((p) => (
-                <li key={p.title}>
+              {d.privacy.items.map((p, i) => (
+                <li key={p.title} data-reveal style={at(i)}>
                   <h3>{p.title}</h3>
                   <p>{p.body}</p>
                 </li>
@@ -127,8 +132,8 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
 
         <section id="faq" className="block">
           <div className="wrap faq">
-            <h2>{d.faq.title}</h2>
-            <div className="faq-list">
+            <h2 data-reveal>{d.faq.title}</h2>
+            <div className="faq-list" data-reveal style={at(1)}>
               {d.faq.items.map((f) => (
                 <details key={f.q}>
                   <summary>
@@ -146,7 +151,7 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
         </section>
 
         <section className="cta">
-          <div className="wrap cta-inner">
+          <div className="wrap cta-inner" data-reveal>
             <div>
               <h2>{d.cta.title}</h2>
               <p>{d.cta.sub}</p>
@@ -157,6 +162,7 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
       </main>
 
       <SiteFooter d={d} lang={lang} />
+      <ScrollReveal />
     </>
   );
 }

@@ -6,6 +6,7 @@ import { RELEASES_URL, formatDate, formatSize, getReleases } from "@/lib/github"
 import { SiteFooter, SiteNav } from "@/components/Chrome";
 import { Notes } from "@/components/Notes";
 import { Download } from "@/components/icons";
+import { ScrollReveal } from "@/components/ScrollReveal";
 
 export const revalidate = 3600;
 
@@ -43,7 +44,7 @@ export default async function Changelog({ params }: { params: Promise<{ lang: st
           ) : (
             <ol className="cl-list">
               {releases.map((r, i) => (
-                <li key={r.tag} className={i === 0 ? "cl-item is-latest" : "cl-item"}>
+                <li key={r.tag} className={i === 0 ? "cl-item is-latest" : "cl-item"} data-reveal>
                   <div className="cl-rail" aria-hidden="true" />
                   <div className="cl-body">
                     <h2 className="cl-ver">
@@ -74,6 +75,7 @@ export default async function Changelog({ params }: { params: Promise<{ lang: st
         </div>
       </main>
       <SiteFooter d={d} lang={lang} />
+      <ScrollReveal />
     </>
   );
 }
