@@ -1,0 +1,53 @@
+# 手动测试打包：在 GitHub 的 Actions 页面选「测试打包（不发布）」→ Run workflow。
+# 编译出和正式版一样的安装包，放在这次运行页面最下面的 Artifacts 里下载。
+# 不会创建 Release，已安装的 KillCam 也不会收到更新提示。
+name: 测试打包（不发布）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install npm packages
+        run: npm ci
+
+      - name: Bundle FFmpeg
+        shell: pwsh
+        run: ./scripts/prepare-ffmpeg.ps1
+
+      - name: Build installer
+        run: npx tauri build --config src-tauri/tauri.bundle.json
+
+      - name: Name the installer after this commit
+        shell: pwsh
+        run: |
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          New-Item -ItemType Directory -Force out | Out-Null
+          Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | ForEach-Object {
+            Copy-Item $_.FullName ("out/" + $_.BaseName + "-test-" + $sha + ".exe")
+          }
+          Get-ChildItem out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KillCam-test-${{ github.run_number }}
+          path: out/*.exe
+          retention-days: 7
