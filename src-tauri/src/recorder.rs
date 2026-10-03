@@ -203,6 +203,20 @@ impl Recording {
         }
     }
 
+    pub fn encoder(&self) -> &str {
+        &self.settings.video.encoder
+    }
+
+    /// The encoder can't work on this machine / screen: continue the session
+    /// in a new part with another one.
+    pub fn switch_encoder(&mut self, encoder: &str) -> Result<(), String> {
+        self.settings.video.encoder = encoder.to_string();
+        if let Ok(mut m) = self.meta.lock() {
+            m.encoder = encoder.to_string();
+        }
+        self.restart()
+    }
+
     /// ffmpeg died (capture lost): start the next part in the same session.
     pub fn restart(&mut self) -> Result<(), String> {
         // the old audio threads only feed a dead pipe now: tear them down in the

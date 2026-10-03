@@ -176,26 +176,39 @@ pub struct EncoderInfo {
     pub available: bool,
 }
 
+/// Hardware encoders KillCam can record with: (id, label, vendor).
+pub const ENCODERS: [(&str, &str, &str); 6] = [
+    ("h264_nvenc", "H.264 (NVENC)", "nvidia"),
+    ("hevc_nvenc", "HEVC / H.265 (NVENC)", "nvidia"),
+    ("av1_nvenc", "AV1 (NVENC)", "nvidia"),
+    ("h264_amf", "H.264 (AMD AMF)", "amd"),
+    ("hevc_amf", "HEVC (AMD AMF)", "amd"),
+    ("av1_amf", "AV1 (AMD AMF)", "amd"),
+];
+
 /// Try a tiny real encode with each hardware encoder.
-pub fn probe_encoders(ffmpeg: &Path) -> Vec<EncoderInfo> {
-    let list = [
-        ("h264_nvenc", "H.264 (NVENC)", "nvidia"),
-        ("hevc_nvenc", "HEVC / H.265 (NVENC)", "nvidia"),
-        ("av1_nvenc", "AV1 (NVENC)", "nvidia"),
-        ("h264_amf", "H.264 (AMD AMF)", "amd"),
-        ("hevc_amf", "HEVC (AMD AMF)", "amd"),
-        ("av1_amf", "AV1 (AMD AMF)", "amd"),
-    ];
-    list.iter()
+///
+/// With `capture` (the ddagrab filter for the recording screen) the test frames
+/// come from the screen itself, the same way the recording gets them. That
+/// matters on machines with two GPUs: an encoder on the other GPU (e.g. AMD
+/// AMF on the CPU's integrated graphics while the screen hangs off an NVIDIA
+/// card) passes a synthetic test but can't take the screen's frames
+/// ("SubmitInput() failed with error 18").
+pub fn probe_encoders(ffmpeg: &Path, capture: Option<&str>) -> Vec<EncoderInfo> {
+    ENCODERS
+        .iter()
         .map(|(id, label, vendor)| {
-            let args = vec![
-                s("-hide_banner"),
-                s("-loglevel"),
-                s("error"),
-                s("-f"),
-                s("lavfi"),
-                s("-i"),
-                s("color=c=black:s=1280x720:r=30"),
+            let mut args = vec![s("-hide_banner"), s("-loglevel"), s("error")];
+            match capture {
+                Some(f) => args.extend([s("-filter_complex"), f.to_string()]),
+                None => args.extend([
+                    s("-f"),
+                    s("lavfi"),
+                    s("-i"),
+                    s("color=c=black:s=1280x720:r=30"),
+                ]),
+            }
+            args.extend([
                 s("-frames:v"),
                 s("10"),
                 s("-c:v"),
@@ -203,7 +216,7 @@ pub fn probe_encoders(ffmpeg: &Path) -> Vec<EncoderInfo> {
                 s("-f"),
                 s("null"),
                 s("-"),
-            ];
+            ]);
             let available = run(ffmpeg, &args, 0)
                 .map(|o| o.status.success())
                 .unwrap_or(false);
@@ -215,6 +228,67 @@ pub fn probe_encoders(ffmpeg: &Path) -> Vec<EncoderInfo> {
             }
         })
         .collect()
+}
+
+/// The capture filter used to test encoders: like the recording, but small
+/// and short. Frames stay on the GPU that drives this screen.
+pub fn probe_capture_filter(monitor_index: u32, gpu_scale: bool) -> String {
+    if gpu_scale {
+        format!(
+            "ddagrab=output_idx={monitor_index}:framerate=30:draw_mouse=0,scale_d3d11=width=1280:height=720:format=nv12"
+        )
+    } else {
+        format!("ddagrab=output_idx={monitor_index}:framerate=30:draw_mouse=0")
+    }
+}
+
+/// Lines ffmpeg prints when the encoder itself can't work with the frames or
+/// can't start on this machine (as opposed to the capture being interrupted).
+pub fn encoder_failed(log: &str) -> bool {
+    [
+        "SubmitInput() failed",
+        "Error submitting video frame to the encoder",
+        "Error while opening encoder",
+        "Could not open encoder",
+        "OpenEncodeSessionEx failed",
+        "No capable devices found",
+        "InitializeEncoder failed",
+        "Failed to initialize encoder",
+    ]
+    .iter()
+    .any(|m| log.contains(m))
+}
+
+/// Another encoder to try: one that worked in the probe (or, without a probe,
+/// any we haven't tried yet), same codec first so the parts of one session
+/// stay compatible.
+pub fn fallback_encoder(
+    failed: &str,
+    probed: Option<&[EncoderInfo]>,
+    tried: &[String],
+) -> Option<String> {
+    let codec = failed.split('_').next().unwrap_or("");
+    let all: Vec<EncoderInfo> = match probed {
+        Some(p) => p.to_vec(),
+        None => ENCODERS
+            .iter()
+            .map(|(id, label, vendor)| EncoderInfo {
+                id: s(id),
+                label: s(label),
+                vendor: s(vendor),
+                available: true,
+            })
+            .collect(),
+    };
+    let ok: Vec<&EncoderInfo> = all
+        .iter()
+        .filter(|e| e.available && e.id != failed && !tried.contains(&e.id))
+        .collect();
+    ok.iter()
+        .find(|e| e.id.starts_with(codec))
+        .or_else(|| ok.iter().find(|e| e.id.starts_with("h264")))
+        .or_else(|| ok.first())
+        .map(|e| e.id.clone())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -276,12 +350,13 @@ pub fn probe_gpu_scale(ffmpeg: &Path, monitor_index: u32) -> bool {
         s("error"),
         s("-filter_complex"),
         format!(
-            "ddagrab=output_idx={monitor_index}:framerate=30:draw_mouse=0,scale_d3d11=width=1280:height=720:format=nv12"
+            "ddagrab=output_idx={monitor_index}:framerate=30:draw_mouse=0,scale_d3d11=width=1280:height=720:format=nv12,hwdownload,format=nv12"
         ),
         s("-frames:v"),
         s("3"),
+        // no hardware encoder here: this only tests the scaler, on any GPU
         s("-c:v"),
-        s("h264_nvenc"),
+        s("rawvideo"),
         s("-f"),
         s("null"),
         s("-"),

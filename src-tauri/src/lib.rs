@@ -357,6 +357,8 @@ fn add_marker_now(app: &AppHandle, st: &St) -> bool {
 fn spawn_status_loop(app: AppHandle, st: St) {
     thread::spawn(move || {
         let mut last_detector_restart = Instant::now();
+        // encoders that failed during the current recording
+        let mut tried_encoders: Vec<String> = Vec::new();
         // when we first noticed the current ffmpeg had exited
         let mut exit_seen: Option<Instant> = None;
         let mut tick: u64 = 0;
@@ -369,6 +371,8 @@ fn spawn_status_loop(app: AppHandle, st: St) {
             let mut give_up: Option<String> = None;
             let mut retry_later = false;
             let mut resumed = false;
+            // (failed encoder, replacement)
+            let mut switched: Option<(String, String)> = None;
             {
                 let mut rec = lk(&st.recording);
                 match rec.as_mut() {
@@ -390,10 +394,43 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                                 ]
                                 .iter()
                                 .any(|m| tail.contains(m));
+                                // the encoder can't take this screen's frames (e.g. it sits
+                                // on the other GPU of a laptop): retrying won't help, another
+                                // encoder might
+                                let enc_failed = quick && ffmpeg::encoder_failed(&tail);
                                 if bad_args {
                                     give_up = Some(format!(
                                         "这个 FFmpeg 不认 KillCam 的录制参数（版本不兼容）\n{tail}"
                                     ));
+                                } else if enc_failed {
+                                    let failed = r.encoder().to_string();
+                                    tried_encoders.push(failed.clone());
+                                    let next = {
+                                        let mut hw = lk(&st.hw_cache);
+                                        if let Some(h) = hw.as_mut() {
+                                            for e in h.encoders.iter_mut() {
+                                                if e.id == failed {
+                                                    e.available = false;
+                                                }
+                                            }
+                                        }
+                                        ffmpeg::fallback_encoder(
+                                            &failed,
+                                            hw.as_ref().map(|h| h.encoders.as_slice()),
+                                            &tried_encoders,
+                                        )
+                                    };
+                                    match next {
+                                        Some(n) => match r.switch_encoder(&n) {
+                                            Ok(_) => switched = Some((failed, n)),
+                                            Err(e) => give_up = Some(e),
+                                        },
+                                        None => {
+                                            give_up = Some(format!(
+                                                "编码器 {failed} 用不了这块屏幕的画面，请在「设置 → 画质」里换一个编码器，或点「重新检测」\n{tail}"
+                                            ))
+                                        }
+                                    }
                                 } else if quick && r.last_good.elapsed() > Duration::from_secs(120)
                                 {
                                     retry_later = true;
@@ -407,8 +444,29 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                             }
                         }
                     }
-                    None => exit_seen = None,
+                    None => {
+                        exit_seen = None;
+                        tried_encoders.clear();
+                    }
                 }
+            }
+            if let Some((failed, next)) = switched {
+                // remember it, so the next recording starts with the working one
+                let saved = {
+                    let mut s = lk(&st.settings);
+                    s.video.encoder = next.clone();
+                    settings::save(&st.config_dir, &s)
+                };
+                if let Err(e) = saved {
+                    push_notice(&st, format!("编码器设置没能保存：{e}"));
+                }
+                push_notice(
+                    &st,
+                    format!("编码器 {failed} 在这台电脑上用不了这块屏幕的画面，已自动换成 {next} 继续录制"),
+                );
+                // the settings page shows the new encoder instead of saving the old one back
+                let _ = app.emit("settings-changed", ());
+                emit_status(&app, &st);
             }
             if resumed {
                 push_notice(
@@ -668,7 +726,10 @@ fn save_settings(
     let login_changed;
     {
         let mut s = lk(&st.settings);
-        let ff_changed = s.ffmpeg_path != settings.ffmpeg_path;
+        // encoders are tested against the recording screen, so a new screen
+        // (possibly on another GPU) needs a fresh test too
+        let ff_changed = s.ffmpeg_path != settings.ffmpeg_path
+            || s.video.monitor_index != settings.video.monitor_index;
         login_changed = s.launch_at_login != settings.launch_at_login;
         let name_changed = s.pubg.player_name != settings.pubg.player_name;
         *s = settings;
@@ -760,9 +821,9 @@ async fn detect_hardware(st: State<'_, St>, force: Option<bool>) -> Result<Hardw
         *lk(&st.gpu_scale) = None;
         let ff = st.ffmpeg();
         let monitor = lk(&st.settings).video.monitor_index;
-        let (info, err, encoders) = match &ff {
-            Ok(p) => (Some(ffmpeg::info(p)), None, ffmpeg::probe_encoders(p)),
-            Err(e) => (None, Some(e.clone()), Vec::new()),
+        let (info, err) = match &ff {
+            Ok(p) => (Some(ffmpeg::info(p)), None),
+            Err(e) => (None, Some(e.clone())),
         };
         let gpu_scale_works = match &ff {
             Ok(p) => {
@@ -772,6 +833,18 @@ async fn detect_hardware(st: State<'_, St>, force: Option<bool>) -> Result<Hardw
                     && st.gpu_scale(p, monitor)
             }
             Err(_) => false,
+        };
+        // test the encoders with frames from the recording screen, so an
+        // encoder on another GPU doesn't show up as usable
+        let encoders = match &ff {
+            Ok(p) => {
+                let capture = info
+                    .as_ref()
+                    .filter(|i| i.has_ddagrab)
+                    .map(|_| ffmpeg::probe_capture_filter(monitor, gpu_scale_works));
+                ffmpeg::probe_encoders(p, capture.as_deref())
+            }
+            Err(_) => Vec::new(),
         };
         let hw = HardwareInfo {
             gpu: ffmpeg::gpu_name(),

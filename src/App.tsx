@@ -25,9 +25,12 @@ export default function App() {
     api.getStatus().then(setStatus);
     const u1 = on<Status>("status", setStatus);
     const u2 = on<number>("library-changed", () => setLibVersion((v) => v + 1));
+    // the backend changed a setting by itself (e.g. switched to a working encoder)
+    const u3 = on<null>("settings-changed", () => api.getSettings().then(setSettings));
     return () => {
       u1();
       u2();
+      u3();
     };
   }, []);
 

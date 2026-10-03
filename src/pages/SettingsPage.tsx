@@ -56,6 +56,11 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
     setDraft((d) => ({ ...d, pubg: props.settings.pubg }));
   }, [props.settings.pubg]);
 
+  // KillCam switches the encoder by itself when the chosen one can't record this screen
+  useEffect(() => {
+    setDraft((d) => ({ ...d, video: { ...d.video, encoder: props.settings.video.encoder } }));
+  }, [props.settings.video.encoder]);
+
   const save = async () => {
     setSaving(true);
     setMsg(null);
