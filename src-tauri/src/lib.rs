@@ -581,6 +581,8 @@ fn spawn_game_watcher(app: AppHandle, st: St) {
         let mut w = game::Watcher::new();
         let mut last: Option<u32> = None;
         let mut n: u64 = 0;
+        // times the player went back to the lobby during this recording
+        let mut leaves_seen = 0usize;
         loop {
             let pid = w.find();
             *lk(&st.game_pid) = pid;
@@ -598,6 +600,14 @@ fn spawn_game_watcher(app: AppHandle, st: St) {
                 if changed {
                     emit_status(&app, &st);
                 }
+                // back in the lobby: cut the game just played right away
+                let left = session_start
+                    .map(|s0| gamelog::leaves(s0, now_ms() + 5_000).len())
+                    .unwrap_or(0);
+                if left > leaves_seen {
+                    st.trigger_processing(false);
+                }
+                leaves_seen = left;
             }
             let (onboarded, auto) = {
                 let s = lk(&st.settings);
@@ -708,6 +718,10 @@ fn spawn_processor(app: AppHandle, st: St) {
             // waiting for PUBG's match data: look a bit more often
             if res.waiting_minutes.is_some() && !in_game {
                 wait = Duration::from_secs(60);
+            }
+            // a game just ended: its last seconds are being written right now
+            if res.retry_soon {
+                wait = Duration::from_secs(10);
             }
             // remember the account id we looked up
             if settings.pubg.account_id.is_some() {

@@ -930,6 +930,8 @@ pub struct PassResult {
     pub messages: Vec<String>,
     /// an ended session is waiting for PUBG's match data: minutes left at most
     pub waiting_minutes: Option<i64>,
+    /// a game is over but the end of its footage isn't on disk yet: look again soon
+    pub retry_soon: bool,
 }
 
 /// `active_session`: id of the session currently being recorded (never finalized).
@@ -947,6 +949,7 @@ pub fn process_sessions(
         new_records: Vec::new(),
         messages: Vec::new(),
         waiting_minutes: None,
+        retry_soon: false,
     };
     let Ok(rd) = fs::read_dir(lib.sessions_dir()) else {
         return result;
@@ -1003,6 +1006,21 @@ pub fn process_sessions(
         }
         let recorded_until = meta.start_ms + (segs[segs.len() - 1].end * 1000.0) as i64;
         let mut ps = PieceState::load(&dir);
+        // PUBG's log: when each game started (server joins) and when the player
+        // went back to the lobby
+        let log_to = meta.ended_ms.filter(|_| ended).unwrap_or_else(now_ms) + 5_000;
+        let joins = gamelog::joins(meta.start_ms - 120_000, log_to);
+        let leaves = gamelog::leaves(meta.start_ms - 120_000, log_to);
+        // the piece (see below) a moment belongs to, by its start
+        let piece_of = |t: i64| -> i64 {
+            joins
+                .iter()
+                .enumerate()
+                .filter(|(_, j)| j.at_ms <= t)
+                .last()
+                .map(|(i, j)| if i == 0 { i64::MIN } else { j.at_ms })
+                .unwrap_or(i64::MIN)
+        };
 
         if let Some(api) = &api {
             if recent.is_none() && api_error.is_none() {
@@ -1115,10 +1133,12 @@ pub fn process_sessions(
                     });
                     progress("正在生成录像和高光");
                     // the quick record for this game (if any) becomes the real one
+                    // (the match starts a little after its server join)
+                    let key = piece_of(w0 + 30_000);
                     let reuse = ps
                         .quick
                         .iter()
-                        .position(|p| p.from < w1 && p.to > w0)
+                        .position(|q| q.from == key)
                         .map(|i| ps.quick.remove(i).id);
                     match build_record(
                         lib,
@@ -1160,10 +1180,6 @@ pub fn process_sessions(
         // from screen reading + markers as soon as it is over (even while PUBG
         // still runs); battle royale ones are replaced by the real record when
         // PUBG's match data arrives, the rest are final once the session ends.
-        let joins = gamelog::joins(
-            meta.start_ms - 120_000,
-            meta.ended_ms.filter(|_| ended).unwrap_or_else(now_ms) + 5_000,
-        );
         let official_built = meta
             .processed_matches
             .iter()
@@ -1240,7 +1256,14 @@ pub fn process_sessions(
             if ps.done_pieces.contains(&piece.from) {
                 continue;
             }
-            let in_piece = |t: i64| t >= piece.from && t < piece.to;
+            // the game ends when the player is back in the lobby; anything in the
+            // lobby (e.g. F9 while waiting) belongs to no game
+            let game_end = leaves
+                .iter()
+                .find(|l| **l > piece.from && **l < piece.to)
+                .map(|l| l + 3_000)
+                .unwrap_or(piece.to);
+            let in_piece = |t: i64| t >= piece.from && t < game_end;
             let ev: Vec<i64> = left.iter().copied().filter(|t| in_piece(*t)).collect();
             let quick = ps.quick.iter().position(|q| q.from == piece.from);
             let has_real = !joins.is_empty()
@@ -1265,10 +1288,16 @@ pub fn process_sessions(
                 let last = *ev.last().unwrap_or(&0);
                 let over = ended
                     || piece.to != i64::MAX // the next game has started
+                    // back in the lobby (PUBG logs it)
+                    || leaves.iter().any(|t| *t > piece.from && *t < piece.to)
                     || seen("win").is_some()
-                    // eliminated and nothing new for a while (battle royale has
-                    // recalls; arcade modes respawn, so they wait for the next game)
-                    || (piece.official && seen("death").is_some() && now - last > 90_000);
+                    // a PUBG without that log line: eliminated and nothing new for a
+                    // while (battle royale has recalls; arcade modes respawn, so
+                    // they wait for the next game)
+                    || (leaves.is_empty()
+                        && piece.official
+                        && seen("death").is_some()
+                        && now - last > 90_000);
                 if !over {
                     continue;
                 }
@@ -1278,9 +1307,13 @@ pub fn process_sessions(
                     }
                 }
                 let w0 = (ev[0] - pre - 5_000).max(piece.from.saturating_sub(2_000));
-                let w1 = (last + post + 5_000).min(piece.to);
-                if w1 - w0 < 2_000 || w1 > recorded_until {
-                    continue; // the end isn't on disk yet
+                let w1 = (last + post + 5_000).min(game_end);
+                if w1 - w0 < 2_000 {
+                    continue;
+                }
+                if w1 > recorded_until {
+                    result.retry_soon = true; // the end isn't on disk yet
+                    continue;
                 }
                 let pending = piece.official && api_cfg;
                 progress("正在生成这局的高光");
@@ -1382,7 +1415,7 @@ pub fn process_sessions(
             } else if let (Some(a), Some(b)) = (ev.first(), ev.last()) {
                 (
                     (a - pre - 5_000).max(piece.from.saturating_sub(2_000)),
-                    (b + post + 5_000).min(piece.to),
+                    (b + post + 5_000).min(game_end),
                 )
             } else {
                 ps.done_pieces.push(piece.from);

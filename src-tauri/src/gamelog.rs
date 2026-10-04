@@ -6,6 +6,11 @@
 //!
 //! That marks where one game ends and the next begins, also for arcade,
 //! custom and training games that PUBG's API knows nothing about.
+//!
+//! Leaving a game (back to the lobby) leaves a plain line too, a few seconds
+//! after the player quits the match:
+//!
+//! `[2026.10.04-03.35.17:...][...][...]Command not recognized: Stat DumpHitches -stop`
 
 use regex::Regex;
 use std::fs;
@@ -49,24 +54,26 @@ fn logs_dir() -> Option<PathBuf> {
     )
 }
 
+fn stamp_ms(c: &regex::Captures) -> Option<i64> {
+    let n = |i: usize| {
+        c.get(i)
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+            .unwrap_or(0)
+    };
+    let date = chrono::NaiveDate::from_ymd_opt(n(1) as i32, n(2), n(3))?;
+    let dt = date.and_hms_milli_opt(n(4), n(5), n(6), n(7))?;
+    Some(dt.and_utc().timestamp_millis())
+}
+
+const STAMP: &str = r"^\W*\[(\d{4})\.(\d{2})\.(\d{2})-(\d{2})\.(\d{2})\.(\d{2}):(\d{3})\]";
+
 fn parse(text: &str, re: &Regex, from_ms: i64, to_ms: i64, out: &mut Vec<Join>) {
     for line in text.lines() {
         if !line.contains("JoinToDedicatedServer") {
             continue;
         }
         let Some(c) = re.captures(line) else { continue };
-        let n = |i: usize| {
-            c.get(i)
-                .and_then(|m| m.as_str().parse::<u32>().ok())
-                .unwrap_or(0)
-        };
-        let Some(date) = chrono::NaiveDate::from_ymd_opt(n(1) as i32, n(2), n(3)) else {
-            continue;
-        };
-        let Some(dt) = date.and_hms_milli_opt(n(4), n(5), n(6), n(7)) else {
-            continue;
-        };
-        let at_ms = dt.and_utc().timestamp_millis();
+        let Some(at_ms) = stamp_ms(&c) else { continue };
         if at_ms >= from_ms && at_ms <= to_ms {
             out.push(Join {
                 at_ms,
@@ -76,21 +83,29 @@ fn parse(text: &str, re: &Regex, from_ms: i64, to_ms: i64, out: &mut Vec<Join>) 
     }
 }
 
-/// Server joins between `from_ms` and `to_ms`, oldest first. Empty when the log
-/// can't be read (the session is then handled as one piece, like before).
-pub fn joins(from_ms: i64, to_ms: i64) -> Vec<Join> {
+fn parse_leaves(text: &str, re: &Regex, from_ms: i64, to_ms: i64, out: &mut Vec<i64>) {
+    for line in text.lines() {
+        if !line.contains("DumpHitches -stop") {
+            continue;
+        }
+        let Some(c) = re.captures(line) else { continue };
+        if let Some(at_ms) = stamp_ms(&c) {
+            if at_ms >= from_ms && at_ms <= to_ms {
+                out.push(at_ms);
+            }
+        }
+    }
+}
+
+/// The text of PUBG's logs written since `from_ms` (the running game keeps
+/// TslGame.log open; reading it is still allowed).
+fn recent_logs(from_ms: i64) -> Vec<String> {
     let Some(dir) = logs_dir() else {
-        return Vec::new();
-    };
-    let Ok(re) = Regex::new(
-        r"^\W*\[(\d{4})\.(\d{2})\.(\d{2})-(\d{2})\.(\d{2})\.(\d{2}):(\d{3})\].*JoinToDedicatedServer\(\)\s*\[GameModeAliase=([A-Za-z0-9_]+)\]",
-    ) else {
         return Vec::new();
     };
     let Ok(rd) = fs::read_dir(&dir) else {
         return Vec::new();
     };
-    // only logs written after the session began can hold its joins
     let newer_than = std::time::UNIX_EPOCH
         + std::time::Duration::from_millis(from_ms.max(0) as u64)
         - std::time::Duration::from_secs(60);
@@ -105,19 +120,40 @@ pub fn joins(from_ms: i64, to_ms: i64) -> Vec<Join> {
             .and_then(|m| m.modified())
             .map(|t| t >= newer_than)
             .unwrap_or(true);
-        if !fresh {
-            continue;
+        if fresh {
+            if let Ok(bytes) = fs::read(e.path()) {
+                out.push(String::from_utf8_lossy(&bytes).to_string());
+            }
         }
-        // the running game keeps TslGame.log open; reading it is still allowed
-        if let Ok(bytes) = fs::read(e.path()) {
-            parse(
-                &String::from_utf8_lossy(&bytes),
-                &re,
-                from_ms,
-                to_ms,
-                &mut out,
-            );
-        }
+    }
+    out
+}
+
+/// Times (UTC ms) the player left a game for the lobby, oldest first.
+pub fn leaves(from_ms: i64, to_ms: i64) -> Vec<i64> {
+    let Ok(re) = Regex::new(STAMP) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for text in recent_logs(from_ms) {
+        parse_leaves(&text, &re, from_ms, to_ms, &mut out);
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Server joins between `from_ms` and `to_ms`, oldest first. Empty when the log
+/// can't be read (the session is then handled as one piece, like before).
+pub fn joins(from_ms: i64, to_ms: i64) -> Vec<Join> {
+    let Ok(re) = Regex::new(&format!(
+        r"{STAMP}.*JoinToDedicatedServer\(\)\s*\[GameModeAliase=([A-Za-z0-9_]+)\]"
+    )) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for text in recent_logs(from_ms) {
+        parse(&text, &re, from_ms, to_ms, &mut out);
     }
     out.sort_by_key(|j| j.at_ms);
     out.dedup_by_key(|j| j.at_ms);
@@ -140,5 +176,14 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].mode, "TDM");
         assert_eq!(out[0].at_ms, 1790963983133);
+    }
+
+    #[test]
+    fn parses_leave_lines() {
+        let re = Regex::new(STAMP).unwrap();
+        let text = "[2026.10.04-03.35.17:120][  9][3690]Command not recognized: Stat DumpHitches -stop\n[2026.10.04-03.35.56:025][418][3690]UTslGameInstance::JoinToDedicatedServer() [GameModeAliase=BATTLEROYALE]\n";
+        let mut out = Vec::new();
+        parse_leaves(text, &re, 0, i64::MAX, &mut out);
+        assert_eq!(out, vec![1791084917120]);
     }
 }
