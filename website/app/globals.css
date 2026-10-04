@@ -310,6 +310,43 @@ h3 {
   z-index: 1;
 }
 
+/* gameplay loop behind the headline; fades into the page above the timeline */
+.hero-media {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: clamp(560px, 80vh, 840px);
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--ink);
+}
+
+.hero-media-el {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: 55% 40%;
+}
+
+/* shade: darkest behind the text on the left, fading out at the bottom, with
+   the map grid laid over the footage */
+.hero-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to right, rgba(232, 229, 220, 0.045) 1px, transparent 1px) center top / 96px 96px,
+    linear-gradient(to bottom, rgba(232, 229, 220, 0.045) 1px, transparent 1px) center top / 96px 96px,
+    linear-gradient(to bottom, rgba(22, 26, 20, 0.6) 0%, rgba(22, 26, 20, 0) 22%, rgba(22, 26, 20, 0) 50%, var(--ink) 96%),
+    linear-gradient(to right, rgba(22, 26, 20, 0.9) 0%, rgba(22, 26, 20, 0.7) 42%, rgba(22, 26, 20, 0.38) 100%);
+}
+
+.hero-copy {
+  text-shadow: 0 1px 18px rgba(22, 26, 20, 0.55);
+}
+
 .hero-copy {
   max-width: 820px;
 }
@@ -1429,6 +1466,16 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
 
   .hero {
     padding: 56px 0 48px;
+  }
+
+  .hero-media {
+    height: 640px;
+  }
+
+  .hero-media::after {
+    background:
+      linear-gradient(to bottom, rgba(22, 26, 20, 0.55) 0%, rgba(22, 26, 20, 0.72) 45%, var(--ink) 94%),
+      rgba(22, 26, 20, 0.25);
   }
 
   .hero-sub {

@@ -7,6 +7,7 @@ import { MatchTimeline } from "@/components/MatchTimeline";
 import { SmartScreen } from "@/components/SmartScreen";
 import { ChevronDown, Github } from "@/components/icons";
 import { ScrollReveal } from "@/components/ScrollReveal";
+import { HeroVideo } from "@/components/HeroVideo";
 import type { CSSProperties } from "react";
 
 /** stagger index for siblings revealed together */
@@ -26,6 +27,7 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
 
       <main id="main">
         <section className="hero">
+          <HeroVideo />
           <div className="wrap">
             <div className="hero-copy">
               <h1 className="hero-title">
