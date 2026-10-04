@@ -76,7 +76,13 @@ export function UpdateCard(props: { status: Status | null }) {
       {u.notes?.trim() && (
         <details className="update-details">
           <summary>更新了什么</summary>
-          <div className="update-notes-rail">{u.notes.trim()}</div>
+          <div className="update-notes-rail">
+            {u.notes
+              .split(/\r?\n/)
+              .map((l) => l.trim())
+              .join("\n")
+              .trim()}
+          </div>
         </details>
       )}
       {busy ? (
