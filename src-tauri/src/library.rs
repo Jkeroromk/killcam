@@ -633,6 +633,9 @@ pub struct BuildInput<'a> {
     /// mark the markers / screen detections it used as taken (not for quick records:
     /// the real record still needs them)
     pub mark_used: bool,
+    /// battle royale: after the player's own elimination the screen shows the
+    /// teammate being spectated, so kills / knocks read from it aren't theirs
+    pub drop_after_death: bool,
 }
 
 /// Build one library entry from session segments within [window].
@@ -700,12 +703,24 @@ pub fn build_record(
         }
     }
     // screen detections: used directly when there is no telemetry for this span
+    let eliminated_at = meta
+        .detections
+        .iter()
+        .filter(|d| d.kind == "death" && d.at_ms >= w0 && d.at_ms <= w1)
+        .map(|d| d.at_ms)
+        .min();
     for d in meta.detections.clone().iter() {
         if d.at_ms >= w0 && d.at_ms <= w1 && !meta.used_detections.contains(&d.at_ms) {
             if input.mark_used {
                 meta.used_detections.push(d.at_ms);
             }
             if input.pubg.is_some() {
+                continue;
+            }
+            let spectating = input.drop_after_death
+                && matches!(d.kind.as_str(), "kill" | "knock" | "knocked")
+                && eliminated_at.map(|t| d.at_ms > t + 1_500).unwrap_or(false);
+            if spectating {
                 continue;
             }
             events.push(GameEvent {
@@ -1159,6 +1174,7 @@ pub fn process_sessions(
                             reuse_id: reuse,
                             pending_api: false,
                             mark_used: true,
+                            drop_after_death: false,
                         },
                     ) {
                         Ok(Some(rec)) => {
@@ -1264,7 +1280,29 @@ pub fn process_sessions(
                 .map(|l| l + 3_000)
                 .unwrap_or(piece.to);
             let in_piece = |t: i64| t >= piece.from && t < game_end;
-            let ev: Vec<i64> = left.iter().copied().filter(|t| in_piece(*t)).collect();
+            // battle royale: once eliminated, the kills on screen are the spectated
+            // teammate's (build_record leaves them out too)
+            let eliminated = meta
+                .detections
+                .iter()
+                .filter(|d| d.kind == "death" && in_piece(d.at_ms))
+                .map(|d| d.at_ms)
+                .min();
+            let spectated: Vec<i64> = match eliminated {
+                Some(t0) if piece.official => meta
+                    .detections
+                    .iter()
+                    .filter(|d| matches!(d.kind.as_str(), "kill" | "knock" | "knocked"))
+                    .filter(|d| d.at_ms > t0 + 1_500 && in_piece(d.at_ms))
+                    .map(|d| d.at_ms)
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let ev: Vec<i64> = left
+                .iter()
+                .copied()
+                .filter(|t| in_piece(*t) && !spectated.contains(t))
+                .collect();
             let quick = ps.quick.iter().position(|q| q.from == piece.from);
             let has_real = !joins.is_empty()
                 && ps
@@ -1348,6 +1386,7 @@ pub fn process_sessions(
                         // the session may still be recording: its file belongs
                         // to the recorder, so nothing is marked as used here
                         mark_used: false,
+                        drop_after_death: piece.official,
                     },
                 ) {
                     Ok(Some(rec)) => {
@@ -1459,6 +1498,7 @@ pub fn process_sessions(
                     reuse_id: reuse,
                     pending_api: false,
                     mark_used: true,
+                    drop_after_death: piece.official,
                 },
             ) {
                 Ok(rec) => {
