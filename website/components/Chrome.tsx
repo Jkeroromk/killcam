@@ -20,6 +20,7 @@ export function SiteNav({ d, lang, path }: { d: Dict; lang: Locale; path: string
         </Link>
         <nav className="nav-links" aria-label="KillCam">
           <Link href={`${home}#features`}>{d.nav.features}</Link>
+          <Link href={`${home}#stats`}>{d.nav.stats}</Link>
           <Link href={`${home}#install`}>{d.nav.install}</Link>
           <Link href={`${home}#faq`}>{d.nav.faq}</Link>
           <Link href={`${home}/changelog`} aria-current={path === "/changelog" ? "page" : undefined}>

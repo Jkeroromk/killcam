@@ -12,7 +12,7 @@ type Pair = { title: string; body: string };
 
 export type Dict = {
   meta: { title: string; description: string; changelogTitle: string };
-  nav: { features: string; install: string; faq: string; changelog: string; source: string; otherLang: string; otherLangLabel: string; skip: string };
+  nav: { features: string; stats: string; install: string; faq: string; changelog: string; source: string; otherLang: string; otherLangLabel: string; skip: string };
   hero: {
     titleA: string;
     titleB: string;
@@ -33,6 +33,36 @@ export type Dict = {
   };
   features: { title: string; intro: string; items: Pair[] };
   shots: { match: string; home: string; mini: string };
+  stats: {
+    title: string;
+    body: string;
+    points: string[];
+    keyNote: string;
+    panelLabel: string;
+    page: string;
+    range: (n: number) => string;
+    tiles: {
+      matches: string;
+      matchesSub: (wins: number, rate: string) => string;
+      kills: string;
+      killsSub: (kills: number, knocks: number) => string;
+      kd: string;
+      kdSub: (deaths: number) => string;
+      damage: string;
+      damageSub: (total: string) => string;
+      top10: string;
+      top10Sub: (n: number) => string;
+      heads: string;
+      headsSub: (n: number) => string;
+    };
+    perMatch: (metric: string) => string;
+    metrics: { kills: string; damage: string; place: string };
+    winLegend: string;
+    weapons: string;
+    weaponSub: (dist: number, heads: number) => string;
+    maps: Record<"erangel" | "miramar" | "taego" | "vikendi" | "deston" | "rondo", string>;
+    sample: string;
+  };
   install: {
     title: string;
     steps: Pair[];
@@ -64,6 +94,7 @@ const zh: Dict = {
   },
   nav: {
     features: "功能",
+    stats: "数据",
     install: "安装",
     faq: "常见问题",
     changelog: "更新日志",
@@ -112,6 +143,41 @@ const zh: Dict = {
       { title: "游戏里的迷你窗口", body: "显示录制时长和识别到的击杀数，不会被录进视频。" },
     ],
   },
+  stats: {
+    title: "每一局都记下来，打法自己会说话",
+    body: "填了 PUBG API Key 以后，KillCam 会把每局的官方数据存在你电脑上，在「数据」页里汇总给你看。",
+    points: [
+      "最近 20 局、50 局或全部对局，随时切换",
+      "每局击杀、伤害、排名的走势，吃鸡的局单独标出来",
+      "常用武器的击杀数、平均距离和爆头数",
+      "各地图战绩、击杀最多的一局和最远击杀",
+    ],
+    keyNote: "API Key 在 developer.pubg.com 免费申请，第一次打开时的引导里有步骤。街机和自定义房间没有官方数据，不计入统计。",
+    panelLabel: "KillCam 数据页示例",
+    page: "数据",
+    range: (n) => `最近 ${n} 局`,
+    tiles: {
+      matches: "对局",
+      matchesSub: (w, r) => `${w} 次吃鸡 · 吃鸡率 ${r}`,
+      kills: "场均击杀",
+      killsSub: (k, n) => `共 ${k} 击杀 · ${n} 击倒`,
+      kd: "K/D",
+      kdSub: (d) => `阵亡 ${d} 次`,
+      damage: "场均伤害",
+      damageSub: (t) => `共 ${t}`,
+      top10: "前十率",
+      top10Sub: (n) => `${n} 局进前十`,
+      heads: "爆头率",
+      headsSub: (n) => `${n} 次爆头击杀`,
+    },
+    perMatch: (m) => `每局${m}`,
+    metrics: { kills: "击杀", damage: "伤害", place: "排名" },
+    winLegend: "吃鸡",
+    weapons: "常用武器",
+    weaponSub: (d, h) => `平均 ${d} 米${h ? ` · ${h} 爆头` : ""}`,
+    maps: { erangel: "艾伦格", miramar: "米拉玛", taego: "泰戈", vikendi: "维寒迪", deston: "帝斯顿", rondo: "荣都" },
+    sample: "示例数据",
+  },
   shots: {
     match: "单局回放：时间轴、高光列表和导出选项",
     home: "总览：最近的对局和录制状态",
@@ -156,15 +222,15 @@ const zh: Dict = {
       },
       {
         q: "会掉帧吗？",
-        a: "录屏会占一点显卡，和开着 OBS 显示器采集差不多。编码用的是显卡上独立的 NVENC 芯片，不占玩游戏的算力。拼接和剪辑都放到关掉游戏以后才做。帧数比较紧张的话，可以在「设置 → 画质」里把录制帧率从 60 改成 30。",
+        a: "录屏会占一点显卡，和开着 OBS 显示器采集差不多。编码用的是显卡上独立的 NVENC 芯片，不占玩游戏的算力。剪高光只复制视频数据、不重新编码，用最低优先级在后台跑。帧数比较紧张的话，可以在「设置 → 画质」里把录制帧率从 60 改成 30。",
       },
       {
         q: "一定要填 PUBG API Key 吗？",
         a: "不是必须的。不填的话，靠读屏识别击杀、击倒、阵亡和吃鸡，也能自动剪高光。填了以后，普通对局会多出地图、排名、伤害、武器、距离、爆头等信息，时间点也更准。Key 可以在 developer.pubg.com 免费申请，引导里有步骤。",
       },
       {
-        q: "为什么一局打完没有马上出现？",
-        a: "普通对局要等 PUBG 官方数据，通常几分钟，最多 15 分钟，而且录像会在关掉游戏后才处理。街机、自定义、训练场没有官方数据，关掉游戏后会马上处理。等不及的话，可以在总览里点「不等了，现在处理」。",
+        q: "打完多久能看到高光？",
+        a: "不用关游戏。每局打完（吃鸡、被淘汰后一会儿，或者开始下一局时），这局的高光就会在后台剪好，回到大厅就能看。剪片段只是复制视频数据、不重新编码，用的是最低优先级，不影响游戏。填了 PUBG API Key 的话，普通对局会先按读屏剪好，几分钟后官方数据到了，再自动补上地图、排名、伤害和击杀详情。",
       },
       {
         q: "迷你窗口看不到，或者挡住了游戏？",
@@ -215,6 +281,7 @@ const en: Dict = {
   },
   nav: {
     features: "Features",
+    stats: "Stats",
     install: "Install",
     faq: "FAQ",
     changelog: "Changelog",
@@ -263,6 +330,41 @@ const en: Dict = {
       { title: "In-game mini window", body: "Shows recording time and kills detected. It never shows up in your recordings." },
     ],
   },
+  stats: {
+    title: "Every match, on the record",
+    body: "Add your PUBG API key and KillCam keeps each match's official data on your PC, then sums it up on the Stats page.",
+    points: [
+      "Last 20, last 50 or every match, one click apart",
+      "Kills, damage and placement match by match, with wins marked",
+      "Your go-to weapons: kills, average distance and headshots",
+      "Results by map, your best match and your longest kill",
+    ],
+    keyNote: "API keys are free at developer.pubg.com, and the first-run setup walks you through it. Arcade and custom matches have no official data, so they're not counted.",
+    panelLabel: "Example of the KillCam stats page",
+    page: "Stats",
+    range: (n) => `Last ${n}`,
+    tiles: {
+      matches: "Matches",
+      matchesSub: (w, r) => `${w} wins · ${r} win rate`,
+      kills: "Kills per match",
+      killsSub: (k, n) => `${k} kills · ${n} knocks`,
+      kd: "K/D",
+      kdSub: (d) => `${d} deaths`,
+      damage: "Damage per match",
+      damageSub: (t) => `${t} total`,
+      top10: "Top 10 rate",
+      top10Sub: (n) => `${n} top-10 finishes`,
+      heads: "Headshot rate",
+      headsSub: (n) => `${n} headshot kills`,
+    },
+    perMatch: (m) => `${m} per match`,
+    metrics: { kills: "Kills", damage: "Damage", place: "Placement" },
+    winLegend: "Win",
+    weapons: "Top weapons",
+    weaponSub: (d, h) => `avg ${d} m${h ? ` · ${h} headshots` : ""}`,
+    maps: { erangel: "Erangel", miramar: "Miramar", taego: "Taego", vikendi: "Vikendi", deston: "Deston", rondo: "Rondo" },
+    sample: "Example data",
+  },
   shots: {
     match: "Match view: timeline, highlight list and export options",
     home: "Overview: recent matches and recording status",
@@ -308,15 +410,15 @@ const en: Dict = {
       },
       {
         q: "Will it cost me frames?",
-        a: "Recording uses a little GPU, about the same as OBS display capture. Encoding runs on the GPU's separate NVENC chip, not the part rendering your game, and stitching and trimming wait until you close the game. If frames are tight, drop the recording frame rate from 60 to 30 in Settings → Quality.",
+        a: "Recording uses a little GPU, about the same as OBS display capture. Encoding runs on the GPU's separate NVENC chip, not the part rendering your game, and cutting highlights only copies video data, at the lowest priority. If frames are tight, drop the recording frame rate from 60 to 30 in Settings → Quality.",
       },
       {
         q: "Do I need a PUBG API key?",
         a: "No. Without one, KillCam still finds kills, knocks, deaths and wins from the screen and cuts highlights. With one, regular matches also get map, placement, damage, weapon, distance and headshots, with more precise timing. Keys are free at developer.pubg.com, and the setup shows you how.",
       },
       {
-        q: "Why doesn't my match show up right away?",
-        a: "Regular matches wait for PUBG's official data, usually a few minutes and at most 15, and recordings are processed after you close the game. Arcade, custom and training matches have no official data, so they're processed as soon as you close the game. To skip the wait, click “Process now” in the overview.",
+        q: "How soon are my highlights ready?",
+        a: "You don't need to close the game. When a match ends (a win, shortly after you're eliminated, or when the next match starts), its highlights are cut in the background and waiting when you're back in the lobby. Cutting only copies video data without re-encoding, at the lowest priority, so it doesn't affect the game. With a PUBG API key, regular matches are cut from screen detection first; when the official data arrives a few minutes later, map, placement, damage and kill details are filled in automatically.",
       },
       {
         q: "I can't see the mini window, or it covers the game",

@@ -8,6 +8,7 @@ import { SmartScreen } from "@/components/SmartScreen";
 import { ChevronDown, Github } from "@/components/icons";
 import { ScrollReveal } from "@/components/ScrollReveal";
 import { HeroVideo } from "@/components/HeroVideo";
+import { StatsDemo } from "@/components/StatsDemo";
 import type { CSSProperties } from "react";
 
 /** stagger index for siblings revealed together */
@@ -81,6 +82,24 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
                 </li>
               ))}
             </ul>
+          </div>
+        </section>
+
+        <section id="stats" className="block is-stats">
+          <div className="wrap stats">
+            <div className="stats-copy" data-reveal>
+              <h2>{d.stats.title}</h2>
+              <p className="stats-body">{d.stats.body}</p>
+              <ul className="stats-points">
+                {d.stats.points.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+              <p className="stats-note">{d.stats.keyNote}</p>
+            </div>
+            <div className="stats-panel" data-reveal style={at(1)}>
+              <StatsDemo locale={lang} />
+            </div>
           </div>
         </section>
 
