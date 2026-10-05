@@ -1,5 +1,7 @@
-# Only the newest three versions stay on the Releases page. Installed copies
-# update from the latest one, so older installers aren't needed.
+# Only the newest three versions stay on the Releases page (installed copies
+# update from the latest one, so older installers aren't needed), and only the
+# current website deployment stays in the Deployments list. The website itself
+# isn't touched: these are just GitHub's records of past Vercel deploys.
 # Runs after every release, or by hand from the Actions tab.
 name: Prune releases
 
@@ -10,6 +12,7 @@ on:
 permissions:
   contents: write
   actions: write
+  deployments: write
 
 jobs:
   prune:
@@ -39,4 +42,15 @@ jobs:
               echo "Deleting build record of $tag"
               gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/runs/$id"
             fi
+          done
+
+      - name: Keep only the current website deployment record
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # newest first; the first one is what the website runs now
+          gh api --paginate "repos/$GITHUB_REPOSITORY/deployments?per_page=100" --jq '.[].id' | tail -n +2 |
+          while read -r id; do
+            gh api -X POST "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" -f state=inactive > /dev/null || true
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/deployments/$id" > /dev/null && echo "Deleted deployment record $id"
           done
