@@ -24,6 +24,9 @@ pub struct GameEvent {
     pub headshot: bool,
     /// telemetry | hotkey
     pub source: String,
+    /// a kill credited to the player but finished by a teammate (often while the
+    /// player was already dead): counts, but gets no highlight of its own
+    pub credited: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -327,6 +330,10 @@ pub fn compute_highlights(
 ) -> Vec<Highlight> {
     let mut wins: Vec<(f64, f64, String)> = Vec::new();
     for e in events {
+        // the screen shows the teammate finishing them, not the player
+        if e.credited {
+            continue;
+        }
         let Some(r) = rules.get(&e.kind) else {
             continue;
         };
@@ -1138,6 +1145,7 @@ pub fn process_sessions(
                             weapon: e.weapon.clone(),
                             distance_m: e.distance_m,
                             headshot: e.headshot,
+                            credited: e.credited,
                             source: "telemetry".into(),
                         })
                         .collect();

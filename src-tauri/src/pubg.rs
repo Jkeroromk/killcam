@@ -34,7 +34,7 @@ pub struct MatchInfo {
     pub teams: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TEvent {
     pub kind: String,
     pub at_ms: i64,
@@ -42,6 +42,10 @@ pub struct TEvent {
     pub weapon: Option<String>,
     pub distance_m: Option<f64>,
     pub headshot: bool,
+    /// a kill credited to the player (they knocked them) but finished by someone
+    /// else, often while they were already dead: it counts, but the screen shows
+    /// the teammate, so it isn't a highlight of its own
+    pub credited: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -242,6 +246,7 @@ pub fn summarize(events: &[Value], me: &str, won: bool) -> Summary {
                         distance_m: dist,
                         headshot: e.get("damageReason").and_then(|r| r.as_str())
                             == Some("HeadShot"),
+                        credited: false,
                     });
                 } else if acc(victim) == Some(me) {
                     s.events.push(TEvent {
@@ -251,6 +256,7 @@ pub fn summarize(events: &[Value], me: &str, won: bool) -> Summary {
                         weapon,
                         distance_m: dist,
                         headshot: false,
+                        credited: false,
                     });
                 }
             }
@@ -273,6 +279,7 @@ pub fn summarize(events: &[Value], me: &str, won: bool) -> Summary {
                     .or_else(|| e.get("damageReason"))
                     .and_then(|r| r.as_str());
                 if acc(killer) == Some(me) && acc(victim) != Some(me) {
+                    let finisher = acc(e.get("finisher"));
                     s.events.push(TEvent {
                         kind: "kill".into(),
                         at_ms: at,
@@ -280,6 +287,7 @@ pub fn summarize(events: &[Value], me: &str, won: bool) -> Summary {
                         weapon,
                         distance_m: dist,
                         headshot: reason == Some("HeadShot"),
+                        credited: finisher.is_some() && finisher != Some(me),
                     });
                 } else if acc(victim) == Some(me) {
                     let by = name_of(killer).or_else(|| name_of(e.get("finisher")));
@@ -293,6 +301,7 @@ pub fn summarize(events: &[Value], me: &str, won: bool) -> Summary {
                         weapon,
                         distance_m: dist,
                         headshot: false,
+                        credited: false,
                     });
                 }
             }
@@ -308,6 +317,7 @@ pub fn summarize(events: &[Value], me: &str, won: bool) -> Summary {
                 weapon: None,
                 distance_m: None,
                 headshot: false,
+                credited: false,
             });
         }
     }
