@@ -1087,8 +1087,12 @@ pub fn process_sessions(
                     let won = mine.as_ref().map(|p| p.win_place == 1).unwrap_or(false);
                     let sum = pubg::summarize(&tele, &me, won);
                     let w0 = sum.match_start_ms.unwrap_or(info.created_at_ms) - 10_000;
-                    let w1 = match (sum.death_ms, sum.match_end_ms) {
-                        (Some(d), _) => d + 12_000,
+                    // the end of the player's game: their last elimination, unless they
+                    // played on after it (recalled back in, even won) or got credit
+                    // for kills afterwards; without either, the end of the match
+                    let last_own = sum.events.iter().map(|e| e.at_ms).chain(sum.death_ms).max();
+                    let w1 = match (last_own, sum.match_end_ms) {
+                        (Some(t), _) => t + 12_000,
                         (None, Some(e)) => e + 10_000,
                         _ => match_end_guess + 10_000,
                     };
