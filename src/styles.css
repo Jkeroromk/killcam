@@ -546,6 +546,7 @@ code,
   flex: none;
 }
 .kicon svg {
+  display: block;
   width: 13px;
   height: 13px;
 }
@@ -1384,7 +1385,7 @@ html.is-mini .spinner {
   color: var(--muted);
   flex-wrap: wrap;
 }
-.tape-legend span {
+.tape-legend > span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
