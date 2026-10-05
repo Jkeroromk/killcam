@@ -1,6 +1,6 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { AlertTriangle, Bookmark, Circle, Crosshair, Maximize2, Skull, Square, X } from "lucide-react";
+import { AlertTriangle, Bookmark, Circle, Crosshair, Eye, Maximize2, Skull, Square, X } from "lucide-react";
 import { api, on, type Status } from "../lib/api";
 import { bytes, clock } from "../lib/format";
 import { Spinner } from "../components/ui";
@@ -110,7 +110,11 @@ export default function Mini() {
           <b>{s?.roundMarkers ?? s?.markers ?? 0}</b>
         </span>
         <span className="grow" />
-        {rec && (
+        {rec && reading && s!.spectating ? (
+          <span className="mini-spect" title="正在观战队友：这段时间屏幕上的击杀、击倒算队友的，不会剪进你的高光">
+            <Eye size={13} /> 观战中
+          </span>
+        ) : rec && (
           <span className="mini-meta mono">
             {s!.stats.fps > 0 ? `${Math.round(s!.stats.fps)} fps · ` : ""}
             {bytes(s!.stats.sizeBytes)}

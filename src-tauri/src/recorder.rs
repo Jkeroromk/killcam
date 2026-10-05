@@ -38,6 +38,8 @@ pub struct SessionMeta {
     pub used_markers: Vec<i64>,
     /// prompts recognised on screen while recording
     pub detections: Vec<ScreenDetection>,
+    /// when the screen showed a teammate being spectated (the player was out)
+    pub spectating: Vec<SpectateSpan>,
     pub used_detections: Vec<i64>,
     pub processed_matches: Vec<String>,
     pub finalized: bool,
@@ -78,6 +80,30 @@ impl SessionMeta {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SpectateSpan {
+    pub from: i64,
+    /// None = still spectating when the recording stopped
+    pub to: Option<i64>,
+}
+
+impl SessionMeta {
+    /// Spectating spans that touch [from, to], widened a little: a prompt can
+    /// show up a moment before the card does.
+    pub fn spectate_spans(&self, from: i64, to: i64) -> Vec<(i64, i64)> {
+        self.spectating
+            .iter()
+            .map(|s| (s.from - 1_000, s.to.map(|t| t + 1_500).unwrap_or(i64::MAX)))
+            .filter(|(a, b)| *a <= to && *b >= from)
+            .collect()
+    }
+}
+
+pub fn in_spans(spans: &[(i64, i64)], t: i64) -> bool {
+    spans.iter().any(|(a, b)| t >= *a && t <= *b)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -193,6 +219,22 @@ impl Recording {
                 at_ms,
                 score,
             });
+            m.save(&self.dir);
+        }
+    }
+
+    pub fn set_spectating(&self, on: bool, at_ms: i64) {
+        if let Ok(mut m) = self.meta.lock() {
+            let open = m.spectating.last().map(|s| s.to.is_none()).unwrap_or(false);
+            if on && !open {
+                m.spectating.push(SpectateSpan { from: at_ms, to: None });
+            } else if !on && open {
+                if let Some(s) = m.spectating.last_mut() {
+                    s.to = Some(at_ms.max(s.from));
+                }
+            } else {
+                return;
+            }
             m.save(&self.dir);
         }
     }

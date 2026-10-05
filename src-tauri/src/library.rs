@@ -645,6 +645,38 @@ pub struct BuildInput<'a> {
     pub drop_after_death: bool,
 }
 
+/// Screen detections in [from, to) that were the spectated teammate's, not the player's.
+///
+/// With the spectate card read from the screen, that's everything shown while
+/// it was up (so kills after a recall still count). Sessions without it fall
+/// back to `after_death`: in battle royale everything after the player's own
+/// elimination.
+fn spectated_detections(meta: &SessionMeta, from: i64, to: i64, after_death: bool) -> Vec<i64> {
+    let inside = |t: i64| t >= from && t < to;
+    let eliminated = meta
+        .detections
+        .iter()
+        .filter(|d| d.kind == "death" && inside(d.at_ms))
+        .map(|d| d.at_ms)
+        .min();
+    let spans = meta.spectate_spans(from, to);
+    meta.detections
+        .iter()
+        .filter(|d| inside(d.at_ms))
+        .filter(|d| {
+            let theirs = matches!(d.kind.as_str(), "kill" | "knock" | "knocked");
+            if !spans.is_empty() {
+                // the player's own elimination stays, a watched teammate's doesn't
+                (theirs || (d.kind == "death" && Some(d.at_ms) != eliminated))
+                    && recorder::in_spans(&spans, d.at_ms)
+            } else {
+                theirs && after_death && eliminated.map(|t| d.at_ms > t + 1_500).unwrap_or(false)
+            }
+        })
+        .map(|d| d.at_ms)
+        .collect()
+}
+
 /// Build one library entry from session segments within [window].
 pub fn build_record(
     lib: &Lib,
@@ -710,12 +742,7 @@ pub fn build_record(
         }
     }
     // screen detections: used directly when there is no telemetry for this span
-    let eliminated_at = meta
-        .detections
-        .iter()
-        .filter(|d| d.kind == "death" && d.at_ms >= w0 && d.at_ms <= w1)
-        .map(|d| d.at_ms)
-        .min();
+    let spectated = spectated_detections(meta, w0, w1.saturating_add(1), input.drop_after_death);
     for d in meta.detections.clone().iter() {
         if d.at_ms >= w0 && d.at_ms <= w1 && !meta.used_detections.contains(&d.at_ms) {
             if input.mark_used {
@@ -724,10 +751,7 @@ pub fn build_record(
             if input.pubg.is_some() {
                 continue;
             }
-            let spectating = input.drop_after_death
-                && matches!(d.kind.as_str(), "kill" | "knock" | "knocked")
-                && eliminated_at.map(|t| d.at_ms > t + 1_500).unwrap_or(false);
-            if spectating {
+            if spectated.contains(&d.at_ms) {
                 continue;
             }
             events.push(GameEvent {
@@ -1292,24 +1316,9 @@ pub fn process_sessions(
                 .map(|l| l + 3_000)
                 .unwrap_or(piece.to);
             let in_piece = |t: i64| t >= piece.from && t < game_end;
-            // battle royale: once eliminated, the kills on screen are the spectated
-            // teammate's (build_record leaves them out too)
-            let eliminated = meta
-                .detections
-                .iter()
-                .filter(|d| d.kind == "death" && in_piece(d.at_ms))
-                .map(|d| d.at_ms)
-                .min();
-            let spectated: Vec<i64> = match eliminated {
-                Some(t0) if piece.official => meta
-                    .detections
-                    .iter()
-                    .filter(|d| matches!(d.kind.as_str(), "kill" | "knock" | "knocked"))
-                    .filter(|d| d.at_ms > t0 + 1_500 && in_piece(d.at_ms))
-                    .map(|d| d.at_ms)
-                    .collect(),
-                _ => Vec::new(),
-            };
+            // a spectated teammate's kills aren't the player's (build_record leaves
+            // them out too)
+            let spectated = spectated_detections(&meta, piece.from, game_end, piece.official);
             let ev: Vec<i64> = left
                 .iter()
                 .copied()

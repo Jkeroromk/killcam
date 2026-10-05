@@ -2193,6 +2193,13 @@ html.is-mini #root {
   font-size: 11px;
   color: var(--faint);
 }
+.mini-spect {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
 .mini-actions {
   display: flex;
   gap: 6px;

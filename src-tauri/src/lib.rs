@@ -11,7 +11,7 @@ mod settings;
 mod sound;
 
 use library::{ExportOptions, Lib, MatchRecord};
-use recorder::{now_ms, LiveStats, Recording, StartOptions};
+use recorder::{in_spans, now_ms, LiveStats, Recording, StartOptions};
 use serde::Serialize;
 use settings::{AudioSettings, Settings};
 use std::path::{Path, PathBuf};
@@ -160,6 +160,8 @@ struct Status {
     /// screen-read kills / knocks in the current recording
     live_kills: usize,
     live_knocks: usize,
+    /// the screen shows a teammate being spectated
+    spectating: bool,
     /// off | uncalibrated | active | error text
     detector: String,
     game_running: bool,
@@ -193,10 +195,12 @@ fn build_status(st: &AppState) -> Status {
         detections,
         live_kills,
         live_knocks,
+        spectating,
         mut warnings,
     ) = match rec.as_ref() {
         Some(r) => {
             let m = lk(&r.meta).clone();
+            let spect = m.spectate_spans(i64::MIN, i64::MAX);
             let mut w = r.warnings.clone();
             w.extend(r.audio_warnings());
             (
@@ -215,15 +219,17 @@ fn build_status(st: &AppState) -> Status {
                 m.markers.len(),
                 m.markers.iter().filter(|t| in_round(**t)).count(),
                 m.detections.len(),
-                // the mini window counts the game being played
+                // the mini window counts the game being played, without the
+                // kills of a teammate being spectated
                 m.detections
                     .iter()
-                    .filter(|d| d.kind == "kill" && in_round(d.at_ms))
+                    .filter(|d| d.kind == "kill" && in_round(d.at_ms) && !in_spans(&spect, d.at_ms))
                     .count(),
                 m.detections
                     .iter()
-                    .filter(|d| d.kind == "knock" && in_round(d.at_ms))
+                    .filter(|d| d.kind == "knock" && in_round(d.at_ms) && !in_spans(&spect, d.at_ms))
                     .count(),
+                m.spectating.last().map(|s| s.to.is_none()).unwrap_or(false),
                 w,
             )
         }
@@ -241,6 +247,7 @@ fn build_status(st: &AppState) -> Status {
             0,
             0,
             0,
+            false,
             Vec::new(),
         ),
     };
@@ -265,6 +272,7 @@ fn build_status(st: &AppState) -> Status {
         detections,
         live_kills,
         live_knocks,
+        spectating,
         detector: detector_state,
         round_started_ms: if recording { round } else { None },
         game_running: lk(&st.game_pid).is_some(),
@@ -326,6 +334,7 @@ fn start_detector(app: &AppHandle, st: &St, settings: &Settings, ff: &Path) {
     }
     let app2 = app.clone();
     let st2 = st.clone();
+    let st3 = st.clone();
     match detector::start(
         ff,
         settings.video.monitor_index,
@@ -336,6 +345,11 @@ fn start_detector(app: &AppHandle, st: &St, settings: &Settings, ff: &Path) {
                 r.add_detection(&d.kind, d.at_ms, d.score);
             }
             let _ = app2.emit("detection", d.kind.clone());
+        },
+        move |on, at_ms| {
+            if let Some(r) = lk(&st3.recording).as_ref() {
+                r.set_spectating(on, at_ms);
+            }
         },
     ) {
         Ok(d) => *lk(&st.detector) = Some(d),

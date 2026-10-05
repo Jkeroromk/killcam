@@ -532,34 +532,300 @@ fn step(p: &Placed, tr: &mut Track, m: &Mask, cm: Option<&Mask>, now_ms: i64) ->
 
 pub struct Detector {
     stop: Arc<AtomicBool>,
-    child: Arc<Mutex<Child>>,
-    handle: Option<JoinHandle<()>>,
+    children: Vec<Arc<Mutex<Child>>>,
+    handles: Vec<JoinHandle<()>>,
     pub error: Arc<Mutex<Option<String>>>,
 }
 
 impl Detector {
-    pub fn stop(mut self) {
+    pub fn stop(self) {
         self.stop.store(true, Ordering::Relaxed);
-        if let Ok(mut c) = self.child.lock() {
-            let _ = c.kill();
-            let _ = c.wait();
+        for c in &self.children {
+            if let Ok(mut c) = c.lock() {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
         }
-        if let Some(h) = self.handle.take() {
+        for h in self.handles {
             let _ = h.join();
         }
     }
 }
 
+/// Duplicate one rectangle of the screen (screen px) at `fps`, scaled to aw x ah, as RGB on stdout.
+fn grab(
+    ffmpeg_path: &Path,
+    monitor_index: u32,
+    fps: u32,
+    (bx, by, bw, bh): (u32, u32, u32, u32),
+    (aw, ah): (usize, usize),
+    upscale: &str,
+) -> Result<Child, String> {
+    let scale_filter = if (aw as u32, ah as u32) == (bw, bh) {
+        String::new()
+    } else if (ah as u32) > bh {
+        // smaller screens are read at the 1440p reference size
+        format!(",scale={aw}:{ah}:flags={upscale}")
+    } else {
+        format!(",scale={aw}:{ah}:flags=area")
+    };
+    let args: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-loglevel".into(),
+        "error".into(),
+        "-filter_complex".into(),
+        format!(
+            "ddagrab=output_idx={monitor_index}:framerate={fps}:draw_mouse=0:video_size={bw}x{bh}:offset_x={bx}:offset_y={by},hwdownload,format=bgra{scale_filter},format=rgb24"
+        ),
+        "-f".into(),
+        "rawvideo".into(),
+        "-pix_fmt".into(),
+        "rgb24".into(),
+        "pipe:1".into(),
+    ];
+    ffmpeg::command(ffmpeg_path, ffmpeg::BELOW_NORMAL_PRIORITY_CLASS)
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("无法启动识别进程：{e}"))
+}
+
+// ---- spectating ------------------------------------------------------------
+//
+// After the player is eliminated PUBG shows the teammate being watched: a card
+// in the top left (name, "Lv.xxx", emblems) with an eye icon and the viewer
+// count under it. Kills and knocks on screen during that time are the
+// teammate's. The card's art differs per player, so only the white "Lv." and
+// the eye are matched (1440p reference pixels, anchored to the left edge).
+
+const SPEC_FPS: u32 = 2;
+const SPEC_THRESHOLD: f32 = 0.55;
+/// eye icon, top-left corner
+const EYE_X: i32 = 48;
+const EYE_Y: i32 = 218;
+/// how far right of EYE_X the card may sit, and up / down
+const EYE_SEARCH_X: i32 = 120;
+const EYE_SEARCH_Y: i32 = 8;
+/// "Lv." relative to the eye
+const LV_DX: i32 = 148;
+const LV_DY: i32 = -41;
+/// the card hides while the map is open or when switching teammates;
+/// spectating only ends when it stays away this long
+const SPEC_HOLD_MS: i64 = 8_000;
+
+static EYE: [&str; 32] = [
+    "............................................",
+    "............................................",
+    "............................................",
+    "............................................",
+    "......................#.....................",
+    ".................###......##................",
+    "..............####..........####............",
+    "............####..............###...........",
+    "...........####................####.........",
+    ".........#####..................####........",
+    "........######...................####.......",
+    ".......######........###.........#####......",
+    "......#######......####..........######.....",
+    "......######.......####...........######....",
+    ".....#######......#####...........#######...",
+    "....########......######..........#######...",
+    "....########......##########......#######...",
+    ".....#######......##########......#######...",
+    "......######.......#########......######....",
+    "......#######......########......######.....",
+    ".......######.......######.......#####......",
+    "........######..................######......",
+    ".........#####..................#####.......",
+    "..........#####................####.........",
+    "............####..............####..........",
+    "..............####..........####............",
+    "................#####....####...............",
+    ".....................####...................",
+    "............................................",
+    "............................................",
+    "............................................",
+    "............................................",
+];
+
+static LV: [&str; 20] = [
+    "............................",
+    "............................",
+    "....##......................",
+    "....##......................",
+    "....##......................",
+    "....##......................",
+    "....##........##....##......",
+    "....##........##....##......",
+    "....##........###..###......",
+    "....##........###..##.......",
+    "....##.........##..##.......",
+    "....##.........##..##.......",
+    "....##.........##..##.......",
+    "....##..........####........",
+    "....##..........####........",
+    "....###.........####.....##.",
+    "....########....####.....###",
+    "....########.....##......##.",
+    "............................",
+    "............................",
+];
+
+fn bitmap(kind: &str, rows: &[&str]) -> Template {
+    let on = rows
+        .iter()
+        .enumerate()
+        .flat_map(|(r, row)| {
+            row.bytes()
+                .enumerate()
+                .filter(|(_, b)| *b == b'#')
+                .map(move |(c, _)| (r, c))
+        })
+        .collect();
+    Template {
+        kind: kind.into(),
+        feature: FEAT_WHITE,
+        mode: MODE_APPEAR,
+        cx: 0,
+        y: 0,
+        w: rows[0].len(),
+        h: rows.len(),
+        threshold: SPEC_THRESHOLD,
+        search_x: 0,
+        search_y: 0,
+        p0: 0,
+        p1: 0,
+        on,
+        confirm: None,
+        confirm_negate: false,
+    }
+}
+
+/// Is the spectate card on screen? `eye_y` = the eye's reference row inside the mask.
+fn card_visible(m: &Mask, eye: &Template, lv: &Template, eye_y: i32) -> bool {
+    let mut best = (0.0f32, 0i32, 0i32);
+    for y in (eye_y - EYE_SEARCH_Y)..=(eye_y + EYE_SEARCH_Y) {
+        if y < 0 || y as usize + eye.h > m.h {
+            continue;
+        }
+        for x in 0..=(EYE_X + EYE_SEARCH_X) {
+            if x as usize + eye.w > m.w {
+                break;
+            }
+            let s = m.score(eye, x as usize, y as usize);
+            if s > best.0 {
+                best = (s, x, y);
+            }
+        }
+    }
+    if best.0 < SPEC_THRESHOLD {
+        return false;
+    }
+    for dy in -3..=3 {
+        for dx in -3..=3 {
+            let (x, y) = (best.1 + LV_DX + dx, best.2 + LV_DY + dy);
+            if x < 0 || y < 0 || x as usize + lv.w > m.w || y as usize + lv.h > m.h {
+                continue;
+            }
+            if m.score(lv, x as usize, y as usize) >= SPEC_THRESHOLD {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The analysed area for the card, in reference pixels: (x0, y0, x1, y1).
+fn card_area() -> (i32, i32, i32, i32) {
+    let eye_w = EYE[0].len() as i32;
+    let lv_w = LV[0].len() as i32;
+    let x1 = (EYE_X + EYE_SEARCH_X + eye_w).max(EYE_X + EYE_SEARCH_X + LV_DX + 3 + lv_w) + 4;
+    let y0 = EYE_Y - EYE_SEARCH_Y + LV_DY - 3 - 4;
+    let y1 = EYE_Y + EYE_SEARCH_Y + EYE.len() as i32 + 4;
+    (0, y0, x1, y1)
+}
+
+/// Screen rectangle (y, w, h; it starts at the left edge), analysed size and the
+/// eye's reference row inside it.
+fn card_geometry(screen_w: u32, screen_h: u32, ref_h: u32) -> Result<(u32, u32, u32, usize, usize, i32), String> {
+    let f = ref_h as f32 / screen_h as f32;
+    let (_, y0, x1, y1) = card_area();
+    let by = ((y0 as f32 / f).floor().max(0.0) as u32) & !1;
+    let bw = (((x1 as f32 / f).ceil() as u32 + 1) & !1).min(screen_w & !1);
+    let bh = ((((y1 as f32 / f).ceil() as u32).saturating_sub(by) + 1) & !1).min(screen_h.saturating_sub(by) & !1);
+    if bw < 8 || bh < 8 {
+        return Err("观战识别区域无效".into());
+    }
+    let aw = ((bw as f32 * f).round() as usize).max(8);
+    let ah = ((bh as f32 * f).round() as usize).max(8);
+    let eye_y = (EYE_Y as f32 - by as f32 * f).round() as i32;
+    Ok((by, bw, bh, aw, ah, eye_y))
+}
+
+fn watch_spectate<G>(
+    ffmpeg_path: &Path,
+    monitor_index: u32,
+    screen_w: u32,
+    screen_h: u32,
+    ref_h: u32,
+    stop: Arc<AtomicBool>,
+    on_spectate: G,
+) -> Result<(Arc<Mutex<Child>>, JoinHandle<()>), String>
+where
+    G: Fn(bool, i64) + Send + 'static,
+{
+    let (by, bw, bh, aw, ah, eye_y) = card_geometry(screen_w, screen_h, ref_h)?;
+
+    let mut child = grab(ffmpeg_path, monitor_index, SPEC_FPS, (0, by, bw, bh), (aw, ah), "bicubic")?;
+    let mut out = child.stdout.take().ok_or("识别进程没有输出")?;
+    let child = Arc::new(Mutex::new(child));
+    let handle = thread::Builder::new()
+        .name("spectate".into())
+        .spawn(move || {
+            let eye = bitmap("eye", &EYE);
+            let lv = bitmap("lv", &LV);
+            let mut frame = vec![0u8; aw * ah * 3];
+            let mut open = false;
+            let mut last_seen = 0i64;
+            while !stop.load(Ordering::Relaxed) {
+                if out.read_exact(&mut frame).is_err() {
+                    break;
+                }
+                // the frame was taken up to half a frame ago
+                let now_ms = crate::recorder::now_ms() - 250;
+                let m = Mask::build(&frame, aw, ah, FEAT_WHITE);
+                if card_visible(&m, &eye, &lv, eye_y) {
+                    if !open {
+                        open = true;
+                        on_spectate(true, now_ms);
+                    }
+                    last_seen = now_ms;
+                } else if open && now_ms - last_seen > SPEC_HOLD_MS {
+                    open = false;
+                    on_spectate(false, last_seen + 500);
+                }
+            }
+            if open {
+                on_spectate(false, last_seen + 500);
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    Ok((child, handle))
+}
+
 /// Start watching. `on_detect` is called from the reader thread.
-pub fn start<F>(
+pub fn start<F, G>(
     ffmpeg_path: &Path,
     monitor_index: u32,
     screen_w: u32,
     screen_h: u32,
     on_detect: F,
+    on_spectate: G,
 ) -> Result<Detector, String>
 where
     F: Fn(Detection) + Send + 'static,
+    G: Fn(bool, i64) + Send + 'static,
 {
     let pack = load_pack().ok_or("还没有识别样本")?;
     if screen_w == 0 || screen_h == 0 {
@@ -601,31 +867,7 @@ where
     let aw = ((bw as f32 * f).round() as usize).max(8);
     let ah = ((bh as f32 * f).round() as usize).max(8);
 
-    let scale_filter = if (aw as u32, ah as u32) == (bw, bh) {
-        String::new()
-    } else {
-        format!(",scale={aw}:{ah}:flags=area")
-    };
-    let args: Vec<String> = vec![
-        "-hide_banner".into(),
-        "-loglevel".into(),
-        "error".into(),
-        "-filter_complex".into(),
-        format!(
-            "ddagrab=output_idx={monitor_index}:framerate={FPS}:draw_mouse=0:video_size={bw}x{bh}:offset_x={bx}:offset_y={by},hwdownload,format=bgra{scale_filter},format=rgb24"
-        ),
-        "-f".into(),
-        "rawvideo".into(),
-        "-pix_fmt".into(),
-        "rgb24".into(),
-        "pipe:1".into(),
-    ];
-    let mut child = ffmpeg::command(ffmpeg_path, ffmpeg::BELOW_NORMAL_PRIORITY_CLASS)
-        .args(&args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("无法启动识别进程：{e}"))?;
+    let mut child = grab(ffmpeg_path, monitor_index, FPS, (bx, by, bw, bh), (aw, ah), "area")?;
     let mut out = child.stdout.take().ok_or("识别进程没有输出")?;
 
     let placed: Vec<Placed> = pack
@@ -685,10 +927,19 @@ where
             .map_err(|e| e.to_string())?
     };
 
+    let mut children = vec![child];
+    let mut handles = vec![handle];
+    // the spectate card is a nice-to-have: without it, kills after the player's
+    // own elimination are left out instead
+    if let Ok((c, h)) = watch_spectate(ffmpeg_path, monitor_index, screen_w, screen_h, pack.ref_h, stop.clone(), on_spectate) {
+        children.push(c);
+        handles.push(h);
+    }
+
     Ok(Detector {
         stop,
-        child,
-        handle: Some(handle),
+        children,
+        handles,
         error,
     })
 }

@@ -76,6 +76,8 @@ export interface Status {
   detections: number;
   liveKills: number;
   liveKnocks: number;
+  /** the screen shows a teammate being spectated */
+  spectating?: boolean;
   /** off | uncalibrated | active | error text */
   detector: string;
   gameRunning: boolean;
