@@ -1,0 +1,27 @@
+# Only the newest three versions stay on the Releases page. Installed copies
+# update from the latest one, so older installers aren't needed.
+# Runs after every release, or by hand from the Actions tab.
+name: Prune releases
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep the newest three releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '[.[] | select(.draft | not)] | sort_by(.published_at) | reverse | .[3:] | .[].tag_name' |
+          while read -r tag; do
+            [ -n "$tag" ] || continue
+            echo "Deleting release and tag $tag"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          done
