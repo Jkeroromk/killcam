@@ -34,6 +34,16 @@ const FPS: u32 = 6;
 const CHANGE: f32 = 0.85;
 /// line fingerprints closer than this are the same line
 const SAME_LINE: f32 = 0.7;
+/// pixels the kill counter's number may shift between frames: the match position
+/// jitters a little, more on screens that are read scaled (1080p)
+const COUNTER_SLACK: i32 = 3;
+/// A new number must also differ at a coarser scale: when the digits get thinner or
+/// thicker with what's behind them, they still look the same there (block size,
+/// and the similarity below which the number counts as changed).
+const POOL: i32 = 5;
+const POOL_CHANGED: f32 = 0.93;
+/// how long the counter animates after popping in
+const COUNTER_POP_MS: i64 = 700;
 
 const FEAT_RED: u32 = 1;
 const FEAT_WHITE: u32 = 2;
@@ -295,6 +305,39 @@ impl Mask {
     }
 }
 
+impl Mask {
+    /// The patch averaged over POOL x POOL blocks: how thick the strokes come out
+    /// (it changes with what's behind the half-transparent digits) matters less
+    /// than their shape.
+    fn pooled(&self, x0: i32, y0: i32, w: i32, h: i32, k: i32) -> Option<Vec<f32>> {
+        let p = self.patch(x0, y0, w, h)?;
+        if k <= 1 {
+            return Some(p);
+        }
+        let (pw, ph) = ((w / k).max(1), (h / k).max(1));
+        let mut out = vec![0f32; (pw * ph) as usize];
+        for r in 0..(ph * k).min(h) {
+            for c in 0..(pw * k).min(w) {
+                out[((r / k) * pw + c / k) as usize] += p[(r * w + c) as usize];
+            }
+        }
+        Some(out)
+    }
+
+    /// Best similarity of `reference` with the (pooled) patch at (x0, y0), allowing a small shift.
+    fn ncc_near(&self, reference: &[f32], x0: i32, y0: i32, w: i32, h: i32, k: i32) -> f32 {
+        let mut best = 0f32;
+        for dy in -COUNTER_SLACK..=COUNTER_SLACK {
+            for dx in -COUNTER_SLACK..=COUNTER_SLACK {
+                if let Some(p) = self.pooled(x0 + dx, y0 + dy, w, h, k) {
+                    best = best.max(ncc2(&p, reference));
+                }
+            }
+        }
+        best
+    }
+}
+
 /// NCC between two equally sized patches.
 fn ncc2(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {
@@ -338,6 +381,8 @@ struct Track {
     // counter
     prev: Option<Vec<f32>>,
     reference: Option<Vec<f32>>,
+    ref_pooled: Option<Vec<f32>>,
+    appeared_ms: i64,
     drop_at: Option<i64>,
     drop_frames: u32,
     // lines
@@ -412,9 +457,14 @@ fn step(p: &Placed, tr: &mut Track, m: &Mask, cm: Option<&Mask>, now_ms: i64) ->
     let mut out = Vec::new();
     if hits.is_empty() {
         tr.absent += 1;
-        tr.prev = None;
-        tr.reference = None;
-        tr.drop_at = None;
+        // one missed frame (a muzzle flash over the digits) keeps the counter's
+        // number: a kill that lands in that frame still shows up as a change
+        if tr.absent >= 2 {
+            tr.prev = None;
+            tr.reference = None;
+            tr.ref_pooled = None;
+            tr.drop_at = None;
+        }
         tr.pending.clear();
         tr.recent.retain(|l| now_ms - l.seen_ms < 8_000);
         return out;
@@ -440,19 +490,30 @@ fn step(p: &Placed, tr: &mut Track, m: &Mask, cm: Option<&Mask>, now_ms: i64) ->
         }
         MODE_COUNTER => {
             let (s, bx, by) = hits[0];
-            let Some(nm) = m.patch(bx + t.p0, by, t.p1 - t.p0, t.h as i32) else {
+            let (nx, nw, nh) = (bx + t.p0, t.p1 - t.p0, t.h as i32);
+            let (Some(nm), Some(np)) = (m.pooled(nx, by, nw, nh, 1), m.pooled(nx, by, nw, nh, POOL)) else {
                 return out;
             };
             if appeared || tr.reference.is_none() || tr.prev.is_none() {
                 tr.reference = Some(nm.clone());
+                tr.ref_pooled = Some(np);
                 tr.prev = Some(nm);
                 tr.drop_at = None;
                 if appeared {
+                    tr.appeared_ms = now_ms;
                     out.push(det(now_ms, s));
                 }
                 return out;
             }
-            let c_prev = ncc2(&nm, tr.prev.as_deref().unwrap_or(&[]));
+            if now_ms - tr.appeared_ms < COUNTER_POP_MS {
+                // the counter pops in with a little animation
+                tr.reference = Some(nm.clone());
+                tr.ref_pooled = Some(np);
+                tr.prev = Some(nm);
+                tr.drop_at = None;
+                return out;
+            }
+            let c_prev = m.ncc_near(tr.prev.as_deref().unwrap_or(&[]), nx, by, nw, nh, 1);
             match tr.drop_at {
                 None => {
                     if c_prev < CHANGE {
@@ -460,18 +521,23 @@ fn step(p: &Placed, tr: &mut Track, m: &Mask, cm: Option<&Mask>, now_ms: i64) ->
                         tr.drop_frames = 0;
                     } else {
                         tr.reference = Some(nm.clone());
+                        tr.ref_pooled = Some(np);
                     }
                 }
                 Some(at) => {
                     tr.drop_frames += 1;
                     if c_prev >= CHANGE {
-                        if ncc2(&nm, tr.reference.as_deref().unwrap_or(&[])) < CHANGE {
+                        let c_ref = m.ncc_near(tr.reference.as_deref().unwrap_or(&[]), nx, by, nw, nh, 1);
+                        let c_pooled = m.ncc_near(tr.ref_pooled.as_deref().unwrap_or(&[]), nx, by, nw, nh, POOL);
+                        if c_ref < CHANGE && c_pooled < POOL_CHANGED {
                             out.push(det(at, s));
                         }
                         tr.reference = Some(nm.clone());
+                        tr.ref_pooled = Some(np);
                         tr.drop_at = None;
                     } else if tr.drop_frames > 8 {
                         tr.reference = Some(nm.clone());
+                        tr.ref_pooled = Some(np);
                         tr.drop_at = None;
                     }
                 }
