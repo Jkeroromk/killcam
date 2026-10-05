@@ -94,6 +94,12 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
     setDraft((d) => ({ ...d, video: { ...d.video, encoder: props.settings.video.encoder } }));
   }, [props.settings.video.encoder]);
 
+  // ...and follows the screen when its resolution changes
+  useEffect(() => {
+    const { monitorWidth, monitorHeight } = props.settings.video;
+    setDraft((d) => ({ ...d, video: { ...d.video, monitorWidth, monitorHeight } }));
+  }, [props.settings.video.monitorWidth, props.settings.video.monitorHeight]);
+
   const save = async () => {
     setSaving(true);
     setMsg(null);

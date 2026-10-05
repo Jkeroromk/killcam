@@ -295,14 +295,44 @@ fn emit_status(app: &AppHandle, st: &AppState) {
 // ---------------------------------------------------------------------------
 // session control
 
+/// The desktop resolution may have changed since the screen was picked (e.g.
+/// 3440×1440 -> 1920×1080). The capture areas and the mini window depend on it.
+fn refresh_monitor_size(app: &AppHandle, st: &St, ff: &Path) {
+    let (idx, w, h) = {
+        let s = lk(&st.settings);
+        (s.video.monitor_index, s.video.monitor_width, s.video.monitor_height)
+    };
+    if w == 0 || h == 0 {
+        return; // no screen picked: the recording takes the whole screen anyway
+    }
+    let Some((nw, nh)) = ffmpeg::monitor_size(ff, idx) else {
+        return;
+    };
+    if (nw, nh) == (w, h) {
+        return;
+    }
+    let mut s = lk(&st.settings).clone();
+    s.video.monitor_width = nw;
+    s.video.monitor_height = nh;
+    if settings::save(&st.config_dir, &s).is_ok() {
+        *lk(&st.settings) = s;
+        let _ = app.emit("settings-changed", ());
+        push_notice(st, format!("屏幕分辨率变成了 {nw}×{nh}，KillCam 已经跟着调整好了"));
+    }
+}
+
 fn start_session(app: &AppHandle, st: &St, pid: Option<u32>, auto: bool) -> Result<(), String> {
+    if lk(&st.recording).is_some() {
+        return Ok(());
+    }
+    let ff = st.ffmpeg()?;
+    refresh_monitor_size(app, st, &ff);
     let mut slot = lk(&st.recording);
     if slot.is_some() {
         return Ok(());
     }
     let settings = lk(&st.settings).clone();
     let lib = st.lib()?;
-    let ff = st.ffmpeg()?;
     let id = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let gpu_scale = st.gpu_scale(&ff, settings.video.monitor_index);
     let cpu_feed = st.cpu_feed_for(&settings.video.encoder);
@@ -629,6 +659,9 @@ fn spawn_game_watcher(app: AppHandle, st: St) {
             };
             if pid.is_some() && last.is_none() {
                 let _ = app.emit("game", true);
+                if let Ok(ff) = st.ffmpeg() {
+                    refresh_monitor_size(&app, &st, &ff);
+                }
                 let (mini_on, game_size) = {
                     let s = lk(&st.settings);
                     (

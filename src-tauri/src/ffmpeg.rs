@@ -428,6 +428,31 @@ pub fn list_monitors(ffmpeg: &Path, thumb_dir: &Path) -> Vec<MonitorInfo> {
     out
 }
 
+/// Current resolution of one monitor, as desktop duplication sees it.
+pub fn monitor_size(ffmpeg: &Path, index: u32) -> Option<(u32, u32)> {
+    let re = Regex::new(r"\bs:(\d+)x(\d+)").ok()?;
+    let args = vec![
+        s("-hide_banner"),
+        s("-loglevel"),
+        s("info"),
+        s("-filter_complex"),
+        format!("ddagrab=output_idx={index}:draw_mouse=0,hwdownload,format=bgra,showinfo"),
+        s("-frames:v"),
+        s("1"),
+        s("-f"),
+        s("null"),
+        s("-"),
+    ];
+    let o = run(ffmpeg, &args, 0).ok()?;
+    if !o.status.success() {
+        return None;
+    }
+    let err = String::from_utf8_lossy(&o.stderr);
+    let c = re.captures(&err)?;
+    let (w, h): (u32, u32) = (c[1].parse().ok()?, c[2].parse().ok()?);
+    (w > 0 && h > 0).then_some((w, h))
+}
+
 /// scale_d3d11 exists in many builds but fails on some driver / GPU combos
 /// ("Failed to configure output pad"). Run a 3-frame test to find out.
 pub fn probe_gpu_scale(ffmpeg: &Path, monitor_index: u32) -> bool {
