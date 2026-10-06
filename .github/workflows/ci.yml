@@ -38,4 +38,12 @@ jobs:
         run: npm run build
 
       - name: Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+        shell: pwsh
+        # failures also go to the run's annotations, readable without the full log
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib 2>&1 | Tee-Object -FilePath test.log
+          if ($LASTEXITCODE -ne 0) {
+            Select-String -Path test.log -Pattern 'panicked at|left:|right:|FAILED|^error|^test .* FAILED' |
+              Select-Object -First 30 | ForEach-Object { Write-Output "::error::$($_.Line)" }
+            exit 1
+          }
