@@ -4,6 +4,7 @@ mod ffmpeg;
 mod game;
 mod gamelog;
 mod library;
+mod lol;
 mod mini;
 mod pubg;
 mod recorder;
@@ -55,6 +56,12 @@ pub struct AppState {
     recording: Mutex<Option<Recording>>,
     monitor: Mutex<Option<audio::Monitor>>,
     game_pid: Mutex<Option<u32>>,
+    /// which game game_pid belongs to
+    game: Mutex<Option<game::Game>>,
+    /// League of Legends: the match being recorded, from the game's own data
+    lol_score: Mutex<lol::Score>,
+    /// set when the recording stops (the League watcher then winds down)
+    lol_stop: Mutex<Option<Arc<AtomicBool>>>,
     processing: Mutex<Option<String>>,
     notices: Mutex<Vec<String>>,
     last_error: Mutex<Option<String>>,
@@ -160,6 +167,11 @@ struct Status {
     /// screen-read kills / knocks in the current recording
     live_kills: usize,
     live_knocks: usize,
+    /// League of Legends
+    live_deaths: usize,
+    live_assists: usize,
+    /// game being recorded (or running): pubg | lol
+    game: Option<String>,
     /// the screen shows a teammate being spectated
     spectating: bool,
     /// off | uncalibrated | active | error text
@@ -193,9 +205,10 @@ fn build_status(st: &AppState) -> Status {
         markers,
         round_markers,
         detections,
-        live_kills,
-        live_knocks,
+        mut live_kills,
+        mut live_knocks,
         spectating,
+        rec_game,
         mut warnings,
     ) = match rec.as_ref() {
         Some(r) => {
@@ -230,6 +243,7 @@ fn build_status(st: &AppState) -> Status {
                     .filter(|d| d.kind == "knock" && in_round(d.at_ms) && !in_spans(&spect, d.at_ms))
                     .count(),
                 m.spectating.last().map(|s| s.to.is_none()).unwrap_or(false),
+                Some(game::Game::from_id(&m.game)),
                 w,
             )
         }
@@ -248,10 +262,21 @@ fn build_status(st: &AppState) -> Status {
             0,
             0,
             false,
+            None,
             Vec::new(),
         ),
     };
     drop(rec);
+    // League: the game's own scoreboard
+    let (mut live_deaths, mut live_assists) = (0, 0);
+    if rec_game == Some(game::Game::Lol) {
+        let sc = *lk(&st.lol_score);
+        live_kills = sc.kills;
+        live_knocks = 0;
+        live_deaths = sc.deaths;
+        live_assists = sc.assists;
+    }
+    let game = rec_game.or(*lk(&st.game)).map(|g| g.id().to_string());
     let detector_state = match lk(&st.detector).as_ref() {
         Some(d) => lk(&d.error).clone().unwrap_or_else(|| "active".into()),
         None if !detector::ready() => "uncalibrated".into(),
@@ -272,6 +297,9 @@ fn build_status(st: &AppState) -> Status {
         detections,
         live_kills,
         live_knocks,
+        live_deaths,
+        live_assists,
+        game,
         spectating,
         detector: detector_state,
         round_started_ms: if recording { round } else { None },
@@ -336,13 +364,17 @@ fn start_session(app: &AppHandle, st: &St, pid: Option<u32>, auto: bool) -> Resu
     let id = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let gpu_scale = st.gpu_scale(&ff, settings.video.monitor_index);
     let cpu_feed = st.cpu_feed_for(&settings.video.encoder);
+    // a recording started by hand while no game runs counts as PUBG
+    let game = lk(&st.game).unwrap_or(game::Game::Pubg);
+    let dir = lib.sessions_dir().join(&id);
     let rec = recorder::start(
         &ff,
         &settings,
         StartOptions {
-            dir: lib.sessions_dir().join(&id),
+            dir: dir.clone(),
             session_id: id,
             game_pid: pid,
+            game: game.id().into(),
             limit_seconds: None,
             test: false,
             gpu_scale,
@@ -351,6 +383,9 @@ fn start_session(app: &AppHandle, st: &St, pid: Option<u32>, auto: bool) -> Resu
     )?;
     *slot = Some(rec);
     drop(slot);
+    if game == game::Game::Lol {
+        start_lol_watcher(app, st, dir);
+    }
     start_detector(app, st, &settings, &ff);
     st.auto_session.store(auto, Ordering::Relaxed);
     *lk(&st.last_error) = None;
@@ -358,8 +393,38 @@ fn start_session(app: &AppHandle, st: &St, pid: Option<u32>, auto: bool) -> Resu
     Ok(())
 }
 
+/// League of Legends: follow the match through the game's own data.
+fn start_lol_watcher(app: &AppHandle, st: &St, dir: PathBuf) {
+    let stop = Arc::new(AtomicBool::new(false));
+    if let Some(old) = lk(&st.lol_stop).replace(stop.clone()) {
+        old.store(true, Ordering::Relaxed);
+    }
+    *lk(&st.lol_score) = lol::Score::default();
+    let league = lol::league_dir(game::Watcher::new().exe_dir(game::Game::Lol.exe()));
+    let (app2, st2, st3) = (app.clone(), st.clone(), st.clone());
+    lol::watch(
+        dir,
+        league,
+        stop,
+        move |sc| {
+            *lk(&st2.lol_score) = sc;
+            emit_status(&app2, &st2);
+        },
+        // the end-of-game stats are in: the match can become a record
+        move || st3.trigger_processing(false),
+    );
+}
+
 fn start_detector(app: &AppHandle, st: &St, settings: &Settings, ff: &Path) {
     if !settings.screen_detect || !detector::ready() {
+        return;
+    }
+    // the screen reader knows PUBG's prompts only
+    let pubg = lk(&st.recording)
+        .as_ref()
+        .map(|r| game::Game::from_id(&lk(&r.meta).game) == game::Game::Pubg)
+        .unwrap_or(false);
+    if !pubg {
         return;
     }
     let app2 = app.clone();
@@ -407,6 +472,9 @@ fn stop_detector(st: &AppState) {
 
 fn stop_session(app: &AppHandle, st: &St) {
     stop_detector(st);
+    if let Some(stop) = lk(&st.lol_stop).take() {
+        stop.store(true, Ordering::Relaxed);
+    }
     let rec = lk(&st.recording).take();
     if let Some(r) = rec {
         r.stop();
@@ -624,15 +692,30 @@ fn spawn_game_watcher(app: AppHandle, st: St) {
     thread::spawn(move || {
         let mut w = game::Watcher::new();
         let mut last: Option<u32> = None;
+        let mut last_game: Option<game::Game> = None;
         let mut n: u64 = 0;
         // times the player went back to the lobby during this recording
         let mut leaves_seen = 0usize;
         loop {
-            let pid = w.find();
+            let enabled = lk(&st.settings).games.enabled();
+            let found = w.find(&enabled);
+            let pid = found.map(|f| f.1);
+            let running = found.map(|f| f.0);
             *lk(&st.game_pid) = pid;
+            *lk(&st.game) = running;
+            if running != last_game && running.is_some() && last.is_some() {
+                // one game closed and another opened between two looks
+                last = None;
+            }
+            last_game = running;
             // which game is being played: the mini window counts per game
             n += 1;
-            if n % 4 == 1 {
+            if running == Some(game::Game::Lol) {
+                // a League recording is one match: its timer is the recording's
+                *lk(&st.round_start) = None;
+            }
+            // PUBG's log: game starts and returns to the lobby
+            if n % 4 == 1 && running != Some(game::Game::Lol) {
                 let session_start = lk(&st.recording).as_ref().map(|r| lk(&r.meta).start_ms);
                 let round = session_start.and_then(|s0| {
                     gamelog::joins(s0 - 120_000, now_ms() + 5_000)
@@ -1041,7 +1124,9 @@ async fn list_monitors(
 
 #[tauri::command]
 fn game_info(st: State<'_, St>) -> game::GameInfo {
-    game::info(*lk(&st.game_pid))
+    // the display-settings check reads PUBG's config
+    let pid = *lk(&st.game_pid);
+    game::info(pid.filter(|_| *lk(&st.game) == Some(game::Game::Pubg)))
 }
 
 #[tauri::command]
@@ -1156,6 +1241,7 @@ async fn run_perf_test(
                 dir: dir.clone(),
                 session_id: "perf".into(),
                 game_pid: pid,
+                game: lk(&st.game).unwrap_or(game::Game::Pubg).id().into(),
                 limit_seconds: Some(secs),
                 test: true,
                 gpu_scale,
@@ -1779,6 +1865,9 @@ pub fn run() {
                 recording: Mutex::new(None),
                 monitor: Mutex::new(None),
                 game_pid: Mutex::new(None),
+                game: Mutex::new(None),
+                lol_score: Mutex::new(lol::Score::default()),
+                lol_stop: Mutex::new(None),
                 processing: Mutex::new(None),
                 notices: Mutex::new(Vec::new()),
                 last_error: Mutex::new(None),

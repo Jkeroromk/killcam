@@ -2,6 +2,7 @@
 
 use crate::ffmpeg::{self, IDLE_PRIORITY_CLASS};
 use crate::gamelog;
+use crate::lol;
 use crate::pubg;
 use crate::recorder::{self, now_ms, Segment, SessionMeta};
 use crate::settings::{EventRules, Settings};
@@ -27,6 +28,8 @@ pub struct GameEvent {
     /// a kill credited to the player but finished by a teammate (often while the
     /// player was already dead): counts, but gets no highlight of its own
     pub credited: bool,
+    /// League of Legends: 双杀 / 一血 / 抢 ...
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -92,6 +95,10 @@ pub struct MatchRecord {
     /// built from screen reading right after the game; PUBG's match data
     /// (map, placement, exact events) replaces it when it arrives
     pub pending_api: bool,
+    /// pubg (also when empty: records from before other games) | lol
+    pub game: String,
+    /// League of Legends: champion, KDA, the scoreboard
+    pub lol: Option<lol::LolStats>,
 }
 
 pub struct Lib {
@@ -135,6 +142,8 @@ pub fn kind_label(k: &str) -> &'static str {
         "knocked" => "被击倒",
         "win" => "吃鸡",
         "manual" => "手动标记",
+        "assist" => "助攻",
+        "objective" => "资源",
         _ => "事件",
     }
 }
@@ -375,6 +384,53 @@ pub fn compute_highlights(
             orig_end: None,
         })
         .collect()
+}
+
+/// League of Legends: named by its biggest moment ("五杀 + 抢纳什男爵").
+fn lol_title(evs: &[&GameEvent]) -> String {
+    const MULTI: [&str; 4] = ["双杀", "三杀", "四杀", "五杀"];
+    let mut parts: Vec<String> = Vec::new();
+    if evs.iter().any(|e| e.kind == "win") {
+        parts.push("胜利".into());
+    }
+    let kills: Vec<&&GameEvent> = evs.iter().filter(|e| e.kind == "kill").collect();
+    let details: Vec<&str> = kills.iter().filter_map(|e| e.detail.as_deref()).collect();
+    let best = details
+        .iter()
+        .filter_map(|d| MULTI.iter().position(|m| d.contains(m)))
+        .max();
+    match (best, kills.len()) {
+        (Some(i), _) => parts.push(MULTI[i].into()),
+        (None, 1) if details.iter().any(|d| d.contains("一血")) => parts.push("一血".into()),
+        (None, 1) => parts.push("击杀".into()),
+        (None, n) if n > 1 => parts.push(format!("{n} 击杀")),
+        _ => {}
+    }
+    if details.iter().any(|d| d.contains("团灭")) {
+        parts.push("团灭".into());
+    }
+    for e in evs.iter().filter(|e| e.kind == "objective") {
+        let name = e.victim.clone().unwrap_or_else(|| "资源".into());
+        let label = if e.detail.as_deref() == Some("抢") { format!("抢{name}") } else { name };
+        if !parts.contains(&label) {
+            parts.push(label);
+        }
+    }
+    let assists = evs.iter().filter(|e| e.kind == "assist").count();
+    if kills.is_empty() && assists > 0 {
+        parts.push(if assists == 1 { "助攻".into() } else { format!("{assists} 助攻") });
+    }
+    if evs.iter().any(|e| e.kind == "manual") {
+        parts.push("手动标记".into());
+    }
+    if evs.iter().any(|e| e.kind == "death") {
+        parts.push("阵亡".into());
+    }
+    if parts.is_empty() {
+        "高光".into()
+    } else {
+        parts.join(" + ")
+    }
 }
 
 pub fn highlight_title(kinds: &[String]) -> String {
@@ -643,6 +699,72 @@ pub struct BuildInput<'a> {
     /// battle royale: after the player's own elimination the screen shows the
     /// teammate being spectated, so kills / knocks read from it aren't theirs
     pub drop_after_death: bool,
+    /// game::Game::id
+    pub game: &'a str,
+    pub lol: Option<lol::LolStats>,
+}
+
+/// One League of Legends match (one recording) -> one record.
+fn build_lol(
+    lib: &Lib,
+    ffmpeg_path: &Path,
+    settings: &Settings,
+    dir: &Path,
+    meta: &mut SessionMeta,
+    segs: &[Segment],
+    recorded_until: i64,
+) -> Result<Option<MatchRecord>, String> {
+    let sum = lol::summarize(dir);
+    let events: Vec<GameEvent> = sum
+        .as_ref()
+        .map(|s| {
+            s.moments
+                .iter()
+                .map(|m| GameEvent {
+                    kind: m.kind.to_string(),
+                    wall_ms: m.at_ms,
+                    victim: m.victim.clone(),
+                    detail: m.detail.clone(),
+                    source: "game".into(),
+                    ..Default::default()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    // the loading screen isn't part of the match
+    let from = sum
+        .as_ref()
+        .and_then(|s| s.game_start_ms)
+        .map(|g| (g - 3_000).max(meta.start_ms - 1))
+        .unwrap_or(meta.start_ms - 1);
+    let labels = sum
+        .as_ref()
+        .map(|s| s.labels.clone())
+        .unwrap_or_else(|| ("英雄联盟".into(), "对局".into()));
+    build_record(
+        lib,
+        ffmpeg_path,
+        settings,
+        dir,
+        meta,
+        segs,
+        BuildInput {
+            kind: "session",
+            title_time_ms: from.max(meta.start_ms),
+            window: (from, recorded_until + 1),
+            events,
+            pubg: None,
+            stats: None,
+            clips_only: settings.capture_mode == "highlights",
+            labels: Some(labels),
+            reuse_id: None,
+            pending_api: false,
+            mark_used: true,
+            drop_after_death: false,
+            game: "lol",
+            lol: sum.map(|s| s.stats),
+        },
+    )
 }
 
 /// Screen detections in [from, to) that were the spectated teammate's, not the player's.
@@ -769,13 +891,22 @@ pub fn build_record(
         e.id = format!("e{:03}", i + 1);
     }
     let mut highlights = compute_highlights(&events, &settings.events, duration);
+    if input.game == "lol" {
+        for h in highlights.iter_mut() {
+            let inside: Vec<&GameEvent> = events
+                .iter()
+                .filter(|e| e.t >= h.start - 0.01 && e.t <= h.end + 0.01)
+                .collect();
+            h.title = lol_title(&inside);
+        }
+    }
 
     // a still per highlight, taken just after its first kill / knock / win
     let moment = |h: &Highlight| -> f64 {
         events
             .iter()
             .filter(|e| e.t >= h.start && e.t <= h.end)
-            .filter(|e| matches!(e.kind.as_str(), "kill" | "knock" | "win"))
+            .filter(|e| matches!(e.kind.as_str(), "kill" | "knock" | "win" | "objective"))
             .map(|e| e.t + 0.4)
             .next()
             .unwrap_or((h.start + h.end) / 2.0)
@@ -919,6 +1050,8 @@ pub fn build_record(
         dir: String::new(),
         thumb_dir: String::new(),
         pending_api: input.pending_api,
+        game: input.game.to_string(),
+        lol: input.lol,
     };
     lib.save(&rec)?;
     let mut out = rec;
@@ -1051,6 +1184,50 @@ pub fn process_sessions(
             continue;
         }
         let recorded_until = meta.start_ms + (segs[segs.len() - 1].end * 1000.0) as i64;
+        if meta.game == "lol" {
+            // one recording = one League match, built once it's over and the
+            // end-of-game stats are in (or didn't come within a few minutes)
+            if !ended {
+                continue;
+            }
+            let done = lol::LiveLog::load(&dir).map(|l| l.done).unwrap_or(true);
+            let waited = meta.ended_ms.map(|e| now_ms() - e > 4 * 60_000).unwrap_or(true);
+            if !done && !waited {
+                result.retry_soon = true;
+                continue;
+            }
+            progress("正在剪辑英雄联盟对局");
+            match build_lol(lib, ffmpeg_path, settings, &dir, &mut meta, &segs, recorded_until) {
+                Ok(rec) => {
+                    if let Some(rec) = rec {
+                        result.new_records.push(rec);
+                    }
+                }
+                Err(e) => {
+                    result.messages.push(e);
+                    meta.finalize_failures += 1;
+                    meta.save(&dir);
+                    if meta.finalize_failures < 3 {
+                        continue;
+                    }
+                    result.messages.push(format!(
+                        "这次录制处理失败了 3 次，原始文件保留在 {}",
+                        dir.to_string_lossy()
+                    ));
+                    meta.finalized = true;
+                    meta.save(&dir);
+                    continue;
+                }
+            }
+            meta.finalized = true;
+            meta.save(&dir);
+            if fs::remove_dir_all(&dir).is_err() {
+                result
+                    .messages
+                    .push("临时录像文件夹暂时删不掉（可能在资源管理器里开着），稍后会再试".into());
+            }
+            continue;
+        }
         let mut ps = PieceState::load(&dir);
         // PUBG's log: when each game started (server joins) and when the player
         // went back to the lobby
@@ -1171,6 +1348,7 @@ pub fn process_sessions(
                             headshot: e.headshot,
                             credited: e.credited,
                             source: "telemetry".into(),
+                            detail: None,
                         })
                         .collect();
                     let stats = mine.map(|p| MatchStats {
@@ -1211,6 +1389,8 @@ pub fn process_sessions(
                             pending_api: false,
                             mark_used: true,
                             drop_after_death: false,
+                            game: "pubg",
+                            lol: None,
                         },
                     ) {
                         Ok(Some(rec)) => {
@@ -1408,6 +1588,8 @@ pub fn process_sessions(
                         // to the recorder, so nothing is marked as used here
                         mark_used: false,
                         drop_after_death: piece.official,
+                        game: "pubg",
+                        lol: None,
                     },
                 ) {
                     Ok(Some(rec)) => {
@@ -1520,6 +1702,8 @@ pub fn process_sessions(
                     pending_api: false,
                     mark_used: true,
                     drop_after_death: piece.official,
+                    game: "pubg",
+                    lol: None,
                 },
             ) {
                 Ok(rec) => {

@@ -95,6 +95,10 @@ pub struct EventRules {
     pub knocked: EventRule,
     pub win: EventRule,
     pub manual: EventRule,
+    /// League of Legends: kills you helped with
+    pub assist: EventRule,
+    /// League of Legends: dragons, heralds, barons, towers you took part in
+    pub objective: EventRule,
 }
 
 impl Default for EventRules {
@@ -106,6 +110,8 @@ impl Default for EventRules {
             knocked: rule(false, 6.0, 3.0),
             win: rule(true, 15.0, 10.0),
             manual: rule(true, 20.0, 5.0),
+            assist: rule(false, 8.0, 3.0),
+            objective: rule(true, 10.0, 4.0),
         }
     }
 }
@@ -119,8 +125,37 @@ impl EventRules {
             "knocked" => Some(&self.knocked),
             "win" => Some(&self.win),
             "manual" => Some(&self.manual),
+            "assist" => Some(&self.assist),
+            "objective" => Some(&self.objective),
             _ => None,
         }
+    }
+}
+
+/// Which games start a recording by themselves.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Games {
+    pub pubg: bool,
+    pub lol: bool,
+}
+
+impl Default for Games {
+    fn default() -> Self {
+        Self { pubg: true, lol: true }
+    }
+}
+
+impl Games {
+    pub fn enabled(&self) -> Vec<crate::game::Game> {
+        use crate::game::Game;
+        Game::ALL
+            .into_iter()
+            .filter(|g| match g {
+                Game::Pubg => self.pubg,
+                Game::Lol => self.lol,
+            })
+            .collect()
     }
 }
 
@@ -181,6 +216,7 @@ pub struct Settings {
     pub video: VideoSettings,
     pub audio: AudioSettings,
     pub events: EventRules,
+    pub games: Games,
     pub pubg: PubgSettings,
     pub hotkeys: Hotkeys,
     /// shift applied to telemetry timestamps when placing them on the video
@@ -207,6 +243,7 @@ impl Default for Settings {
             video: VideoSettings::default(),
             audio: AudioSettings::default(),
             events: EventRules::default(),
+            games: Games::default(),
             pubg: PubgSettings::default(),
             hotkeys: Hotkeys::default(),
             telemetry_offset_ms: 0,

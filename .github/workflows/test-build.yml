@@ -51,3 +51,7 @@ jobs:
           name: KillCam-test-${{ github.run_number }}
           path: out/*.exe
           retention-days: 7
+
+      # after the upload, so a failing test still leaves an installer to try
+      - name: Unit tests
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml --lib

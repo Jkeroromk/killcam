@@ -26,6 +26,8 @@ pub struct SessionMeta {
     pub start_ms: i64,
     pub ended_ms: Option<i64>,
     pub game_pid: Option<u32>,
+    /// "pubg" (also when empty: sessions from before other games) or "lol"
+    pub game: String,
     pub has_game_audio: bool,
     pub has_mic: bool,
     pub width: u32,
@@ -353,6 +355,8 @@ pub struct StartOptions {
     pub dir: PathBuf,
     pub session_id: String,
     pub game_pid: Option<u32>,
+    /// game::Game::id of what is being recorded
+    pub game: String,
     /// limit length (perf test)
     pub limit_seconds: Option<u32>,
     pub test: bool,
@@ -406,6 +410,7 @@ pub fn start(
         start_ms: launch_ms + 300,
         ended_ms: None,
         game_pid: opts.game_pid,
+        game: opts.game.clone(),
         has_game_audio: game_source(settings, opts.game_pid).is_some(),
         has_mic: settings.audio.mic_enabled,
         width: plan.out_width,

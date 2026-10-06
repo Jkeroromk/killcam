@@ -1,10 +1,44 @@
-//! Detecting PUBG and reading its display settings.
+//! Detecting the supported games, and reading PUBG's display settings.
 
 use serde::Serialize;
 use std::path::PathBuf;
 use sysinfo::{ProcessesToUpdate, System};
 
 pub const GAME_EXE: &str = "TslGame.exe";
+
+/// The games KillCam records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Game {
+    Pubg,
+    Lol,
+}
+
+impl Game {
+    pub const ALL: [Game; 2] = [Game::Pubg, Game::Lol];
+
+    /// stored in sessions and records
+    pub fn id(self) -> &'static str {
+        match self {
+            Game::Pubg => "pubg",
+            Game::Lol => "lol",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Game {
+        match id {
+            "lol" => Game::Lol,
+            _ => Game::Pubg,
+        }
+    }
+
+    /// the process that runs while a game (a match, for League) is on
+    pub fn exe(self) -> &'static str {
+        match self {
+            Game::Pubg => GAME_EXE,
+            Game::Lol => "League of Legends.exe",
+        }
+    }
+}
 
 pub struct Watcher {
     sys: System,
@@ -15,14 +49,28 @@ impl Watcher {
         Self { sys: System::new() }
     }
 
-    /// pid of the running game, if any
-    pub fn find(&mut self) -> Option<u32> {
+    /// The running game among `games` (first one wins) and its pid.
+    pub fn find(&mut self, games: &[Game]) -> Option<(Game, u32)> {
+        self.sys.refresh_processes(ProcessesToUpdate::All, true);
+        games.iter().find_map(|g| {
+            self.sys
+                .processes()
+                .values()
+                .find(|p| p.name().to_string_lossy().eq_ignore_ascii_case(g.exe()))
+                .map(|p| (*g, p.pid().as_u32()))
+        })
+    }
+
+    /// Folder of a running process's exe (e.g. where the League client keeps its lockfile).
+    pub fn exe_dir(&mut self, exe: &str) -> Option<PathBuf> {
         self.sys.refresh_processes(ProcessesToUpdate::All, true);
         self.sys
             .processes()
             .values()
-            .find(|p| p.name().to_string_lossy().eq_ignore_ascii_case(GAME_EXE))
-            .map(|p| p.pid().as_u32())
+            .find(|p| p.name().to_string_lossy().eq_ignore_ascii_case(exe))
+            .and_then(|p| p.exe())
+            .and_then(|e| e.parent())
+            .map(|d| d.to_path_buf())
     }
 
     /// CPU usage of one process in percent of the whole machine.
