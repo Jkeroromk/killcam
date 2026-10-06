@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type MatchRecord } from "../lib/api";
+import { api, type GameId, type MatchRecord } from "../lib/api";
+import { GameSwitch } from "../components/GameSwitch";
 import { isLol, kda, when } from "../lib/format";
 import { Segmented, Spinner } from "../components/ui";
 import { ChampIcon } from "./Library";
@@ -215,11 +216,10 @@ function LolStatsView(props: { list: MatchRecord[]; range: Range; openMatch: (id
   );
 }
 
-export default function StatsPage(props: { libVersion: number; openMatch: (id: string) => void }) {
+export default function StatsPage(props: { game: GameId; setGame: (g: GameId) => void; libVersion: number; openMatch: (id: string) => void }) {
   const [all, setAll] = useState<MatchRecord[] | null>(null);
   const [range, setRange] = useState<Range>(20);
   const [metric, setMetric] = useState<Metric>("kills");
-  const [game, setGame] = useState<"pubg" | "lol" | null>(null);
 
   useEffect(() => {
     api.listMatches().then(setAll).catch(() => setAll([]));
@@ -303,25 +303,14 @@ export default function StatsPage(props: { libVersion: number; openMatch: (id: s
   const d = data;
   const maxW = Math.max(1, ...d.weapons.map(([, w]) => w.kills));
   const lolList = (all ?? []).filter(isLol);
-  const hasLol = lolList.length > 0;
-  const hasPubg = (all ?? []).some((m) => !isLol(m));
-  // the game played last, until one is picked
-  const shownGame = game ?? (hasLol && (!hasPubg || isLol(all![0])) ? "lol" : "pubg");
+  const shownGame = props.game;
 
   return (
     <div className="page stats">
       <header className="page-head">
         <h1>数据</h1>
-        {hasLol && hasPubg && (
-          <Segmented
-            value={shownGame}
-            onChange={setGame}
-            options={[
-              { value: "pubg", label: "PUBG" },
-              { value: "lol", label: "英雄联盟" },
-            ]}
-          />
-        )}
+        <GameSwitch value={props.game} onChange={props.setGame} />
+        <span className="grow" />
         <Segmented
           value={range}
           onChange={setRange}

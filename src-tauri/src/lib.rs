@@ -3,6 +3,7 @@ mod detector;
 mod ffmpeg;
 mod game;
 mod gamelog;
+mod icons;
 mod library;
 mod lol;
 mod mini;
@@ -742,6 +743,15 @@ fn spawn_game_watcher(app: AppHandle, st: St) {
             };
             if pid.is_some() && last.is_none() {
                 let _ = app.emit("game", true);
+                // the switch shows the game's own icon: take it from the running exe
+                if let (Some(g), Ok(cache)) = (running, app.path().app_cache_dir()) {
+                    let dir = cache.join("game_icons");
+                    if !icons::icon_path(&dir, g).exists() {
+                        let exe = w.exe_path(g.exe());
+                        icons::ensure(&dir, exe.map(|e| (g, e)));
+                        let _ = app.emit("game-icons", ());
+                    }
+                }
                 if let Ok(ff) = st.ffmpeg() {
                     refresh_monitor_size(&app, &st, &ff);
                 }
@@ -1118,6 +1128,23 @@ async fn list_monitors(
         let ff = st.ffmpeg()?;
         let _ = std::fs::remove_dir_all(&cache);
         Ok(ffmpeg::list_monitors(&ff, &cache))
+    })
+    .await
+}
+
+/// Game id -> PNG of the game's icon (from its installed files).
+#[tauri::command]
+async fn game_icons(app: AppHandle) -> Result<std::collections::HashMap<String, String>, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("game_icons");
+    blocking(move || {
+        Ok(icons::ensure(&dir, None)
+            .into_iter()
+            .map(|(g, p)| (g.id().to_string(), p.to_string_lossy().to_string()))
+            .collect())
     })
     .await
 }
@@ -1976,6 +2003,7 @@ pub fn run() {
             detect_hardware,
             list_monitors,
             game_info,
+            game_icons,
             list_audio_devices,
             start_audio_monitor,
             stop_audio_monitor,

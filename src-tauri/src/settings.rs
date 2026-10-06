@@ -117,6 +117,20 @@ impl Default for EventRules {
 }
 
 impl EventRules {
+    /// League of Legends: a win is the nexus going down, no knocks
+    pub fn lol() -> Self {
+        Self {
+            kill: rule(true, 8.0, 3.0),
+            knock: rule(false, 6.0, 3.0),
+            death: rule(true, 10.0, 3.0),
+            knocked: rule(false, 6.0, 3.0),
+            win: rule(true, 15.0, 6.0),
+            manual: rule(true, 20.0, 5.0),
+            assist: rule(false, 8.0, 3.0),
+            objective: rule(true, 10.0, 4.0),
+        }
+    }
+
     pub fn get(&self, kind: &str) -> Option<&EventRule> {
         match kind {
             "kill" => Some(&self.kill),
@@ -215,7 +229,10 @@ pub struct Settings {
     pub auto_record: bool,
     pub video: VideoSettings,
     pub audio: AudioSettings,
+    /// PUBG's highlight rules
     pub events: EventRules,
+    /// League of Legends' highlight rules
+    pub events_lol: EventRules,
     pub games: Games,
     pub pubg: PubgSettings,
     pub hotkeys: Hotkeys,
@@ -243,6 +260,7 @@ impl Default for Settings {
             video: VideoSettings::default(),
             audio: AudioSettings::default(),
             events: EventRules::default(),
+            events_lol: EventRules::lol(),
             games: Games::default(),
             pubg: PubgSettings::default(),
             hotkeys: Hotkeys::default(),

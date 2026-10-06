@@ -8,6 +8,8 @@ import {
   on,
   type AudioDevice,
   type EventKind,
+  type EventRule,
+  type GameId,
   type HardwareInfo,
   type Levels,
   type MonitorInfo,
@@ -355,16 +357,24 @@ export function AudioSection(props: { settings: Settings; set: SetSettings; game
 
 // ---------------------------------------------------------------------------
 
-const RULE_KINDS: { kind: EventKind; label?: string; note: string }[] = [
-  { kind: "kill", note: "你拿到的击杀（英雄联盟的多杀会合成一段）" },
-  { kind: "knock", note: "PUBG：你打倒的人" },
-  { kind: "win", label: "吃鸡 / 胜利", note: "PUBG 吃鸡，英雄联盟推掉水晶" },
-  { kind: "death", note: "你被淘汰的那一下" },
-  { kind: "knocked", note: "PUBG：你被打倒" },
-  { kind: "assist", note: "英雄联盟：你参与的击杀" },
-  { kind: "objective", note: "英雄联盟：你拿下或参与的小龙、先锋、大龙，你推掉的塔" },
-  { kind: "manual", note: "按快捷键手动标记" },
-];
+const RULE_KINDS: Record<GameId, { kind: EventKind; label?: string; note: string }[]> = {
+  pubg: [
+    { kind: "kill", note: "你拿到的击杀" },
+    { kind: "knock", note: "你打倒的人" },
+    { kind: "win", label: "吃鸡", note: "大吉大利，今晚吃鸡" },
+    { kind: "death", note: "你被淘汰的那一下" },
+    { kind: "knocked", note: "你被打倒" },
+    { kind: "manual", note: "按快捷键手动标记" },
+  ],
+  lol: [
+    { kind: "kill", note: "你拿到的击杀，双杀到五杀会合成一段" },
+    { kind: "objective", note: "你拿下或参与的小龙、先锋、大龙，你推掉的塔和水晶" },
+    { kind: "assist", note: "你参与的击杀" },
+    { kind: "win", label: "胜利", note: "推掉对面水晶" },
+    { kind: "death", note: "你被击杀的那一下" },
+    { kind: "manual", note: "按快捷键手动标记" },
+  ],
+};
 
 function Seconds(props: { value: number; onChange: (v: number) => void; max: number }) {
   return (
@@ -380,44 +390,59 @@ function Seconds(props: { value: number; onChange: (v: number) => void; max: num
   );
 }
 
-export function EventsSection(props: { settings: Settings; set: SetSettings; detector?: string }) {
+/** Whole match or only the highlights (both games). */
+export function CaptureModeField(props: { settings: Settings; set: SetSettings }) {
+  return (
+    <Field label="保存方式">
+      <Segmented
+        value={props.settings.captureMode}
+        onChange={(m) => props.set((s) => ({ ...s, captureMode: m }))}
+        options={[
+          { value: "full", label: "整局录像 + 高光标记", hint: "每局约 3–5 GB，回看最完整" },
+          { value: "highlights", label: "只留高光片段", hint: "整局在处理完后删除，省空间" },
+        ]}
+      />
+    </Field>
+  );
+}
+
+/** PUBG: reading kill / knock / win prompts off the screen. */
+export function ScreenDetectField(props: { settings: Settings; set: SetSettings; detector?: string }) {
+  return (
+    <Field
+      label="实时读屏识别"
+      hint={
+        props.detector === "uncalibrated"
+          ? "还在校准：先正常打一局，每次击倒 / 击杀 / 被淘汰后按一下标记键，用这局的录像做识别样本"
+          : "当场认出你的击杀、击倒、吃鸡和观战画面并打标记，不需要 PUBG 账号"
+      }
+    >
+      <Toggle
+        checked={props.settings.screenDetect}
+        onChange={(v) => props.set((s) => ({ ...s, screenDetect: v }))}
+        label={props.settings.screenDetect ? "开启" : "关闭"}
+      />
+    </Field>
+  );
+}
+
+/** One game's highlight rules: which moments get a clip, and how much before / after. */
+export function EventsSection(props: { settings: Settings; set: SetSettings; game: GameId }) {
   const { settings, set } = props;
-  const setRule = (k: EventKind, patch: Partial<Settings["events"][EventKind]>) =>
-    set((s) => ({ ...s, events: { ...s.events, [k]: { ...s.events[k], ...patch } } }));
+  const key = props.game === "lol" ? "eventsLol" : "events";
+  const rules = settings[key];
+  const setRule = (k: EventKind, patch: Partial<EventRule>) =>
+    set((s) => ({ ...s, [key]: { ...s[key], [k]: { ...s[key][k], ...patch } } }));
   return (
     <div className="stack">
-      <Field label="保存方式">
-        <Segmented
-          value={settings.captureMode}
-          onChange={(m) => set((s) => ({ ...s, captureMode: m }))}
-          options={[
-            { value: "full", label: "整局录像 + 高光标记", hint: "每局约 3–5 GB，回看最完整" },
-            { value: "highlights", label: "只留高光片段", hint: "整局在处理完后删除，省空间" },
-          ]}
-        />
-      </Field>
-      <Field
-        label="实时读屏识别"
-        hint={
-          props.detector === "uncalibrated"
-            ? "还在校准：先正常打一局，每次击倒 / 击杀 / 被淘汰后按一下标记键，用这局的录像做识别样本"
-            : "PUBG：当场认出你的击杀、击倒和吃鸡提示并打标记，不需要 PUBG 账号。英雄联盟用游戏自带的数据，不需要读屏"
-        }
-      >
-        <Toggle
-          checked={settings.screenDetect}
-          onChange={(v) => set((s) => ({ ...s, screenDetect: v }))}
-          label={settings.screenDetect ? "开启" : "关闭"}
-        />
-      </Field>
       <div className="rules">
         <div className="rules-head">
           <span>事件</span>
           <span>事件前</span>
           <span>事件后</span>
         </div>
-        {RULE_KINDS.map(({ kind, label, note }) => {
-          const r = settings.events[kind];
+        {RULE_KINDS[props.game].map(({ kind, label, note }) => {
+          const r = rules[kind];
           return (
             <div className={"rule" + (r.enabled || kind === "manual" ? "" : " is-off")} key={kind}>
               <span className="rule-name">
@@ -436,7 +461,11 @@ export function EventsSection(props: { settings: Settings; set: SetSettings; det
           );
         })}
       </div>
-      <p className="muted small">相邻的高光会自动合并成一段，比如 10 秒内连续击倒和击杀会变成一个片段。</p>
+      <p className="muted small">
+        {props.game === "lol"
+          ? "相邻的高光会自动合并成一段，比如一波团战里的连续击杀和抢龙会变成一个片段。"
+          : "相邻的高光会自动合并成一段，比如 10 秒内连续击倒和击杀会变成一个片段。"}
+      </p>
     </div>
   );
 }

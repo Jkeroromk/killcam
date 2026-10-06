@@ -890,7 +890,8 @@ pub fn build_record(
     for (i, e) in events.iter_mut().enumerate() {
         e.id = format!("e{:03}", i + 1);
     }
-    let mut highlights = compute_highlights(&events, &settings.events, duration);
+    let rules = if input.game == "lol" { &settings.events_lol } else { &settings.events };
+    let mut highlights = compute_highlights(&events, rules, duration);
     if input.game == "lol" {
         for h in highlights.iter_mut() {
             let inside: Vec<&GameEvent> = events

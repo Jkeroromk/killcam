@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { BarChart3, Crosshair, Film, Settings2 } from "lucide-react";
-import { api, on, type Settings, type Status } from "./lib/api";
+import { api, on, type GameId, type Settings, type Status } from "./lib/api";
 import { clock, gameName } from "./lib/format";
 import Onboarding from "./onboarding/Onboarding";
 import Dashboard from "./pages/Dashboard";
@@ -19,6 +19,26 @@ export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [page, setPage] = useState<Page>({ name: "home" });
   const [libVersion, setLibVersion] = useState(0);
+  // the game the library, stats and settings show; follows the game being played
+  const [game, setGameState] = useState<GameId>(() => {
+    try {
+      return localStorage.getItem("kc.game") === "lol" ? "lol" : "pubg";
+    } catch {
+      return "pubg";
+    }
+  });
+  const setGame = (g: GameId) => {
+    setGameState(g);
+    try {
+      localStorage.setItem("kc.game", g);
+    } catch {
+      /* not kept */
+    }
+  };
+  const playing = status?.gameRunning ? status.game : null;
+  useEffect(() => {
+    if (playing === "pubg" || playing === "lol") setGame(playing);
+  }, [playing]);
 
   useEffect(() => {
     api.getSettings().then(setSettings);
@@ -90,10 +110,10 @@ export default function App() {
         {page.name === "home" && (
           <Dashboard status={status} settings={settings} libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} openLibrary={() => nav("library")} />
         )}
-        {page.name === "library" && <Library libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
+        {page.name === "library" && <Library game={game} setGame={setGame} libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
         {page.name === "match" && <MatchView id={page.id} back={() => nav("library")} libVersion={libVersion} />}
-        {page.name === "stats" && <StatsPage libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
-        {page.name === "settings" && <SettingsPage settings={settings} onSaved={setSettings} status={status} />}
+        {page.name === "stats" && <StatsPage game={game} setGame={setGame} libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
+        {page.name === "settings" && <SettingsPage game={game} settings={settings} onSaved={setSettings} status={status} />}
       </main>
     </div>
   );

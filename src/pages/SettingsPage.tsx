@@ -1,9 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api, errText, type HardwareInfo, type MonitorInfo, type PerfResult, type Settings, type Status } from "../lib/api";
+import { api, errText, type GameId, type HardwareInfo, type MonitorInfo, type PerfResult, type Settings, type Status } from "../lib/api";
+import { Settings2 } from "lucide-react";
+import { GameSwitch } from "../components/GameSwitch";
 import { Button, Field, Range, Spinner, Toggle } from "../components/ui";
 import {
   AudioSection,
+  CaptureModeField,
   EventsSection,
+  PubgSection,
+  ScreenDetectField,
   HotkeySection,
   MonitorPicker,
   scaleWorks,
@@ -62,14 +67,16 @@ const SECTIONS = [
   ["video", "画质"],
   ["screen", "屏幕"],
   ["audio", "声音"],
-  ["events", "高光规则"],
   ["hotkeys", "快捷键"],
   ["storage", "存储"],
   ["perf", "性能测试"],
   ["advanced", "高级"],
 ] as const;
 
-export default function SettingsPage(props: { settings: Settings; onSaved: (s: Settings) => void; status: Status | null }) {
+type Tab = "general" | GameId;
+
+export default function SettingsPage(props: { game: GameId; settings: Settings; onSaved: (s: Settings) => void; status: Status | null }) {
+  const [tab, setTab] = useState<Tab>("general");
   const [draft, setDraft] = useState<Settings>(props.settings);
   const [hw, setHw] = useState<HardwareInfo | null>(null);
   const [monitors, setMonitors] = useState<MonitorInfo[] | null | undefined>(undefined);
@@ -123,22 +130,54 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
     <div className="page settings">
       <header className="page-head">
         <h1>设置</h1>
-        <nav className="toc">
-          {SECTIONS.map(([id, label]) => (
-            <a key={id} href={`#${id}`}>
-              {label}
-            </a>
-          ))}
-        </nav>
+        <GameSwitch<"general"> value={tab} onChange={setTab} extra={[{ value: "general", label: "通用", icon: <Settings2 size={14} /> }]} />
+        {tab === "general" && (
+          <nav className="toc">
+            {SECTIONS.map(([id, label]) => (
+              <a key={id} href={`#${id}`}>
+                {label}
+              </a>
+            ))}
+          </nav>
+        )}
       </header>
 
+      {tab === "pubg" && (
+        <>
+          <Card id="pubg" title="PUBG">
+            <Field label="自动录制" hint="打开 PUBG 时自动开始，关掉游戏结束。一次录制里打的每一局会分开成单独的对局">
+              <Toggle checked={draft.games.pubg} onChange={(v) => set((s) => ({ ...s, games: { ...s.games, pubg: v } }))} label={draft.games.pubg ? "开启" : "关闭"} />
+            </Field>
+            <ScreenDetectField settings={draft} set={set} detector={props.status?.detector} />
+          </Card>
+          <Card id="pubg-account" title="PUBG 账号" note="也可以从左下角的账号按钮修改">
+            <PubgSection settings={draft} set={set} />
+          </Card>
+          <Card id="pubg-events" title="高光规则" note="只影响之后处理的对局">
+            <EventsSection settings={draft} set={set} game="pubg" />
+          </Card>
+        </>
+      )}
+
+      {tab === "lol" && (
+        <>
+          <Card id="lol" title="英雄联盟">
+            <Field label="自动录制" hint="进入对局（读条界面）时自动开始，回到客户端结束，一局一个录像">
+              <Toggle checked={draft.games.lol} onChange={(v) => set((s) => ({ ...s, games: { ...s.games, lol: v } }))} label={draft.games.lol ? "开启" : "关闭"} />
+            </Field>
+            <p className="muted small">
+              击杀、多杀、大小龙、胜负这些都来自英雄联盟游戏本身提供的实时数据，不用读屏，也不用 API Key；伤害、金币等结算数据在打完后从客户端读取。目前支持美服等 Riot 客户端。
+            </p>
+          </Card>
+          <Card id="lol-events" title="高光规则" note="只影响之后处理的对局">
+            <EventsSection settings={draft} set={set} game="lol" />
+          </Card>
+        </>
+      )}
+
+      {tab === "general" && (
+      <>
       <Card id="ingame" title="启动和游戏时">
-        <Field label="录制哪些游戏" hint="打开勾选的游戏时自动开始录制。英雄联盟从进入对局开始录，回到客户端结束">
-          <div className="row">
-            <Toggle checked={draft.games.pubg} onChange={(v) => set((s) => ({ ...s, games: { ...s.games, pubg: v } }))} label="PUBG" />
-            <Toggle checked={draft.games.lol} onChange={(v) => set((s) => ({ ...s, games: { ...s.games, lol: v } }))} label="英雄联盟" />
-          </div>
-        </Field>
         <Field label="开机自动启动" hint="开机后安静地待在右下角托盘里，打开游戏就自动开始录">
           <Toggle checked={draft.launchAtLogin} onChange={(v) => set((s) => ({ ...s, launchAtLogin: v }))} label={draft.launchAtLogin ? "开启" : "关闭"} />
         </Field>
@@ -175,9 +214,6 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
         <AudioSection settings={draft} set={set} gameRunning={!!props.status?.gameRunning} />
       </Card>
 
-      <Card id="events" title="高光规则" note="只影响之后处理的对局">
-        <EventsSection settings={draft} set={set} detector={props.status?.detector} />
-      </Card>
 
       <Card id="hotkeys" title="快捷键">
         <HotkeySection settings={draft} set={set} />
@@ -187,6 +223,7 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
       </Card>
 
       <Card id="storage" title="存储">
+        <CaptureModeField settings={draft} set={set} />
         <StorageSection settings={draft} set={set} hardware={hw} />
       </Card>
 
@@ -235,6 +272,8 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
         </Field>
         <DiagnosticsField />
       </Card>
+      </>
+      )}
 
       <div className={"savebar" + (dirty || msg ? " is-shown" : "")}>
         {msg && <span className={msg.ok ? "ok-text" : "warn-text"}>{msg.text}</span>}

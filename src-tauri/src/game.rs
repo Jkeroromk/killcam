@@ -61,6 +61,17 @@ impl Watcher {
         })
     }
 
+    /// Full path of a running process's exe.
+    pub fn exe_path(&mut self, exe: &str) -> Option<PathBuf> {
+        self.sys.refresh_processes(ProcessesToUpdate::All, true);
+        self.sys
+            .processes()
+            .values()
+            .find(|p| p.name().to_string_lossy().eq_ignore_ascii_case(exe))
+            .and_then(|p| p.exe())
+            .map(|e| e.to_path_buf())
+    }
+
     /// Folder of a running process's exe (e.g. where the League client keeps its lockfile).
     pub fn exe_dir(&mut self, exe: &str) -> Option<PathBuf> {
         self.sys.refresh_processes(ProcessesToUpdate::All, true);

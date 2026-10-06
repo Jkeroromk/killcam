@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Crosshair, RefreshCw, Skull, Star, Film } from "lucide-react";
-import { api, fileUrl, joinPath, type MatchRecord } from "../lib/api";
+import { api, fileUrl, joinPath, type GameId, type MatchRecord } from "../lib/api";
+import { GameSwitch } from "../components/GameSwitch";
 import { championIcon, clock, isLol, when } from "../lib/format";
 import { Button, Spinner, Tape } from "../components/ui";
 
@@ -147,20 +148,11 @@ const FILTERS = [
   { value: "kills", label: "击杀最多" },
 ] as const;
 
-const GAMES = [
-  { value: "all", label: "全部游戏" },
-  { value: "pubg", label: "PUBG" },
-  { value: "lol", label: "英雄联盟" },
-] as const;
-
 const killsOf = (m: MatchRecord) => (isLol(m) ? m.lol?.kills : m.stats?.kills) ?? m.events.filter((e) => e.kind === "kill").length;
 
-export default function Library(props: { libVersion: number; openMatch: (id: string) => void }) {
+export default function Library(props: { game: GameId; setGame: (g: GameId) => void; libVersion: number; openMatch: (id: string) => void }) {
   const [list, setList] = useState<MatchRecord[] | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["value"]>("all");
-  const [game, setGame] = useState<(typeof GAMES)[number]["value"]>("all");
-  // the game switch only shows up once there are recordings of both
-  const bothGames = !!list && list.some(isLol) && list.some((m) => !isLol(m));
 
   const load = () => api.listMatches().then(setList).catch(() => setList([]));
   useEffect(() => {
@@ -169,7 +161,7 @@ export default function Library(props: { libVersion: number; openMatch: (id: str
 
   const shown = useMemo(() => {
     if (!list) return null;
-    const pool = !bothGames || game === "all" ? list : list.filter((m) => (game === "lol") === isLol(m));
+    const pool = list.filter((m) => (props.game === "lol") === isLol(m));
     switch (filter) {
       case "fav":
         return pool.filter((m) => m.favorite);
@@ -180,7 +172,7 @@ export default function Library(props: { libVersion: number; openMatch: (id: str
       default:
         return pool;
     }
-  }, [list, filter, game, bothGames]);
+  }, [list, filter, props.game]);
 
   const fav = async (m: MatchRecord, v: boolean) => {
     await api.setFavorite(m.id, v);
@@ -191,8 +183,9 @@ export default function Library(props: { libVersion: number; openMatch: (id: str
     <div className="page">
       <header className="page-head">
         <h1>
-          录像库 {list && <span className="count">{list.length}</span>}
+          录像库 {shown && <span className="count">{shown.length}</span>}
         </h1>
+        <GameSwitch value={props.game} onChange={props.setGame} />
         <div className="pills">
           {FILTERS.map((f) => (
             <button key={f.value} type="button" className={"pill" + (filter === f.value ? " is-on" : "")} onClick={() => setFilter(f.value)}>
@@ -200,15 +193,6 @@ export default function Library(props: { libVersion: number; openMatch: (id: str
             </button>
           ))}
         </div>
-        {bothGames && (
-          <div className="pills">
-            {GAMES.map((g) => (
-              <button key={g.value} type="button" className={"pill" + (game === g.value ? " is-on" : "")} onClick={() => setGame(g.value)}>
-                {g.label}
-              </button>
-            ))}
-          </div>
-        )}
         <span className="grow" />
         <Button small kind="ghost" onClick={() => api.syncNow(false).then(() => setTimeout(load, 3000))}>
           <RefreshCw size={14} /> 立即同步
@@ -217,7 +201,7 @@ export default function Library(props: { libVersion: number; openMatch: (id: str
       {!shown ? (
         <Spinner />
       ) : shown.length === 0 ? (
-        <p className="empty">{filter === "all" ? "还没有录像。打开 PUBG 或英雄联盟打一局，结束后很快就会出现在这里。" : "这个分类下没有录像。"}</p>
+        <p className="empty">{filter === "all" ? props.game === "lol" ? "还没有英雄联盟录像。进入一局英雄联盟就会自动开始录，结束后很快出现在这里。" : "还没有 PUBG 录像。打开 PUBG 打一局，结束后很快就会出现在这里。" : "这个分类下没有录像。"}</p>
       ) : (
         <div className="cards">
           {shown.map((m) => (

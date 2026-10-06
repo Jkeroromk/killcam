@@ -31,7 +31,10 @@ export interface Settings {
     aspect: "native" | "16:9";
   };
   audio: AudioSettings;
+  /** PUBG's highlight rules */
   events: Record<EventKind, EventRule>;
+  /** League of Legends' highlight rules */
+  eventsLol: Record<EventKind, EventRule>;
   /** which games start a recording by themselves */
   games: { pubg: boolean; lol: boolean };
   pubg: { playerName: string; apiKey: string; shard: string; accountId: string | null };
@@ -332,6 +335,7 @@ export const api = {
   detectHardware: (force = false) => invoke<HardwareInfo>("detect_hardware", { force }),
   listMonitors: () => invoke<MonitorInfo[]>("list_monitors"),
   gameInfo: () => invoke<GameInfo>("game_info"),
+  gameIcons: () => invoke<Partial<Record<GameId, string>>>("game_icons"),
   listAudioDevices: () => invoke<{ inputs: AudioDevice[]; outputs: AudioDevice[] }>("list_audio_devices"),
   startAudioMonitor: (audioSettings: AudioSettings) => invoke<void>("start_audio_monitor", { audioSettings }),
   stopAudioMonitor: () => invoke<void>("stop_audio_monitor"),

@@ -16,7 +16,9 @@ import { bytes } from "../lib/format";
 import { Button, Spinner } from "../components/ui";
 import {
   AudioSection,
+  CaptureModeField,
   EventsSection,
+  ScreenDetectField,
   HotkeySection,
   MonitorPicker,
   PubgSection,
@@ -199,7 +201,12 @@ export default function Onboarding(props: { initial: Settings; onDone: (s: Setti
           )}
           {key === "events" && (
             <Step title="高光规则" lead="每种事件要不要剪、往前留几秒、往后留几秒。之后在设置里随时能改。">
-              <EventsSection settings={settings} set={set} />
+              <div className="stack">
+                <CaptureModeField settings={settings} set={set} />
+                <ScreenDetectField settings={settings} set={set} />
+                <EventsSection settings={settings} set={set} game="pubg" />
+                <p className="muted small">上面是 PUBG 的规则；英雄联盟的在「设置 → 英雄联盟」里单独调。</p>
+              </div>
             </Step>
           )}
           {key === "pubg" && (
