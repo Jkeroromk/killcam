@@ -38,12 +38,13 @@ jobs:
         run: npm run build
 
       - name: Rust tests
-        shell: pwsh
+        shell: bash
         # failures also go to the run's annotations, readable without the full log
         run: |
-          cargo test --manifest-path src-tauri/Cargo.toml --lib 2>&1 | Tee-Object -FilePath test.log
-          if ($LASTEXITCODE -ne 0) {
-            Select-String -Path test.log -Pattern 'panicked at|left:|right:|FAILED|^error|^test .* FAILED' |
-              Select-Object -First 30 | ForEach-Object { Write-Output "::error::$($_.Line)" }
+          set +e
+          cargo test --manifest-path src-tauri/Cargo.toml --lib 2>&1 | tee test.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            grep -E 'panicked at|left:|right:|FAILED|^error' test.log | head -30 | sed 's/^/::error::/'
             exit 1
-          }
+          fi
