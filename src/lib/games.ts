@@ -10,8 +10,10 @@ export interface RuleKind {
 export interface GameDef {
   id: GameId;
   name: string;
-  /** text badge when the game's own icon isn't available */
+  /** text badge when no icon is available */
   short: string;
+  /** icon shipped with KillCam (otherwise the installed game's own icon is used) */
+  logo?: string;
   /** what the highlight rules offer, in order */
   rules: RuleKind[];
   /** event kinds in the match timeline legend */
@@ -26,6 +28,7 @@ export const GAMES: Record<GameId, GameDef> = {
     id: "pubg",
     name: "PUBG",
     short: "PUBG",
+    logo: "/games/pubg.png",
     win: "吃鸡",
     legend: ["kill", "knock", "win", "manual", "death"],
     rules: [

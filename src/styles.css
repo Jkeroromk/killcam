@@ -3047,3 +3047,17 @@ button.st-best:hover {
   color: var(--text);
   font-weight: 600;
 }
+
+.recent-game + .recent-game {
+  margin-top: 22px;
+}
+.recent-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.recent-head b {
+  font-size: 14px;
+  font-weight: 600;
+}

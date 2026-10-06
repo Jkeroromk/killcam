@@ -4,13 +4,17 @@ import { api, errText, type MatchRecord, type Settings, type Status, type Storag
 import { bytes, clock, gameName } from "../lib/format";
 import { Button, Spinner } from "../components/ui";
 import { MatchCard } from "./Library";
+import { GameLogo } from "../components/GameSwitch";
+import { GAME_IDS, GAMES } from "../lib/games";
+import { isLol } from "../lib/format";
+import type { GameId } from "../lib/api";
 
 export default function Dashboard(props: {
   status: Status | null;
   settings: Settings;
   libVersion: number;
   openMatch: (id: string) => void;
-  openLibrary: () => void;
+  openLibrary: (game?: GameId) => void;
 }) {
   const s = props.status;
   const [recent, setRecent] = useState<MatchRecord[] | null>(null);
@@ -19,7 +23,7 @@ export default function Dashboard(props: {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listMatches().then((m) => setRecent(m.slice(0, 6))).catch(() => setRecent([]));
+    api.listMatches().then(setRecent).catch(() => setRecent([]));
     api.storageInfo().then(setStorage).catch(() => {});
   }, [props.libVersion]);
 
@@ -139,9 +143,6 @@ export default function Dashboard(props: {
           <Button small kind="ghost" onClick={() => api.syncNow(false)} title="立即从 PUBG 拉取最新对局">
             <RefreshCw size={14} /> 立即同步
           </Button>
-          <Button small kind="ghost" onClick={props.openLibrary}>
-            全部录像
-          </Button>
         </header>
         {!recent ? (
           <Spinner />
@@ -150,11 +151,29 @@ export default function Dashboard(props: {
             还没有录像。打开 PUBG 或英雄联盟打一局，结束后这里就会出现带高光标记的录像。
           </p>
         ) : (
-          <div className="cards">
-            {recent.map((m) => (
-              <MatchCard key={m.id} m={m} onOpen={() => props.openMatch(m.id)} />
-            ))}
-          </div>
+          // one row per game, newest first within each
+          GAME_IDS.map((g) => {
+            const mine = recent.filter((m) => (g === "lol") === isLol(m));
+            if (mine.length === 0) return null;
+            return (
+              <div key={g} className="recent-game">
+                <div className="recent-head">
+                  <GameLogo game={g} size={20} />
+                  <b>{GAMES[g].name}</b>
+                  <span className="muted small">{mine.length} 局</span>
+                  <span className="grow" />
+                  <Button small kind="ghost" onClick={() => props.openLibrary(g)}>
+                    全部 {GAMES[g].name} 录像
+                  </Button>
+                </div>
+                <div className="cards">
+                  {mine.slice(0, 3).map((m) => (
+                    <MatchCard key={m.id} m={m} onOpen={() => props.openMatch(m.id)} />
+                  ))}
+                </div>
+              </div>
+            );
+          })
         )}
       </section>
 

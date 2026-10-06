@@ -37,9 +37,10 @@ export function GameLogo(props: { game: GameId; size?: number }) {
   const icons = useGameIcons();
   const [broken, setBroken] = useState(false);
   const size = props.size ?? 22;
-  const src = icons[props.game];
+  const bundled = GAMES[props.game].logo;
+  const src = bundled ?? (icons[props.game] ? fileUrl(icons[props.game]!) : undefined);
   if (src && !broken) {
-    return <img className="game-logo" src={fileUrl(src)} alt="" width={size} height={size} onError={() => setBroken(true)} />;
+    return <img className="game-logo" src={src} alt="" width={size} height={size} onError={() => setBroken(true)} />;
   }
   return (
     <span className="game-logo game-logo-text" style={{ width: size, height: size }}>

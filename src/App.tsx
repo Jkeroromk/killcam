@@ -108,7 +108,10 @@ export default function App() {
       </aside>
       <main className="content">
         {page.name === "home" && (
-          <Dashboard status={status} settings={settings} libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} openLibrary={() => nav("library")} />
+          <Dashboard status={status} settings={settings} libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} openLibrary={(g) => {
+            if (g) setGame(g);
+            nav("library");
+          }} />
         )}
         {page.name === "library" && <Library game={game} setGame={setGame} libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
         {page.name === "match" && <MatchView id={page.id} back={() => nav("library")} libVersion={libVersion} />}
