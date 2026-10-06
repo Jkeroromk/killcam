@@ -6,13 +6,19 @@ export function isLocale(v: string): v is Locale {
   return (LOCALES as readonly string[]).includes(v);
 }
 
-export type EventKind = "kill" | "knock" | "knocked" | "eliminated" | "win" | "manual";
+export type GameId = "pubg" | "lol";
+export const GAME_IDS: GameId[] = ["pubg", "lol"];
+
+export type EventKind = "kill" | "knock" | "knocked" | "eliminated" | "win" | "manual" | "assist" | "objective";
+
+/** what an example League event was (shown next to it in the feed) */
+export type LolNote = "firstBlood" | "double" | "triple" | "quadra" | "penta" | "ace" | "dragon" | "baronSteal" | "tower" | "nexus";
 
 type Pair = { title: string; body: string };
 
 export type Dict = {
   meta: { title: string; description: string; changelogTitle: string };
-  nav: { features: string; stats: string; install: string; faq: string; changelog: string; source: string; otherLang: string; otherLangLabel: string; skip: string };
+  nav: { games: string; features: string; stats: string; install: string; faq: string; changelog: string; source: string; otherLang: string; otherLangLabel: string; skip: string };
   hero: {
     titleA: string;
     titleB: string;
@@ -24,12 +30,19 @@ export type Dict = {
   };
   timeline: {
     label: string;
-    match: string;
     replay: string;
-    events: Record<EventKind, string>;
     clips: string; // {n} = number of clips
-    kills: string;
-    knocks: string;
+    events: Record<EventKind, string>;
+    notes: Record<LolNote, string>;
+    games: Record<GameId, { tab: string; match: string; tally: [string, string]; death: string; win: string }>;
+  };
+  games: {
+    title: string;
+    intro: string;
+    supported: string;
+    cards: Record<GameId, { name: string; how: string; catches: string; needs: string; data: string }>;
+    labels: { catches: string; needs: string; data: string };
+    more: { title: string; body: string; link: string };
   };
   features: { title: string; intro: string; items: Pair[] };
   shots: { match: string; home: string; mini: string };
@@ -62,6 +75,24 @@ export type Dict = {
     weaponSub: (dist: number, heads: number) => string;
     maps: Record<"erangel" | "miramar" | "taego" | "vikendi" | "deston" | "rondo", string>;
     sample: string;
+    gameTabs: Record<GameId, string>;
+    lol: {
+      matchesSub: (wins: number, rate: string) => string;
+      kda: string;
+      kdaSub: (k: string, d: string, a: string) => string;
+      cs: string;
+      csSub: (n: number) => string;
+      damage: string;
+      damageSub: (total: string) => string;
+      kp: string;
+      kpSub: string;
+      multi: string;
+      multiSub: (d: number, t: number, q: number, p: number) => string;
+      metrics: { kills: string; kda: string; damage: string };
+      winLegend: string;
+      champs: string;
+      champSub: (games: number, rate: string, kda: string) => string;
+    };
   };
   install: {
     title: string;
@@ -73,7 +104,7 @@ export type Dict = {
   faq: { title: string; items: { q: string; a: string }[]; more: string };
   privacy: { title: string; items: Pair[] };
   cta: { title: string; sub: string };
-  footer: { license: string; issues: string; releases: string; by: string };
+  footer: { license: string; issues: string; releases: string; by: string; riot: string };
   changelog: {
     title: string;
     intro: string;
@@ -88,11 +119,12 @@ export type Dict = {
 
 const zh: Dict = {
   meta: {
-    title: "KillCam：免费的 PUBG 自动高光录制",
-    description: "打开游戏就开始录，打完自动剪出击杀、击倒、吃鸡的片段。免费、无广告、开源，录像只存在你自己的电脑上。",
+    title: "KillCam：免费的游戏自动高光录制",
+    description: "支持 PUBG 和英雄联盟。打开游戏就开始录，打完自动剪出击杀、多杀、吃鸡、胜利的片段。免费、无广告、开源，录像只存在你自己的电脑上。",
     changelogTitle: "更新日志",
   },
   nav: {
+    games: "游戏",
     features: "功能",
     stats: "数据",
     install: "安装",
@@ -106,7 +138,7 @@ const zh: Dict = {
   hero: {
     titleA: "打完这一局，",
     titleB: "高光已经剪好了。",
-    sub: "KillCam 是免费、无广告的 PUBG 自动高光录制。打开游戏就开始录，击杀、击倒、吃鸡自动剪成片段，不用记任何快捷键。",
+    sub: "KillCam 是免费、无广告的自动高光录制，现在支持 PUBG 和英雄联盟。打开游戏就开始录，击杀、多杀、吃鸡、胜利自动剪成片段，不用记任何快捷键。",
     download: "下载 Windows 版",
     downloadFallback: "去 GitHub 下载",
     free: "免费，开源，不需要注册",
@@ -114,8 +146,8 @@ const zh: Dict = {
   },
   timeline: {
     label: "一局对局的时间轴示例：KillCam 识别到的事件和剪出的高光片段",
-    match: "艾伦格 四排 第 1 名",
     replay: "重新播放",
+    clips: "已剪出 {n} 段高光",
     events: {
       kill: "击杀",
       knock: "击倒",
@@ -123,36 +155,78 @@ const zh: Dict = {
       eliminated: "被淘汰",
       win: "大吉大利",
       manual: "F9 手动标记",
+      assist: "助攻",
+      objective: "目标",
     },
-    clips: "已剪出 {n} 段高光",
-    kills: "击杀",
-    knocks: "击倒",
+    notes: {
+      firstBlood: "一血",
+      double: "双杀",
+      triple: "三杀",
+      quadra: "四杀",
+      penta: "五杀",
+      ace: "团灭",
+      dragon: "小龙",
+      baronSteal: "抢下大龙",
+      tower: "推掉防御塔",
+      nexus: "推掉水晶",
+    },
+    games: {
+      pubg: { tab: "PUBG", match: "艾伦格 四排 第 1 名", tally: ["击杀", "击倒"], death: "被淘汰", win: "大吉大利" },
+      lol: { tab: "英雄联盟", match: "召唤师峡谷 排位 胜利", tally: ["击杀", "助攻"], death: "阵亡", win: "胜利" },
+    },
+  },
+  games: {
+    title: "支持的游戏",
+    intro: "每个游戏用最准的方法找高光，录像库、数据和设置也按游戏分开。",
+    supported: "已支持",
+    labels: { catches: "会剪下来的", needs: "需要", data: "每局记录" },
+    cards: {
+      pubg: {
+        name: "PUBG",
+        how: "边录边读屏幕上的击杀、击倒提示。填了免费的 PUBG API Key，普通对局还会用官方数据把每次击杀标得更准。",
+        catches: "击杀、击倒、被击倒、被淘汰、吃鸡",
+        needs: "Steam 版 PUBG，简体中文游戏界面、默认 HUD",
+        data: "地图、排名、伤害、武器、距离、爆头",
+      },
+      lol: {
+        name: "英雄联盟",
+        how: "直接读游戏自己提供的实时数据，不用读屏，也不用 API Key。进入对局就开始录。",
+        catches: "击杀、双杀到五杀、一血、团灭、小龙先锋大龙（抢龙会标出来）、胜负",
+        needs: "Riot 客户端（各服务器都可以），暂不支持国服 WeGame。回放和观战不录",
+        data: "英雄、KDA、补刀、伤害、金币和双方记分板",
+      },
+    },
+    more: {
+      title: "更多游戏",
+      body: "接下来会继续加新游戏。想让 KillCam 支持哪个游戏，来 GitHub 告诉我们。",
+      link: "提议一个游戏",
+    },
   },
   features: {
     title: "装好以后，它自己会做的事",
     intro: "大部分时候你不用打开它。打游戏，然后回来看剪好的片段。",
     items: [
-      { title: "自动开录", body: "开机后待在托盘里。PUBG 一打开就开始录，关掉游戏就停。" },
-      { title: "自动找高光", body: "识别屏幕上的击倒、淘汰、被击倒、被淘汰和大吉大利提示。填了 PUBG API Key，还能标出每次击杀用的武器、距离和是否爆头。" },
+      { title: "自动开录", body: "开机后待在托盘里。PUBG 一打开、英雄联盟一进对局就开始录，打完就停。" },
+      { title: "每局打完就剪好", body: "不用关游戏。一局结束，这局的高光就在后台剪好，回到大厅或客户端就能看。" },
       { title: "整局时间轴", body: "所有事件排在一条可缩放的时间轴上，点哪看哪。挤在一起的击杀会自动合并，点一下放大。" },
       { title: "剪辑导出", body: "拖动调整每段的开头和结尾，导出原比例、16:9 或竖屏，原画质、1080p 或 720p。勾选几段可以一键合成集锦。" },
       { title: "声音分开录", body: "游戏声音和麦克风录在两条音轨里。导出时可以混在一起，也可以分轨，后期好处理。" },
       { title: "F9 手动标记", body: "觉得刚才那波很精彩，按一下 F9，这一段就会被留下来。" },
-      { title: "个人数据", body: "最近 20 局或 50 局的场均击杀、K/D、伤害、吃鸡率、爆头率，还有常用武器和各地图战绩。需要 PUBG API Key。" },
+      { title: "个人数据", body: "PUBG 的 K/D、伤害、吃鸡率、常用武器，英雄联盟的胜率、KDA、补刀、常用英雄，按游戏分开看。" },
       { title: "不占满硬盘", body: "可以只保留高光，整局录像处理完就删。超过设定的容量会自动清理最旧的录像，收藏的不删。" },
       { title: "游戏里的迷你窗口", body: "显示录制时长和识别到的击杀数，不会被录进视频。" },
     ],
   },
   stats: {
     title: "每一局都记下来，打法自己会说话",
-    body: "填了 PUBG API Key 以后，KillCam 会把每局的官方数据存在你电脑上，在「数据」页里汇总给你看。",
+    body: "KillCam 把每局的数据存在你电脑上，在「数据」页里按游戏汇总给你看。",
     points: [
       "最近 20 局、50 局或全部对局，随时切换",
-      "每局击杀、伤害、排名的走势，吃鸡的局单独标出来",
-      "常用武器的击杀数、平均距离和爆头数",
-      "各地图战绩、击杀最多的一局和最远击杀",
+      "每局走势，吃鸡和赢下的局单独标出来",
+      "PUBG：K/D、伤害、前十率、爆头率，常用武器和各地图战绩",
+      "英雄联盟：胜率、KDA、分均补刀、多杀次数和常用英雄",
     ],
-    keyNote: "API Key 在 developer.pubg.com 免费申请，第一次打开时的引导里有步骤。街机和自定义房间没有官方数据，不计入统计。",
+    keyNote: "PUBG 的数据需要免费的 API Key（developer.pubg.com 申请，引导里有步骤），街机和自定义房间不计入。英雄联盟直接用游戏自带的数据，不用 Key。",
     panelLabel: "KillCam 数据页示例",
     page: "数据",
     range: (n) => `最近 ${n} 局`,
@@ -177,6 +251,24 @@ const zh: Dict = {
     weaponSub: (d, h) => `平均 ${d} 米${h ? ` · ${h} 爆头` : ""}`,
     maps: { erangel: "艾伦格", miramar: "米拉玛", taego: "泰戈", vikendi: "维寒迪", deston: "帝斯顿", rondo: "荣都" },
     sample: "示例数据",
+    gameTabs: { pubg: "PUBG", lol: "英雄联盟" },
+    lol: {
+      matchesSub: (w, r) => `${w} 胜 · 胜率 ${r}`,
+      kda: "KDA",
+      kdaSub: (k, d, a) => `场均 ${k} / ${d} / ${a}`,
+      cs: "分均补刀",
+      csSub: (n) => `场均 ${n} 补刀`,
+      damage: "场均伤害",
+      damageSub: (t) => `对英雄共 ${t}`,
+      kp: "参团率",
+      kpSub: "击杀 + 助攻占全队击杀",
+      multi: "多杀",
+      multiSub: (d, t, q, p) => `双杀 ${d} · 三杀 ${t} · 四杀 ${q} · 五杀 ${p}`,
+      metrics: { kills: "击杀", kda: "KDA", damage: "伤害" },
+      winLegend: "胜利",
+      champs: "常用英雄",
+      champSub: (g, r, k) => `${g} 局 · 胜率 ${r} · KDA ${k}`,
+    },
   },
   shots: {
     match: "单局回放：时间轴、高光列表和导出选项",
@@ -208,8 +300,8 @@ const zh: Dict = {
     rows: [
       ["系统", "Windows 10（2004 及以上）或 Windows 11，64 位"],
       ["显卡", "支持 NVENC 的 NVIDIA 显卡（GTX 10 系列及以上）。AMD 显卡理论上可用，还没测试过"],
-      ["游戏", "Steam 版 PUBG"],
-      ["读屏识别", "目前只支持简体中文游戏界面、默认 HUD"],
+      ["PUBG", "Steam 版。读屏识别目前只支持简体中文游戏界面、默认 HUD"],
+      ["英雄联盟", "Riot 客户端（各服务器都可以），暂不支持国服 WeGame"],
     ],
   },
   faq: {
@@ -218,7 +310,7 @@ const zh: Dict = {
     items: [
       {
         q: "会不会被封号？",
-        a: "KillCam 不注入游戏、不读写游戏内存、不修改任何游戏文件。它和 OBS 的「显示器采集」用的是同一种方法：通过 Windows 自带的屏幕复制功能录屏，用 Windows 的音频接口录声音，再读 PUBG 自己写在本地的日志文件和官方公开的 API。不过反作弊的规则只有游戏公司说了算，这里没办法给出保证。",
+        a: "KillCam 不注入游戏、不读写游戏内存、不修改任何游戏文件。录屏和 OBS 的「显示器采集」用的是同一种方法：Windows 自带的屏幕复制功能，声音用 Windows 的音频接口。PUBG 读的是游戏自己写在本地的日志文件和官方公开的 API；英雄联盟读的是游戏在你电脑上提供的数据接口：对局中是 Riot 开放给第三方工具的实时数据，结算时从客户端读本局统计，都是只读。不过反作弊的规则只有游戏公司说了算，这里没办法给出保证。",
       },
       {
         q: "会掉帧吗？",
@@ -230,7 +322,7 @@ const zh: Dict = {
       },
       {
         q: "打完多久能看到高光？",
-        a: "不用关游戏。每局打完（吃鸡、被淘汰后一会儿，或者开始下一局时），这局的高光就会在后台剪好，回到大厅就能看。剪片段只是复制视频数据、不重新编码，用的是最低优先级，不影响游戏。填了 PUBG API Key 的话，普通对局会先按读屏剪好，几分钟后官方数据到了，再自动补上地图、排名、伤害和击杀详情。",
+        a: "不用关游戏。每局打完，这局的高光就会在后台剪好，回到大厅或客户端就能看。剪片段只是复制视频数据、不重新编码，用的是最低优先级，不影响游戏。PUBG 填了 API Key 的话，普通对局会先按读屏剪好，几分钟后官方数据到了，再自动补上地图、排名、伤害和击杀详情。",
       },
       {
         q: "迷你窗口看不到，或者挡住了游戏？",
@@ -246,7 +338,7 @@ const zh: Dict = {
     title: "你的录像不会离开你的电脑",
     items: [
       { title: "不上传任何东西", body: "录像、截图和设置只存在你自己电脑上。KillCam 没有服务器，也不收集使用数据。" },
-      { title: "只连两个地方", body: "填了 API Key 时去 PUBG 官方接口查你自己的对局；另外定期去 GitHub Releases 检查新版本。" },
+      { title: "只连这几个地方", body: "填了 API Key 时去 PUBG 官方接口查你自己的对局；英雄联盟第一次遇到某个英雄时下载它的头像，之后存在本机；另外定期去 GitHub Releases 检查新版本。" },
       { title: "不碰游戏", body: "不注入游戏、不读写游戏内存、不修改游戏文件。" },
       { title: "代码公开", body: "全部源代码在 GitHub 上，MIT 许可证，可以自己检查或编译。" },
     ],
@@ -259,7 +351,8 @@ const zh: Dict = {
     license: "MIT 许可证",
     issues: "反馈问题",
     releases: "所有版本",
-    by: "由 Jkeroro 制作。KillCam 是个人项目，与 KRAFTON 或 PUBG 官方无关。",
+    by: "由 Jkeroro 制作。KillCam 是个人项目，与 KRAFTON、PUBG 官方或 Riot Games 无关。",
+    riot: "KillCam was created under Riot Games' \"Legal Jibber Jabber\" policy using assets owned by Riot Games. Riot Games does not endorse or sponsor this project.",
   },
   changelog: {
     title: "更新日志",
@@ -275,11 +368,12 @@ const zh: Dict = {
 
 const en: Dict = {
   meta: {
-    title: "KillCam: free automatic highlights for PUBG",
-    description: "Starts recording when PUBG opens and cuts your kills, knocks and chicken dinners into clips. Free, no ads, open source, and your recordings never leave your PC.",
+    title: "KillCam: free automatic game highlights",
+    description: "For PUBG and League of Legends. Starts recording when you play and cuts your kills, multikills, chicken dinners and wins into clips. Free, no ads, open source, and your recordings never leave your PC.",
     changelogTitle: "Changelog",
   },
   nav: {
+    games: "Games",
     features: "Features",
     stats: "Stats",
     install: "Install",
@@ -293,7 +387,7 @@ const en: Dict = {
   hero: {
     titleA: "Finish the match.",
     titleB: "The highlights are already cut.",
-    sub: "KillCam is a free, ad-free highlight recorder for PUBG. It starts recording when the game opens and cuts your kills, knocks and chicken dinners into clips on its own. No hotkeys to remember.",
+    sub: "KillCam is a free, ad-free highlight recorder, now for PUBG and League of Legends. It starts recording when you play and cuts your kills, multikills, chicken dinners and wins into clips on its own. No hotkeys to remember.",
     download: "Download for Windows",
     downloadFallback: "Download on GitHub",
     free: "Free, open source, no account",
@@ -301,8 +395,8 @@ const en: Dict = {
   },
   timeline: {
     label: "Example match timeline: the events KillCam detected and the highlight clips it cut",
-    match: "Erangel squad, placed #1",
     replay: "Replay",
+    clips: "{n} highlights cut",
     events: {
       kill: "Kill",
       knock: "Knock",
@@ -310,36 +404,78 @@ const en: Dict = {
       eliminated: "Eliminated",
       win: "Chicken dinner",
       manual: "F9 marker",
+      assist: "Assist",
+      objective: "Objective",
     },
-    clips: "{n} highlights cut",
-    kills: "Kills",
-    knocks: "Knocks",
+    notes: {
+      firstBlood: "First blood",
+      double: "Double kill",
+      triple: "Triple kill",
+      quadra: "Quadra kill",
+      penta: "Penta kill",
+      ace: "Ace",
+      dragon: "Dragon",
+      baronSteal: "Baron steal",
+      tower: "Tower down",
+      nexus: "Nexus down",
+    },
+    games: {
+      pubg: { tab: "PUBG", match: "Erangel squad, placed #1", tally: ["Kills", "Knocks"], death: "Eliminated", win: "Chicken dinner" },
+      lol: { tab: "League", match: "Summoner's Rift ranked, victory", tally: ["Kills", "Assists"], death: "Died", win: "Victory" },
+    },
+  },
+  games: {
+    title: "Supported games",
+    intro: "Each game gets the most accurate way to find its highlights, and the library, stats and settings are kept separate per game.",
+    supported: "Supported",
+    labels: { catches: "Clips", needs: "Needs", data: "Per match" },
+    cards: {
+      pubg: {
+        name: "PUBG",
+        how: "Reads the kill and knock prompts on screen while recording. Add a free PUBG API key and regular matches also get precise kill data from PUBG.",
+        catches: "Kills, knocks, getting knocked, getting eliminated, chicken dinners",
+        needs: "PUBG on Steam, with the Simplified Chinese game language and default HUD",
+        data: "Map, placement, damage, weapon, distance, headshots",
+      },
+      lol: {
+        name: "League of Legends",
+        how: "Reads the live data the game itself provides, so there's no screen reading and no API key. Recording starts when you load into a match.",
+        catches: "Kills, double to penta kills, first blood, aces, dragons, heralds and barons (steals are marked), the win or loss",
+        needs: "The Riot client, any server except the Chinese WeGame client. Replays and spectating aren't recorded",
+        data: "Champion, KDA, CS, damage, gold and the full scoreboard",
+      },
+    },
+    more: {
+      title: "More games",
+      body: "More games are on the way. Tell us on GitHub which one you'd like KillCam to support next.",
+      link: "Suggest a game",
+    },
   },
   features: {
     title: "What it does once it's installed",
     intro: "Most of the time you won't open it. Play, then come back to clips that are already cut.",
     items: [
-      { title: "Records on its own", body: "Waits in the tray. Starts recording when PUBG opens and stops when you close it." },
-      { title: "Finds the highlights", body: "Reads the on-screen knock, kill, knocked, eliminated and chicken dinner prompts. Add a PUBG API key and every kill also gets its weapon, distance and headshot." },
+      { title: "Records on its own", body: "Waits in the tray. Starts recording when PUBG opens or a League match loads, and stops when you're done." },
+      { title: "Cut as soon as the match ends", body: "No need to close the game. When a match ends, its highlights are cut in the background and waiting in the lobby or client." },
       { title: "Whole-match timeline", body: "Every event sits on one zoomable timeline; click anywhere to jump there. Kills that pile up are grouped, and one click zooms in." },
       { title: "Trim and export", body: "Drag the start and end of any clip. Export original, 16:9 or vertical, at source quality, 1080p or 720p. Tick a few clips to stitch a montage." },
       { title: "Separate audio tracks", body: "Game audio and your mic are recorded on separate tracks. Export them mixed or split for editing." },
       { title: "F9 to keep a moment", body: "Did something worth keeping? Press F9 and that moment stays." },
-      { title: "Your stats", body: "Average kills, K/D, damage, win rate and headshot rate over your last 20 or 50 matches, plus favourite weapons and per-map results. Needs a PUBG API key." },
+      { title: "Your stats", body: "K/D, damage, win rate and top weapons for PUBG; win rate, KDA, CS and top champions for League. Each game on its own page." },
       { title: "Keeps your drive in check", body: "Keep only the highlights and drop full recordings once they're processed. Past your size limit, the oldest recordings are cleared; favourites stay." },
       { title: "In-game mini window", body: "Shows recording time and kills detected. It never shows up in your recordings." },
     ],
   },
   stats: {
     title: "Every match, on the record",
-    body: "Add your PUBG API key and KillCam keeps each match's official data on your PC, then sums it up on the Stats page.",
+    body: "KillCam keeps each match's data on your PC and sums it up on the Stats page, one game at a time.",
     points: [
       "Last 20, last 50 or every match, one click apart",
-      "Kills, damage and placement match by match, with wins marked",
-      "Your go-to weapons: kills, average distance and headshots",
-      "Results by map, your best match and your longest kill",
+      "Match by match, with wins marked",
+      "PUBG: K/D, damage, top 10 and headshot rates, top weapons and results by map",
+      "League: win rate, KDA, CS per minute, multikills and top champions",
     ],
-    keyNote: "API keys are free at developer.pubg.com, and the first-run setup walks you through it. Arcade and custom matches have no official data, so they're not counted.",
+    keyNote: "PUBG stats need a free API key from developer.pubg.com (the setup walks you through it); arcade and custom matches aren't counted. League uses the game's own data, no key needed.",
     panelLabel: "Example of the KillCam stats page",
     page: "Stats",
     range: (n) => `Last ${n}`,
@@ -364,6 +500,24 @@ const en: Dict = {
     weaponSub: (d, h) => `avg ${d} m${h ? ` · ${h} headshots` : ""}`,
     maps: { erangel: "Erangel", miramar: "Miramar", taego: "Taego", vikendi: "Vikendi", deston: "Deston", rondo: "Rondo" },
     sample: "Example data",
+    gameTabs: { pubg: "PUBG", lol: "League" },
+    lol: {
+      matchesSub: (w, r) => `${w} wins · ${r} win rate`,
+      kda: "KDA",
+      kdaSub: (k, d, a) => `${k} / ${d} / ${a} per match`,
+      cs: "CS per minute",
+      csSub: (n) => `${n} CS per match`,
+      damage: "Damage per match",
+      damageSub: (t) => `${t} to champions`,
+      kp: "Kill participation",
+      kpSub: "Kills + assists of team kills",
+      multi: "Multikills",
+      multiSub: (d, t, q, p) => `${d} double · ${t} triple · ${q} quadra · ${p} penta`,
+      metrics: { kills: "Kills", kda: "KDA", damage: "Damage" },
+      winLegend: "Win",
+      champs: "Top champions",
+      champSub: (g, r, k) => `${g} games · ${r} wins · KDA ${k}`,
+    },
   },
   shots: {
     match: "Match view: timeline, highlight list and export options",
@@ -395,8 +549,8 @@ const en: Dict = {
     rows: [
       ["System", "Windows 10 (2004 or later) or Windows 11, 64-bit"],
       ["Graphics", "NVIDIA GPU with NVENC (GTX 10 series or newer). AMD may work but hasn't been tested"],
-      ["Game", "PUBG on Steam"],
-      ["Screen detection", "Simplified Chinese game language with the default HUD, for now"],
+      ["PUBG", "On Steam. Screen detection needs the Simplified Chinese game language and default HUD, for now"],
+      ["League of Legends", "The Riot client, any server except the Chinese WeGame client"],
       ["App language", "The app itself is in Chinese for now"],
     ],
   },
@@ -406,7 +560,7 @@ const en: Dict = {
     items: [
       {
         q: "Can this get me banned?",
-        a: "KillCam doesn't inject into the game, read or write game memory, or change any game files. It records the same way OBS display capture does: Windows' own screen duplication for video, Windows audio APIs for sound, plus the log files PUBG writes locally and PUBG's public API. That said, only the game's publisher decides what anti-cheat allows, so no one can guarantee it.",
+        a: "KillCam doesn't inject into the game, read or write game memory, or change any game files. It records the same way OBS display capture does: Windows' own screen duplication for video, Windows audio APIs for sound, For PUBG it reads the log files the game writes locally and PUBG's public API. For League it reads the data the game serves on your own PC: during a match, the live data Riot opens to third-party tools, and at the end, the match stats from the client. All of it is read-only. That said, only the game's publisher decides what anti-cheat allows, so no one can guarantee it.",
       },
       {
         q: "Will it cost me frames?",
@@ -418,7 +572,7 @@ const en: Dict = {
       },
       {
         q: "How soon are my highlights ready?",
-        a: "You don't need to close the game. When a match ends (a win, shortly after you're eliminated, or when the next match starts), its highlights are cut in the background and waiting when you're back in the lobby. Cutting only copies video data without re-encoding, at the lowest priority, so it doesn't affect the game. With a PUBG API key, regular matches are cut from screen detection first; when the official data arrives a few minutes later, map, placement, damage and kill details are filled in automatically.",
+        a: "You don't need to close the game. When a match ends, its highlights are cut in the background and waiting when you're back in the lobby or client. Cutting only copies video data without re-encoding, at the lowest priority, so it doesn't affect the game. In PUBG with an API key, regular matches are cut from screen detection first; when the official data arrives a few minutes later, map, placement, damage and kill details are filled in automatically.",
       },
       {
         q: "I can't see the mini window, or it covers the game",
@@ -434,20 +588,21 @@ const en: Dict = {
     title: "Your recordings stay on your PC",
     items: [
       { title: "Nothing is uploaded", body: "Recordings, screenshots and settings stay on your own PC. KillCam has no server and collects no usage data." },
-      { title: "Only two connections", body: "PUBG's official API to look up your own matches when you add a key, and GitHub Releases to check for updates." },
+      { title: "Only a few connections", body: "PUBG's official API to look up your own matches when you add a key; League champion portraits, downloaded once and kept on your PC; and GitHub Releases to check for updates." },
       { title: "Hands off the game", body: "No injection, no reading or writing game memory, no changes to game files." },
       { title: "Open source", body: "All of the code is on GitHub under the MIT license. Read it or build it yourself." },
     ],
   },
   cta: {
-    title: "Install it before your next drop.",
+    title: "Install it before your next match.",
     sub: "Setup takes a minute, and the first launch walks you through everything.",
   },
   footer: {
     license: "MIT license",
     issues: "Report a problem",
     releases: "All releases",
-    by: "Made by Jkeroro. KillCam is a personal project, not affiliated with KRAFTON or PUBG.",
+    by: "Made by Jkeroro. KillCam is a personal project, not affiliated with KRAFTON, PUBG or Riot Games.",
+    riot: "KillCam was created under Riot Games' \"Legal Jibber Jabber\" policy using assets owned by Riot Games. Riot Games does not endorse or sponsor this project.",
   },
   changelog: {
     title: "Changelog",

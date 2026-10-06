@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { getDict, isLocale } from "@/lib/i18n";
+import { GAME_IDS, getDict, isLocale } from "@/lib/i18n";
 import { ISSUES_URL, REPO_URL, getLatest } from "@/lib/github";
 import { DownloadButton, SiteFooter, SiteNav } from "@/components/Chrome";
 import { MatchTimeline } from "@/components/MatchTimeline";
@@ -65,6 +65,48 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
                 <figcaption>{d.shots.mini}</figcaption>
               </figure>
             </div>
+          </div>
+        </section>
+
+        <section id="games" className="block is-games">
+          <div className="wrap">
+            <header className="block-head" data-reveal>
+              <h2>{d.games.title}</h2>
+              <p>{d.games.intro}</p>
+            </header>
+            <ul className="games">
+              {GAME_IDS.map((id, i) => {
+                const g = d.games.cards[id];
+                return (
+                  <li key={id} className="game" data-reveal style={at(i)}>
+                    <div className="game-top">
+                      <h3>{g.name}</h3>
+                      <span className="game-status">{d.games.supported}</span>
+                    </div>
+                    <p className="game-how">{g.how}</p>
+                    <dl className="game-facts">
+                      <div>
+                        <dt>{d.games.labels.catches}</dt>
+                        <dd>{g.catches}</dd>
+                      </div>
+                      <div>
+                        <dt>{d.games.labels.data}</dt>
+                        <dd>{g.data}</dd>
+                      </div>
+                      <div>
+                        <dt>{d.games.labels.needs}</dt>
+                        <dd>{g.needs}</dd>
+                      </div>
+                    </dl>
+                  </li>
+                );
+              })}
+              <li className="game is-next" data-reveal style={at(2)}>
+                <h3>{d.games.more.title}</h3>
+                <p>{d.games.more.body}</p>
+                <a href={`${ISSUES_URL}/new?title=${encodeURIComponent(lang === "zh" ? "希望支持的游戏：" : "Game request: ")}`}>{d.games.more.link}</a>
+              </li>
+            </ul>
           </div>
         </section>
 
