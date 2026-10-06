@@ -403,6 +403,7 @@ fn start_lol_watcher(app: &AppHandle, st: &St, dir: PathBuf) {
     *lk(&st.lol_score) = lol::Score::default();
     let league = lol::league_dir(game::Watcher::new().exe_dir(game::Game::Lol.exe()));
     let (app2, st2, st3) = (app.clone(), st.clone(), st.clone());
+    let (app4, st4) = (app.clone(), st.clone());
     lol::watch(
         dir,
         league,
@@ -410,6 +411,13 @@ fn start_lol_watcher(app: &AppHandle, st: &St, dir: PathBuf) {
         move |sc| {
             *lk(&st2.lol_score) = sc;
             emit_status(&app2, &st2);
+        },
+        // a replay or someone else's game being watched: not the player's match
+        move || {
+            push_notice(&st4, "正在看回放或观战，这局英雄联盟不录".into());
+            if st4.auto_session.load(Ordering::Relaxed) {
+                stop_session(&app4, &st4);
+            }
         },
         // the end-of-game stats are in: the match can become a record
         move || st3.trigger_processing(false),
@@ -698,7 +706,7 @@ fn spawn_game_watcher(app: AppHandle, st: St) {
         // times the player went back to the lobby during this recording
         let mut leaves_seen = 0usize;
         loop {
-            let enabled = lk(&st.settings).games.enabled();
+            let enabled = lk(&st.settings).enabled_games();
             let found = w.find(&enabled);
             let pid = found.map(|f| f.1);
             let running = found.map(|f| f.0);
@@ -968,8 +976,9 @@ fn get_settings(st: State<'_, St>) -> Settings {
 fn save_settings(
     app: AppHandle,
     st: State<'_, St>,
-    settings: Settings,
+    mut settings: Settings,
 ) -> Result<Vec<String>, String> {
+    settings.migrate(false);
     let login_changed;
     {
         let mut s = lk(&st.settings);
@@ -1130,6 +1139,17 @@ async fn list_monitors(
         Ok(ffmpeg::list_monitors(&ff, &cache))
     })
     .await
+}
+
+/// A champion's square portrait, cached locally (None while offline).
+#[tauri::command]
+async fn champion_icon(app: AppHandle, key: String) -> Result<Option<String>, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("champions");
+    blocking(move || Ok(lol::champion_icon(&dir, &key).map(|p| p.to_string_lossy().to_string()))).await
 }
 
 /// Game id -> PNG of the game's icon (from its installed files).
@@ -2004,6 +2024,7 @@ pub fn run() {
             list_monitors,
             game_info,
             game_icons,
+            champion_icon,
             list_audio_devices,
             start_audio_monitor,
             stop_audio_monitor,

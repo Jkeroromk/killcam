@@ -1,4 +1,5 @@
 import type { EventKind, MatchRecord } from "./api";
+import { gameDef } from "./games";
 
 export const KIND_LABEL: Record<EventKind, string> = {
   kill: "击杀",
@@ -13,7 +14,7 @@ export const KIND_LABEL: Record<EventKind, string> = {
 
 /** The label of a kind in a given game (a League win isn't a chicken dinner). */
 export function kindLabel(kind: EventKind, game?: string | null): string {
-  if (kind === "win" && game === "lol") return "胜利";
+  if (kind === "win") return gameDef(game).win;
   return KIND_LABEL[kind];
 }
 
@@ -22,12 +23,7 @@ export const KIND_ORDER: EventKind[] = ["kill", "knock", "win", "manual", "death
 export const isLol = (m: Pick<MatchRecord, "game">) => m.game === "lol";
 
 export function gameName(id?: string | null): string {
-  return id === "lol" ? "英雄联盟" : "PUBG";
-}
-
-/** Champion square icon by Data Dragon key (e.g. "MonkeyKing"). */
-export function championIcon(key: string): string {
-  return `https://cdn.communitydragon.org/latest/champion/${encodeURIComponent(key)}/square`;
+  return gameDef(id).name;
 }
 
 export function kda(k: number, d: number, a: number): string {

@@ -3034,3 +3034,16 @@ button.st-best:hover {
   width: 22px;
   height: 22px;
 }
+.support-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.support-list b {
+  color: var(--text);
+  font-weight: 600;
+}

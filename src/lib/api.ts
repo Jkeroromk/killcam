@@ -17,7 +17,6 @@ export interface Settings {
   ffmpegPath: string | null;
   libraryDir: string;
   storageLimitGb: number;
-  captureMode: "full" | "highlights";
   autoRecord: boolean;
   video: {
     monitorIndex: number;
@@ -31,12 +30,8 @@ export interface Settings {
     aspect: "native" | "16:9";
   };
   audio: AudioSettings;
-  /** PUBG's highlight rules */
-  events: Record<EventKind, EventRule>;
-  /** League of Legends' highlight rules */
-  eventsLol: Record<EventKind, EventRule>;
-  /** which games start a recording by themselves */
-  games: { pubg: boolean; lol: boolean };
+  /** per game: auto recording, what to keep, highlight rules */
+  gameSettings: Record<GameId, GameSettings>;
   pubg: { playerName: string; apiKey: string; shard: string; accountId: string | null };
   hotkeys: { highlight: string; toggleRecord: string };
   telemetryOffsetMs: number;
@@ -45,6 +40,13 @@ export interface Settings {
   launchAtLogin: boolean;
   /** short sound when F9 marks a highlight */
   markerSound: boolean;
+}
+
+export interface GameSettings {
+  /** start recording when the game starts */
+  enabled: boolean;
+  captureMode: "full" | "highlights";
+  rules: Record<EventKind, EventRule>;
 }
 
 export interface AudioSettings {
@@ -336,6 +338,7 @@ export const api = {
   listMonitors: () => invoke<MonitorInfo[]>("list_monitors"),
   gameInfo: () => invoke<GameInfo>("game_info"),
   gameIcons: () => invoke<Partial<Record<GameId, string>>>("game_icons"),
+  championIcon: (key: string) => invoke<string | null>("champion_icon", { key }),
   listAudioDevices: () => invoke<{ inputs: AudioDevice[]; outputs: AudioDevice[] }>("list_audio_devices"),
   startAudioMonitor: (audioSettings: AudioSettings) => invoke<void>("start_audio_monitor", { audioSettings }),
   stopAudioMonitor: () => invoke<void>("stop_audio_monitor"),

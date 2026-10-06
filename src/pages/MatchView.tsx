@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronRight, Download, FolderOpen, Play, Star, Trash2, Scissors, Layers, RotateCcw } from "lucide-react";
 import { api, errText, fileUrl, highlightBounds, joinPath, type ExportOptions, type Highlight, type LolStats, type MatchRecord } from "../lib/api";
-import { bytes, clock, eventLine, isLol, kda, kindLabel, when } from "../lib/format";
+import { bytes, clock, eventLine, kda, kindLabel, when } from "../lib/format";
+import { gameDef } from "../lib/games";
 import { ChampIcon } from "./Library";
 import { Button, KindIcon, Segmented, Spinner } from "../components/ui";
 import { Timeline } from "../components/Timeline";
@@ -416,7 +417,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
             }
             footer={
               <div className="tape-legend">
-                {(isLol(m) ? (["kill", "assist", "objective", "win", "manual", "death"] as const) : (["kill", "knock", "win", "manual", "death"] as const)).map((k) => (
+                {gameDef(m.game).legend.map((k) => (
                   <span key={k}>
                     <KindIcon kind={k} small game={m.game} /> {kindLabel(k, m.game)}
                   </span>

@@ -39,6 +39,8 @@ pub struct LiveLog {
     pub snapshot: Option<Value>,
     /// the watcher has finished (end-of-game stats fetched or given up)
     pub done: bool,
+    /// a replay or a spectated game: nobody here is the player
+    pub spectator: bool,
 }
 
 impl LiveLog {
@@ -114,14 +116,16 @@ pub fn is_me(me: &[String], name: &str) -> bool {
 /// Follow one match. Runs until the game stops answering (or `stop` is set and
 /// it never answered), then fetches the end-of-game stats from the client and
 /// calls `on_done`. `league_dir` is the League install folder (lockfile).
-pub fn watch<S, D>(
+pub fn watch<S, P, D>(
     dir: PathBuf,
     league_dir: Option<PathBuf>,
     stop: Arc<AtomicBool>,
     on_score: S,
+    on_spectator: P,
     on_done: D,
 ) where
     S: Fn(Score) + Send + 'static,
+    P: FnOnce() + Send + 'static,
     D: FnOnce() + Send + 'static,
 {
     thread::spawn(move || {
@@ -140,6 +144,9 @@ pub fn watch<S, D>(
             .unwrap_or(-1);
         let mut n = 0u64;
         let mut score = Score::default();
+        let mut game_time = 0.0f64;
+        // answers without an active player (replays, spectating)
+        let mut no_player = 0u32;
         loop {
             n += 1;
             let mut dirty = false;
@@ -148,6 +155,7 @@ pub fn watch<S, D>(
             let sent = now_ms();
             let stats = get(&c, &format!("{LIVE}/gamestats"));
             if let Some(gt) = stats.as_ref().and_then(|v| v.get("gameTime")).and_then(|x| x.as_f64()) {
+                game_time = gt;
                 if gt > 0.0 {
                     let est = sent - (gt * 1000.0) as i64;
                     if log.game_start_ms.map(|g| est < g).unwrap_or(true) {
@@ -165,6 +173,10 @@ pub fn watch<S, D>(
             // who the player is, the scoreboard: every few seconds
             if stats.is_some() && (log.me.is_empty() || n % 5 == 0) {
                 if let Some(mut all) = get(&c, &format!("{LIVE}/allgamedata")) {
+                    match all.get("activePlayer") {
+                        Some(ap) if ap.get("error").is_none() && ap.is_object() => no_player = 0,
+                        _ => no_player += 1,
+                    }
                     if let Some(ap) = all.get("activePlayer") {
                         let me = names_of(ap);
                         if !me.is_empty() {
@@ -219,6 +231,13 @@ pub fn watch<S, D>(
                     }
                 }
             }
+            // replays and spectated games run the same game, but there is no
+            // active player: nothing to record
+            if seen_api && log.me.is_empty() && no_player >= 2 && game_time > 20.0 {
+                log.spectator = true;
+                log.save(&dir);
+                break;
+            }
             if dirty {
                 log.save(&dir);
             }
@@ -234,7 +253,9 @@ pub fn watch<S, D>(
             thread::sleep(Duration::from_secs(1));
         }
 
-        if seen_api {
+        if log.spectator {
+            on_spectator();
+        } else if seen_api {
             if let Some(eog) = end_of_game(league_dir.as_deref()) {
                 if let Ok(txt) = serde_json::to_string(&eog) {
                     let _ = fs::write(dir.join(EOG_FILE), txt);
@@ -245,6 +266,55 @@ pub fn watch<S, D>(
         log.save(&dir);
         on_done();
     });
+}
+
+/// Square champion portrait (Data Dragon key, e.g. "MonkeyKing"), downloaded
+/// once into `dir`. None while offline.
+pub fn champion_icon(dir: &Path, key: &str) -> Option<PathBuf> {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static FAILED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+    let key: String = key.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    if key.is_empty() {
+        return None;
+    }
+    let path = dir.join(format!("{key}.png"));
+    if path.exists() {
+        return Some(path);
+    }
+    if let Ok(f) = FAILED.lock() {
+        if f.as_ref().map(|s| s.contains(&key)).unwrap_or(false) {
+            return None;
+        }
+    }
+    let fetched = (|| {
+        let c = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .ok()?;
+        let r = c
+            .get(format!("https://cdn.communitydragon.org/latest/champion/{key}/square"))
+            .send()
+            .ok()?;
+        if !r.status().is_success() {
+            return None;
+        }
+        let bytes = r.bytes().ok()?;
+        if bytes.len() < 100 {
+            return None;
+        }
+        fs::create_dir_all(dir).ok()?;
+        let tmp = dir.join(format!("{key}.png.tmp"));
+        fs::write(&tmp, &bytes).ok()?;
+        fs::rename(&tmp, &path).ok()?;
+        Some(path.clone())
+    })();
+    if fetched.is_none() {
+        if let Ok(mut f) = FAILED.lock() {
+            f.get_or_insert_with(HashSet::new).insert(key);
+        }
+    }
+    fetched
 }
 
 /// The League install folder of a running game or client (the lockfile is there).
@@ -749,6 +819,7 @@ mod tests {
                 "gameData": {"gameMode":"CLASSIC","gameTime":905.0}
             })),
             done: true,
+            spectator: false,
         };
         log.save(&dir);
         let sum = summarize(&dir).unwrap();

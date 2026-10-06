@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -146,30 +147,40 @@ impl EventRules {
     }
 }
 
-/// Which games start a recording by themselves.
+/// Everything that is set per game.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
-pub struct Games {
-    pub pubg: bool,
-    pub lol: bool,
+pub struct GameSettings {
+    /// start recording when the game starts
+    pub enabled: bool,
+    /// before per-game settings: PUBG's save mode (read once, then moved to game_settings)
+    #[serde(skip_serializing)]
+    pub capture_mode: String,
+    pub rules: EventRules,
 }
 
-impl Default for Games {
+impl Default for GameSettings {
     fn default() -> Self {
-        Self { pubg: true, lol: true }
+        Self::for_game(crate::game::Game::Pubg)
     }
 }
 
-impl Games {
-    pub fn enabled(&self) -> Vec<crate::game::Game> {
+impl GameSettings {
+    pub fn for_game(g: crate::game::Game) -> Self {
         use crate::game::Game;
-        Game::ALL
-            .into_iter()
-            .filter(|g| match g {
-                Game::Pubg => self.pubg,
-                Game::Lol => self.lol,
-            })
-            .collect()
+        match g {
+            Game::Pubg => Self {
+                enabled: true,
+                capture_mode: "full".into(),
+                rules: EventRules::default(),
+            },
+            // League's own data is exact: the clips are what matter
+            Game::Lol => Self {
+                enabled: true,
+                capture_mode: "highlights".into(),
+                rules: EventRules::lol(),
+            },
+        }
     }
 }
 
@@ -229,11 +240,11 @@ pub struct Settings {
     pub auto_record: bool,
     pub video: VideoSettings,
     pub audio: AudioSettings,
-    /// PUBG's highlight rules
+    /// before per-game settings: PUBG's highlight rules (moved to game_settings)
+    #[serde(skip_serializing)]
     pub events: EventRules,
-    /// League of Legends' highlight rules
-    pub events_lol: EventRules,
-    pub games: Games,
+    /// game id -> its settings (see Settings::game)
+    pub game_settings: BTreeMap<String, GameSettings>,
     pub pubg: PubgSettings,
     pub hotkeys: Hotkeys,
     /// shift applied to telemetry timestamps when placing them on the video
@@ -260,8 +271,10 @@ impl Default for Settings {
             video: VideoSettings::default(),
             audio: AudioSettings::default(),
             events: EventRules::default(),
-            events_lol: EventRules::lol(),
-            games: Games::default(),
+            game_settings: crate::game::Game::ALL
+                .into_iter()
+                .map(|g| (g.id().to_string(), GameSettings::for_game(g)))
+                .collect(),
             pubg: PubgSettings::default(),
             hotkeys: Hotkeys::default(),
             telemetry_offset_ms: 0,
@@ -277,10 +290,58 @@ pub fn settings_path(config_dir: &Path) -> PathBuf {
     config_dir.join("settings.json")
 }
 
+impl Settings {
+    /// One game's settings (its defaults if missing).
+    pub fn game(&self, g: crate::game::Game) -> GameSettings {
+        self.game_settings
+            .get(g.id())
+            .cloned()
+            .unwrap_or_else(|| GameSettings::for_game(g))
+    }
+
+    /// Games that start a recording by themselves.
+    pub fn enabled_games(&self) -> Vec<crate::game::Game> {
+        crate::game::Game::ALL
+            .into_iter()
+            .filter(|g| self.game(*g).enabled)
+            .collect()
+    }
+
+    /// Fill in games missing from game_settings. PUBG takes over the settings
+    /// from before there were several games.
+    pub fn migrate(&mut self, legacy: bool) {
+        use crate::game::Game;
+        for g in Game::ALL {
+            if self.game_settings.contains_key(g.id()) {
+                continue;
+            }
+            let mut gs = GameSettings::for_game(g);
+            if g == Game::Pubg && legacy {
+                gs.rules = self.events.clone();
+                if self.capture_mode == "full" || self.capture_mode == "highlights" {
+                    gs.capture_mode = self.capture_mode.clone();
+                }
+            }
+            self.game_settings.insert(g.id().to_string(), gs);
+        }
+    }
+}
+
 pub fn load(config_dir: &Path) -> Settings {
     let p = settings_path(config_dir);
     match fs::read_to_string(&p) {
-        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Ok(txt) => match serde_json::from_str::<Settings>(&txt) {
+            Ok(mut s) => {
+                // a file without per-game settings is from before them
+                let legacy = !txt.contains("\"gameSettings\"");
+                if legacy {
+                    s.game_settings.clear();
+                }
+                s.migrate(legacy);
+                s
+            }
+            Err(_) => Settings::default(),
+        },
         Err(_) => Settings::default(),
     }
 }
@@ -293,4 +354,35 @@ pub fn save(config_dir: &Path, s: &Settings) -> Result<(), String> {
     fs::write(&tmp, json).map_err(|e| e.to_string())?;
     fs::rename(&tmp, &p).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::Game;
+
+    #[test]
+    fn old_settings_keep_pubg_rules_and_save_mode() {
+        let old = r#"{"onboarded":true,"captureMode":"highlights","events":{"kill":{"enabled":false,"pre":5,"post":2}}}"#;
+        let dir = std::env::temp_dir().join(format!("kc_set_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(settings_path(&dir), old).unwrap();
+        let s = load(&dir);
+        let pubg = s.game(Game::Pubg);
+        assert_eq!(pubg.capture_mode, "highlights");
+        assert!(!pubg.rules.kill.enabled);
+        assert_eq!(pubg.rules.kill.pre, 5.0);
+        assert!(pubg.rules.knock.enabled);
+        assert_eq!(s.game(Game::Lol).capture_mode, "highlights");
+        assert_eq!(s.enabled_games(), vec![Game::Pubg, Game::Lol]);
+        // saved without the old fields, loads back the same
+        save(&dir, &s).unwrap();
+        let txt = std::fs::read_to_string(settings_path(&dir)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&txt).unwrap();
+        assert!(v.get("captureMode").is_none() && v.get("events").is_none());
+        assert!(v["gameSettings"]["pubg"].is_object());
+        let again = load(&dir);
+        assert_eq!(again.game(Game::Pubg).rules.kill.pre, 5.0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

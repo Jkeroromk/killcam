@@ -1,0 +1,41 @@
+# Every push to main and every pull request: type-check and build the
+# interface, run the Rust tests (screen-reading fixtures, League parsing,
+# settings migration...). Nothing is packaged or published.
+name: 检查
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["website/**", "*.md"]
+  pull_request:
+    paths-ignore: ["website/**", "*.md"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install npm packages
+        run: npm ci
+
+      # tsc type-checks the whole interface; the Rust side embeds dist/
+      - name: Build the interface
+        run: npm run build
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib

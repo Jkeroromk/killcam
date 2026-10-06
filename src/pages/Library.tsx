@@ -2,19 +2,40 @@ import { useEffect, useMemo, useState } from "react";
 import { Crosshair, RefreshCw, Skull, Star, Film } from "lucide-react";
 import { api, fileUrl, joinPath, type GameId, type MatchRecord } from "../lib/api";
 import { GameSwitch } from "../components/GameSwitch";
-import { championIcon, clock, isLol, when } from "../lib/format";
+import { clock, isLol, when } from "../lib/format";
 import { Button, Spinner, Tape } from "../components/ui";
+
+// champion portraits are downloaded once and kept on disk
+const champCache = new Map<string, Promise<string | null>>();
+function useChampionIcon(key: string): string | null {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!key) return;
+    let live = true;
+    let p = champCache.get(key);
+    if (!p) {
+      p = api.championIcon(key).catch(() => null);
+      champCache.set(key, p);
+    }
+    p.then((path) => live && setSrc(path ? fileUrl(path) : null));
+    return () => {
+      live = false;
+    };
+  }, [key]);
+  return src;
+}
 
 /** Round champion portrait; falls back to the first letter when offline. */
 export function ChampIcon(props: { k: string; name: string; size?: number }) {
   const [broken, setBroken] = useState(false);
+  const src = useChampionIcon(props.k);
   const size = props.size ?? 22;
-  return broken || !props.k ? (
+  return broken || !src ? (
     <span className="champ champ-fallback" style={{ width: size, height: size }}>
       {props.name.slice(0, 1)}
     </span>
   ) : (
-    <img className="champ" src={championIcon(props.k)} alt={props.name} width={size} height={size} onError={() => setBroken(true)} />
+    <img className="champ" src={src} alt={props.name} width={size} height={size} onError={() => setBroken(true)} />
   );
 }
 

@@ -10,12 +10,14 @@ import {
   type EventKind,
   type EventRule,
   type GameId,
+  type GameSettings,
   type HardwareInfo,
   type Levels,
   type MonitorInfo,
   type Settings,
 } from "../lib/api";
 import { KIND_LABEL, bytes } from "../lib/format";
+import { GAMES } from "../lib/games";
 import { Button, Field, HotkeyInput, KindDot, Meter, Range, Segmented, Spinner, Toggle } from "./ui";
 
 export type SetSettings = (fn: (s: Settings) => Settings) => void;
@@ -357,25 +359,6 @@ export function AudioSection(props: { settings: Settings; set: SetSettings; game
 
 // ---------------------------------------------------------------------------
 
-const RULE_KINDS: Record<GameId, { kind: EventKind; label?: string; note: string }[]> = {
-  pubg: [
-    { kind: "kill", note: "你拿到的击杀" },
-    { kind: "knock", note: "你打倒的人" },
-    { kind: "win", label: "吃鸡", note: "大吉大利，今晚吃鸡" },
-    { kind: "death", note: "你被淘汰的那一下" },
-    { kind: "knocked", note: "你被打倒" },
-    { kind: "manual", note: "按快捷键手动标记" },
-  ],
-  lol: [
-    { kind: "kill", note: "你拿到的击杀，双杀到五杀会合成一段" },
-    { kind: "objective", note: "你拿下或参与的小龙、先锋、大龙，你推掉的塔和水晶" },
-    { kind: "assist", note: "你参与的击杀" },
-    { kind: "win", label: "胜利", note: "推掉对面水晶" },
-    { kind: "death", note: "你被击杀的那一下" },
-    { kind: "manual", note: "按快捷键手动标记" },
-  ],
-};
-
 function Seconds(props: { value: number; onChange: (v: number) => void; max: number }) {
   return (
     <span className="secs">
@@ -390,15 +373,23 @@ function Seconds(props: { value: number; onChange: (v: number) => void; max: num
   );
 }
 
-/** Whole match or only the highlights (both games). */
-export function CaptureModeField(props: { settings: Settings; set: SetSettings }) {
+/** Change one game's settings. */
+export function setGameSettings(set: SetSettings, game: GameId, patch: Partial<GameSettings>) {
+  set((s) => ({ ...s, gameSettings: { ...s.gameSettings, [game]: { ...s.gameSettings[game], ...patch } } }));
+}
+
+/** One game: keep the whole match or only the highlights. */
+export function CaptureModeField(props: { settings: Settings; set: SetSettings; game: GameId }) {
+  const gs = props.settings.gameSettings[props.game];
+  // what half an hour of video takes at the chosen bitrate
+  const gb = (props.settings.video.bitrateMbps * 1800) / 8 / 1000;
   return (
     <Field label="保存方式">
       <Segmented
-        value={props.settings.captureMode}
-        onChange={(m) => props.set((s) => ({ ...s, captureMode: m }))}
+        value={gs.captureMode}
+        onChange={(m) => setGameSettings(props.set, props.game, { captureMode: m })}
         options={[
-          { value: "full", label: "整局录像 + 高光标记", hint: "每局约 3–5 GB，回看最完整" },
+          { value: "full", label: "整局录像 + 高光标记", hint: `按现在的画质每 30 分钟约 ${gb.toFixed(1)} GB` },
           { value: "highlights", label: "只留高光片段", hint: "整局在处理完后删除，省空间" },
         ]}
       />
@@ -428,11 +419,13 @@ export function ScreenDetectField(props: { settings: Settings; set: SetSettings;
 
 /** One game's highlight rules: which moments get a clip, and how much before / after. */
 export function EventsSection(props: { settings: Settings; set: SetSettings; game: GameId }) {
-  const { settings, set } = props;
-  const key = props.game === "lol" ? "eventsLol" : "events";
-  const rules = settings[key];
+  const { settings, set, game } = props;
+  const rules = settings.gameSettings[game].rules;
   const setRule = (k: EventKind, patch: Partial<EventRule>) =>
-    set((s) => ({ ...s, [key]: { ...s[key], [k]: { ...s[key][k], ...patch } } }));
+    set((s) => {
+      const gs = s.gameSettings[game];
+      return { ...s, gameSettings: { ...s.gameSettings, [game]: { ...gs, rules: { ...gs.rules, [k]: { ...gs.rules[k], ...patch } } } } };
+    });
   return (
     <div className="stack">
       <div className="rules">
@@ -441,7 +434,7 @@ export function EventsSection(props: { settings: Settings; set: SetSettings; gam
           <span>事件前</span>
           <span>事件后</span>
         </div>
-        {RULE_KINDS[props.game].map(({ kind, label, note }) => {
+        {GAMES[game].rules.map(({ kind, label, note }) => {
           const r = rules[kind];
           return (
             <div className={"rule" + (r.enabled || kind === "manual" ? "" : " is-off")} key={kind}>

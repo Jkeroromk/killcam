@@ -2,6 +2,7 @@
 
 use crate::ffmpeg::{self, IDLE_PRIORITY_CLASS};
 use crate::gamelog;
+use crate::game::Game;
 use crate::lol;
 use crate::pubg;
 use crate::recorder::{self, now_ms, Segment, SessionMeta};
@@ -699,8 +700,7 @@ pub struct BuildInput<'a> {
     /// battle royale: after the player's own elimination the screen shows the
     /// teammate being spectated, so kills / knocks read from it aren't theirs
     pub drop_after_death: bool,
-    /// game::Game::id
-    pub game: &'a str,
+    pub game: Game,
     pub lol: Option<lol::LolStats>,
 }
 
@@ -755,13 +755,13 @@ fn build_lol(
             events,
             pubg: None,
             stats: None,
-            clips_only: settings.capture_mode == "highlights",
+            clips_only: settings.game(Game::Lol).capture_mode == "highlights",
             labels: Some(labels),
             reuse_id: None,
             pending_api: false,
             mark_used: true,
             drop_after_death: false,
-            game: "lol",
+            game: Game::Lol,
             lol: sum.map(|s| s.stats),
         },
     )
@@ -890,9 +890,9 @@ pub fn build_record(
     for (i, e) in events.iter_mut().enumerate() {
         e.id = format!("e{:03}", i + 1);
     }
-    let rules = if input.game == "lol" { &settings.events_lol } else { &settings.events };
-    let mut highlights = compute_highlights(&events, rules, duration);
-    if input.game == "lol" {
+    let game_settings = settings.game(input.game);
+    let mut highlights = compute_highlights(&events, &game_settings.rules, duration);
+    if input.game == Game::Lol {
         for h in highlights.iter_mut() {
             let inside: Vec<&GameEvent> = events
                 .iter()
@@ -916,7 +916,7 @@ pub fn build_record(
 
     // with nothing to cut, keep the whole thing instead of ending up with nothing
     let mut keep_video =
-        (settings.capture_mode != "highlights" && !input.clips_only) || highlights.is_empty();
+        (game_settings.capture_mode != "highlights" && !input.clips_only) || highlights.is_empty();
     let video_path = dir.join("match.mp4");
     if !keep_video {
         // only the segments around each highlight are read and written, instead of
@@ -1051,7 +1051,7 @@ pub fn build_record(
         dir: String::new(),
         thumb_dir: String::new(),
         pending_api: input.pending_api,
-        game: input.game.to_string(),
+        game: input.game.id().to_string(),
         lol: input.lol,
     };
     lib.save(&rec)?;
@@ -1185,13 +1185,19 @@ pub fn process_sessions(
             continue;
         }
         let recorded_until = meta.start_ms + (segs[segs.len() - 1].end * 1000.0) as i64;
-        if meta.game == "lol" {
+        if Game::from_id(&meta.game) == Game::Lol {
             // one recording = one League match, built once it's over and the
             // end-of-game stats are in (or didn't come within a few minutes)
             if !ended {
                 continue;
             }
-            let done = lol::LiveLog::load(&dir).map(|l| l.done).unwrap_or(true);
+            let live = lol::LiveLog::load(&dir);
+            let done = live.as_ref().map(|l| l.done).unwrap_or(true);
+            // a replay / spectated game: nothing to keep unless the player marked something
+            if live.as_ref().map(|l| l.spectator).unwrap_or(false) && meta.markers.is_empty() {
+                let _ = fs::remove_dir_all(&dir);
+                continue;
+            }
             let waited = meta.ended_ms.map(|e| now_ms() - e > 4 * 60_000).unwrap_or(true);
             if !done && !waited {
                 result.retry_soon = true;
@@ -1390,7 +1396,7 @@ pub fn process_sessions(
                             pending_api: false,
                             mark_used: true,
                             drop_after_death: false,
-                            game: "pubg",
+                            game: Game::Pubg,
                             lol: None,
                         },
                     ) {
@@ -1448,7 +1454,8 @@ pub fn process_sessions(
                 .filter(|t| !meta.used_detections.contains(t)),
         );
         left.sort();
-        let full_session = !api_cfg && settings.capture_mode == "full";
+        let pubg_settings = settings.game(Game::Pubg);
+        let full_session = !api_cfg && pubg_settings.capture_mode == "full";
         let mut failed = false;
 
         struct Piece {
@@ -1482,8 +1489,8 @@ pub fn process_sessions(
                 });
             }
         }
-        let pre = settings.events.manual.pre.max(15.0) as i64 * 1000;
-        let post = settings.events.manual.post.max(10.0) as i64 * 1000;
+        let pre = pubg_settings.rules.manual.pre.max(15.0) as i64 * 1000;
+        let post = pubg_settings.rules.manual.post.max(10.0) as i64 * 1000;
         let now = now_ms();
         for piece in &pieces {
             if ps.done_pieces.contains(&piece.from) {
@@ -1589,7 +1596,7 @@ pub fn process_sessions(
                         // to the recorder, so nothing is marked as used here
                         mark_used: false,
                         drop_after_death: piece.official,
-                        game: "pubg",
+                        game: Game::Pubg,
                         lol: None,
                     },
                 ) {
@@ -1703,7 +1710,7 @@ pub fn process_sessions(
                     pending_api: false,
                     mark_used: true,
                     drop_after_death: piece.official,
-                    game: "pubg",
+                    game: Game::Pubg,
                     lol: None,
                 },
             ) {

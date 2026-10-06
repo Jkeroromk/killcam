@@ -247,6 +247,10 @@ impl Mask {
             };
             px.push(on as u8);
         }
+        Mask::from_px(w, h, px)
+    }
+
+    fn from_px(w: usize, h: usize, px: Vec<u8>) -> Mask {
         let mut sat = vec![0u32; (w + 1) * (h + 1)];
         for y in 0..h {
             let mut row = 0u32;
@@ -1008,4 +1012,82 @@ where
         handles,
         error,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn varint(b: &[u8], p: &mut usize) -> usize {
+        let (mut v, mut shift) = (0usize, 0);
+        loop {
+            let x = b[*p];
+            *p += 1;
+            v |= ((x & 0x7f) as usize) << shift;
+            if x & 0x80 == 0 {
+                return v;
+            }
+            shift += 7;
+        }
+    }
+
+    /// The red mask around the kill counter, frame by frame (6 fps), cut from
+    /// real recordings: "KCFX" | u16 w | u16 h | u32 frames | u16 x, y of the
+    /// template's spot | per frame: run count, then alternating off / on runs.
+    fn fixture(b: &[u8]) -> (i32, i32, Vec<Mask>) {
+        assert_eq!(&b[..4], b"KCFX");
+        let rd16 = |i: usize| u16::from_le_bytes([b[i], b[i + 1]]) as usize;
+        let (w, h) = (rd16(4), rd16(6));
+        let n = u32::from_le_bytes([b[8], b[9], b[10], b[11]]) as usize;
+        let (x, y) = (rd16(12) as i32, rd16(14) as i32);
+        let mut p = 16;
+        let mut frames = Vec::with_capacity(n);
+        for _ in 0..n {
+            let runs = varint(b, &mut p);
+            let mut px = Vec::with_capacity(w * h);
+            for r in 0..runs {
+                let len = varint(b, &mut p);
+                px.extend(std::iter::repeat((r % 2) as u8).take(len));
+            }
+            assert_eq!(px.len(), w * h);
+            frames.push(Mask::from_px(w, h, px));
+        }
+        (x, y, frames)
+    }
+
+    fn kills(b: &[u8]) -> usize {
+        let (x, y, frames) = fixture(b);
+        let t = load_pack()
+            .unwrap()
+            .templates
+            .into_iter()
+            .find(|t| t.kind == "kill")
+            .unwrap();
+        let p = Placed { t, px: x, py: y };
+        let mut tr = Track::default();
+        frames
+            .iter()
+            .enumerate()
+            .map(|(i, m)| step(&p, &mut tr, m, None, 1_000_000 + i as i64 * 1000 / 6).len())
+            .sum()
+    }
+
+    // a team deathmatch played at 1920x1080 (read at the 1440p reference
+    // size): the digits change thickness with what's behind them, pop in
+    // with an animation and are sometimes hidden for a frame. The counter
+    // went 1 -> 13 over these four clips, each kill counted once.
+    #[test]
+    fn counter_1080p_counts_every_kill_once() {
+        assert_eq!(kills(include_bytes!("../detector/fixtures/tdm1080_a.rle")), 1);
+        assert_eq!(kills(include_bytes!("../detector/fixtures/tdm1080_b.rle")), 3);
+        assert_eq!(kills(include_bytes!("../detector/fixtures/tdm1080_c.rle")), 5);
+        assert_eq!(kills(include_bytes!("../detector/fixtures/tdm1080_d.rle")), 4);
+    }
+
+    // a battle royale clip at 3440x1440 (native reference size) with 11 kills
+    // in under a minute
+    #[test]
+    fn counter_1440p_counts_every_kill_once() {
+        assert_eq!(kills(include_bytes!("../detector/fixtures/br1440.rle")), 11);
+    }
 }

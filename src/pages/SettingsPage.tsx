@@ -9,6 +9,7 @@ import {
   EventsSection,
   PubgSection,
   ScreenDetectField,
+  setGameSettings,
   HotkeySection,
   MonitorPicker,
   scaleWorks,
@@ -76,7 +77,11 @@ const SECTIONS = [
 type Tab = "general" | GameId;
 
 export default function SettingsPage(props: { game: GameId; settings: Settings; onSaved: (s: Settings) => void; status: Status | null }) {
-  const [tab, setTab] = useState<Tab>("general");
+  // opens on the game being played / looked at, like the library and stats
+  const [tab, setTab] = useState<Tab>(props.game);
+  useEffect(() => {
+    setTab(props.game);
+  }, [props.game]);
   const [draft, setDraft] = useState<Settings>(props.settings);
   const [hw, setHw] = useState<HardwareInfo | null>(null);
   const [monitors, setMonitors] = useState<MonitorInfo[] | null | undefined>(undefined);
@@ -146,8 +151,9 @@ export default function SettingsPage(props: { game: GameId; settings: Settings; 
         <>
           <Card id="pubg" title="PUBG">
             <Field label="自动录制" hint="打开 PUBG 时自动开始，关掉游戏结束。一次录制里打的每一局会分开成单独的对局">
-              <Toggle checked={draft.games.pubg} onChange={(v) => set((s) => ({ ...s, games: { ...s.games, pubg: v } }))} label={draft.games.pubg ? "开启" : "关闭"} />
+              <Toggle checked={draft.gameSettings.pubg.enabled} onChange={(v) => setGameSettings(set, "pubg", { enabled: v })} label={draft.gameSettings.pubg.enabled ? "开启" : "关闭"} />
             </Field>
+            <CaptureModeField settings={draft} set={set} game="pubg" />
             <ScreenDetectField settings={draft} set={set} detector={props.status?.detector} />
           </Card>
           <Card id="pubg-account" title="PUBG 账号" note="也可以从左下角的账号按钮修改">
@@ -163,10 +169,22 @@ export default function SettingsPage(props: { game: GameId; settings: Settings; 
         <>
           <Card id="lol" title="英雄联盟">
             <Field label="自动录制" hint="进入对局（读条界面）时自动开始，回到客户端结束，一局一个录像">
-              <Toggle checked={draft.games.lol} onChange={(v) => set((s) => ({ ...s, games: { ...s.games, lol: v } }))} label={draft.games.lol ? "开启" : "关闭"} />
+              <Toggle checked={draft.gameSettings.lol.enabled} onChange={(v) => setGameSettings(set, "lol", { enabled: v })} label={draft.gameSettings.lol.enabled ? "开启" : "关闭"} />
+            </Field>
+            <CaptureModeField settings={draft} set={set} game="lol" />
+            <Field label="支持的客户端">
+              <ul className="support-list">
+                <li>
+                  <b>支持</b>：Riot 客户端的服务器，比如北美、欧洲、韩国、日本、东南亚、大洋洲、拉美
+                </li>
+                <li>
+                  <b>暂不支持</b>：国服（WeGame / 腾讯客户端）
+                </li>
+                <li>回放和观战别人的对局不会录</li>
+              </ul>
             </Field>
             <p className="muted small">
-              击杀、多杀、大小龙、胜负这些都来自英雄联盟游戏本身提供的实时数据，不用读屏，也不用 API Key；伤害、金币等结算数据在打完后从客户端读取。目前支持美服等 Riot 客户端。
+              击杀、多杀、大小龙、胜负都来自英雄联盟游戏本身提供的实时数据，不用读屏，也不用 API Key；伤害、金币等结算数据在打完后从客户端读取。
             </p>
           </Card>
           <Card id="lol-events" title="高光规则" note="只影响之后处理的对局">
@@ -223,7 +241,6 @@ export default function SettingsPage(props: { game: GameId; settings: Settings; 
       </Card>
 
       <Card id="storage" title="存储">
-        <CaptureModeField settings={draft} set={set} />
         <StorageSection settings={draft} set={set} hardware={hw} />
       </Card>
 

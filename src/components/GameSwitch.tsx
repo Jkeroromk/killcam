@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, fileUrl, on, type GameId } from "../lib/api";
-import { gameName } from "../lib/format";
+import { GAME_IDS, GAMES } from "../lib/games";
 
 // icons come from the games installed on this PC; read them once per run
 let iconCache: Partial<Record<GameId, string>> | null = null;
@@ -43,12 +43,11 @@ export function GameLogo(props: { game: GameId; size?: number }) {
   }
   return (
     <span className="game-logo game-logo-text" style={{ width: size, height: size }}>
-      {props.game === "lol" ? "LoL" : "PUBG"}
+      {GAMES[props.game].short}
     </span>
   );
 }
 
-export const GAMES: GameId[] = ["pubg", "lol"];
 
 /** Pick a game by its icon; `extra` options (e.g. general settings) come first. */
 export function GameSwitch<T extends string>(props: {
@@ -71,7 +70,7 @@ export function GameSwitch<T extends string>(props: {
           {x.label}
         </button>
       ))}
-      {GAMES.map((g) => (
+      {GAME_IDS.map((g) => (
         <button
           key={g}
           type="button"
@@ -81,7 +80,7 @@ export function GameSwitch<T extends string>(props: {
           onClick={() => props.onChange(g)}
         >
           <GameLogo game={g} />
-          {gameName(g)}
+          {GAMES[g].name}
         </button>
       ))}
     </div>

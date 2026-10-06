@@ -202,7 +202,7 @@ export default function Onboarding(props: { initial: Settings; onDone: (s: Setti
           {key === "events" && (
             <Step title="高光规则" lead="每种事件要不要剪、往前留几秒、往后留几秒。之后在设置里随时能改。">
               <div className="stack">
-                <CaptureModeField settings={settings} set={set} />
+                <CaptureModeField settings={settings} set={set} game="pubg" />
                 <ScreenDetectField settings={settings} set={set} />
                 <EventsSection settings={settings} set={set} game="pubg" />
                 <p className="muted small">上面是 PUBG 的规则；英雄联盟的在「设置 → 英雄联盟」里单独调。</p>
@@ -535,7 +535,7 @@ function DoneStep(props: { settings: Settings; perf: PerfResult | null; gpuScale
   const rows: [string, string][] = [
     ["录制", `${out ? `${out.w}×${out.h}` : "原生"} · ${s.video.fps} 帧 · ${s.video.encoder}`],
     ["声音", `${s.audio.gameSource === "process" ? "只录 PUBG" : s.audio.gameSource === "system" ? "录一个输出设备" : "不录游戏声"}${s.audio.micEnabled ? " + 麦克风" : ""}`],
-    ["保存", `${s.captureMode === "full" ? "整局录像 + 高光标记" : "只留高光片段"} · ${s.libraryDir} · 最多 ${s.storageLimitGb} GB`],
+    ["保存", `${s.gameSettings.pubg.captureMode === "full" ? "整局录像 + 高光标记" : "只留高光片段"} · ${s.libraryDir} · 最多 ${s.storageLimitGb} GB`],
     ["高光来源", s.pubg.playerName && s.pubg.apiKey ? `PUBG 官方数据（${s.pubg.playerName}）+ 快捷键` : "只有快捷键标记"],
     ["快捷键", `标记 ${s.hotkeys.highlight || "未设置"} · 开始/停止 ${s.hotkeys.toggleRecord || "未设置"}`],
     ["自动录制", s.autoRecord ? "打开 PUBG 自动开始" : "手动"],
