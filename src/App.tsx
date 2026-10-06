@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { BarChart3, Crosshair, Film, Settings2 } from "lucide-react";
 import { api, on, type Settings, type Status } from "./lib/api";
-import { clock } from "./lib/format";
+import { clock, gameName } from "./lib/format";
 import Onboarding from "./onboarding/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Library from "./pages/Library";
@@ -82,7 +82,7 @@ export default function App() {
               <Spinner /> {status.processing}
             </div>
           ) : (
-            <div className="rec-pill">{status?.gameRunning ? "PUBG 运行中" : "等待 PUBG 启动"}</div>
+            <div className="rec-pill">{status?.gameRunning ? `${gameName(status.game)} 运行中` : "等待游戏启动"}</div>
           )}
         </div>
       </aside>

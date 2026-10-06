@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bookmark, Crosshair, Crown, HeartCrack, ShieldAlert, Skull } from "lucide-react";
+import { Bookmark, Crosshair, Crown, Flag, HeartCrack, ShieldAlert, Skull, Users } from "lucide-react";
 import type { EventKind } from "../lib/api";
-import { KIND_LABEL } from "../lib/format";
+import { kindLabel } from "../lib/format";
 
 export function Button(props: {
   children: ReactNode;
@@ -173,12 +173,14 @@ const KIND_ICON: Record<EventKind, typeof Skull> = {
   death: HeartCrack,
   knocked: ShieldAlert,
   manual: Bookmark,
+  assist: Users,
+  objective: Flag,
 };
 
-export function KindIcon({ kind, small }: { kind: EventKind; small?: boolean }) {
+export function KindIcon({ kind, small, game }: { kind: EventKind; small?: boolean; game?: string | null }) {
   const I = KIND_ICON[kind] ?? Bookmark;
   return (
-    <span className={`kicon k-${kind}` + (small ? " sm" : "")} title={KIND_LABEL[kind]}>
+    <span className={`kicon k-${kind}` + (small ? " sm" : "")} title={kindLabel(kind, game)}>
       <I strokeWidth={2.4} />
     </span>
   );

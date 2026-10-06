@@ -1,7 +1,10 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-export type EventKind = "kill" | "knock" | "death" | "knocked" | "win" | "manual";
+export type EventKind = "kill" | "knock" | "death" | "knocked" | "win" | "manual" | "assist" | "objective";
+
+/** pubg | lol */
+export type GameId = "pubg" | "lol";
 
 export interface EventRule {
   enabled: boolean;
@@ -29,6 +32,8 @@ export interface Settings {
   };
   audio: AudioSettings;
   events: Record<EventKind, EventRule>;
+  /** which games start a recording by themselves */
+  games: { pubg: boolean; lol: boolean };
   pubg: { playerName: string; apiKey: string; shard: string; accountId: string | null };
   hotkeys: { highlight: string; toggleRecord: string };
   telemetryOffsetMs: number;
@@ -76,6 +81,11 @@ export interface Status {
   detections: number;
   liveKills: number;
   liveKnocks: number;
+  /** League of Legends */
+  liveDeaths?: number;
+  liveAssists?: number;
+  /** game being recorded (or running) */
+  game?: GameId | null;
   /** the screen shows a teammate being spectated */
   spectating?: boolean;
   /** off | uncalibrated | active | error text */
@@ -199,6 +209,8 @@ export interface GameEvent {
   distanceM: number | null;
   headshot: boolean;
   source: string;
+  /** League of Legends: 双杀 / 一血 / 抢 ... */
+  detail?: string | null;
 }
 
 export interface Highlight {
@@ -232,6 +244,40 @@ export interface MatchStats {
   longestKill: number;
 }
 
+export interface LolPlayer {
+  name: string;
+  champion: string;
+  championKey: string;
+  /** ORDER (blue) | CHAOS (red) */
+  team: string;
+  level: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  damage: number | null;
+  gold: number | null;
+  me: boolean;
+}
+
+export interface LolStats {
+  champion: string;
+  championKey: string;
+  level: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  vision: number;
+  gold: number | null;
+  damage: number | null;
+  win: boolean | null;
+  queue: string;
+  bestMultikill: number;
+  gameLengthS: number;
+  players: LolPlayer[];
+}
+
 export interface MatchRecord {
   id: string;
   kind: "match" | "session";
@@ -252,6 +298,9 @@ export interface MatchRecord {
   thumbDir: string;
   /** made from screen reading right after the game; PUBG's data replaces it soon */
   pendingApi?: boolean;
+  /** pubg (also when missing) | lol */
+  game?: string;
+  lol?: LolStats | null;
   sizeBytes: number;
   hasGameAudio: boolean;
   hasMic: boolean;

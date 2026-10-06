@@ -1,10 +1,85 @@
 import { useEffect, useMemo, useState } from "react";
 import { Crosshair, RefreshCw, Skull, Star, Film } from "lucide-react";
 import { api, fileUrl, joinPath, type MatchRecord } from "../lib/api";
-import { clock, when } from "../lib/format";
+import { championIcon, clock, isLol, when } from "../lib/format";
 import { Button, Spinner, Tape } from "../components/ui";
 
+/** Round champion portrait; falls back to the first letter when offline. */
+export function ChampIcon(props: { k: string; name: string; size?: number }) {
+  const [broken, setBroken] = useState(false);
+  const size = props.size ?? 22;
+  return broken || !props.k ? (
+    <span className="champ champ-fallback" style={{ width: size, height: size }}>
+      {props.name.slice(0, 1)}
+    </span>
+  ) : (
+    <img className="champ" src={championIcon(props.k)} alt={props.name} width={size} height={size} onError={() => setBroken(true)} />
+  );
+}
+
+const MULTI = ["", "", "双杀", "三杀", "四杀", "五杀"];
+
+function LolCard(props: { m: MatchRecord; onOpen: () => void; onFavorite?: (v: boolean) => void }) {
+  const m = props.m;
+  const l = m.lol;
+  const kills = l?.kills ?? m.events.filter((e) => e.kind === "kill").length;
+  const deaths = l?.deaths ?? m.events.filter((e) => e.kind === "death").length;
+  const assists = l?.assists ?? m.events.filter((e) => e.kind === "assist").length;
+  const mins = (l?.gameLengthS || m.durationS) / 60;
+  return (
+    <div className="mcard" role="button" tabIndex={0} onClick={props.onOpen} onKeyDown={(e) => e.key === "Enter" && props.onOpen()}>
+      <div className="mcard-thumb">
+        {m.thumbnail ? <img src={fileUrl(joinPath(m.thumbDir, m.thumbnail))} alt="" loading="lazy" /> : null}
+        <div className="mcard-top">
+          {l?.win != null && <span className={"place" + (l.win ? " is-win" : "")}>{l.win ? "胜利" : "失败"}</span>}
+          {l && l.bestMultikill >= 3 && <span className="chip">{MULTI[Math.min(l.bestMultikill, 5)]}</span>}
+          {props.onFavorite && (
+            <button
+              type="button"
+              className={"fav" + (m.favorite ? " is-on" : "")}
+              title={m.favorite ? "取消收藏" : "收藏（不会被自动清理）"}
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onFavorite?.(!m.favorite);
+              }}
+            >
+              <Star size={15} />
+            </button>
+          )}
+        </div>
+        <div className="mcard-bottom">
+          <span className="chip k-kill" title="击杀 / 阵亡 / 助攻">
+            <Skull strokeWidth={2.4} />{" "}
+            <b>
+              {kills}/{deaths}/{assists}
+            </b>
+          </span>
+          <span className="chip">
+            <Film strokeWidth={2.4} /> {m.highlights.length}
+          </span>
+          <span className="chip mcard-dur">{clock(m.durationS)}</span>
+        </div>
+      </div>
+      <div className="mcard-body">
+        <div className="mcard-title">
+          {l?.champion ? <ChampIcon k={l.championKey} name={l.champion} /> : null}
+          <b>{l?.champion || m.mapLabel}</b>
+          {m.gameMode && <span className="tag">{m.gameMode}</span>}
+        </div>
+        <div className="mcard-meta">
+          <span>{when(m.createdAtMs)}</span>
+          {l && l.cs > 0 && <span title={mins > 1 ? `每分钟 ${(l.cs / mins).toFixed(1)}` : undefined}>· {l.cs} 补刀</span>}
+          {l?.damage ? <span>· {l.damage.toLocaleString()} 伤害</span> : null}
+          {!m.video && <span>· 仅高光片段</span>}
+        </div>
+        <Tape duration={m.durationS} events={m.events} highlights={m.highlights} />
+      </div>
+    </div>
+  );
+}
+
 export function MatchCard(props: { m: MatchRecord; onOpen: () => void; onFavorite?: (v: boolean) => void }) {
+  if (isLol(props.m)) return <LolCard {...props} />;
   const m = props.m;
   const st = m.stats;
   const won = st?.place === 1;
@@ -67,14 +142,25 @@ export function MatchCard(props: { m: MatchRecord; onOpen: () => void; onFavorit
 
 const FILTERS = [
   { value: "all", label: "全部" },
-  { value: "win", label: "吃鸡" },
+  { value: "win", label: "获胜" },
   { value: "fav", label: "收藏" },
   { value: "kills", label: "击杀最多" },
 ] as const;
 
+const GAMES = [
+  { value: "all", label: "全部游戏" },
+  { value: "pubg", label: "PUBG" },
+  { value: "lol", label: "英雄联盟" },
+] as const;
+
+const killsOf = (m: MatchRecord) => (isLol(m) ? m.lol?.kills : m.stats?.kills) ?? m.events.filter((e) => e.kind === "kill").length;
+
 export default function Library(props: { libVersion: number; openMatch: (id: string) => void }) {
   const [list, setList] = useState<MatchRecord[] | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["value"]>("all");
+  const [game, setGame] = useState<(typeof GAMES)[number]["value"]>("all");
+  // the game switch only shows up once there are recordings of both
+  const bothGames = !!list && list.some(isLol) && list.some((m) => !isLol(m));
 
   const load = () => api.listMatches().then(setList).catch(() => setList([]));
   useEffect(() => {
@@ -83,17 +169,18 @@ export default function Library(props: { libVersion: number; openMatch: (id: str
 
   const shown = useMemo(() => {
     if (!list) return null;
+    const pool = !bothGames || game === "all" ? list : list.filter((m) => (game === "lol") === isLol(m));
     switch (filter) {
       case "fav":
-        return list.filter((m) => m.favorite);
+        return pool.filter((m) => m.favorite);
       case "win":
-        return list.filter((m) => m.stats?.place === 1);
+        return pool.filter((m) => (isLol(m) ? m.lol?.win === true : m.stats?.place === 1));
       case "kills":
-        return [...list].sort((a, b) => (b.stats?.kills ?? 0) - (a.stats?.kills ?? 0));
+        return [...pool].sort((a, b) => killsOf(b) - killsOf(a));
       default:
-        return list;
+        return pool;
     }
-  }, [list, filter]);
+  }, [list, filter, game, bothGames]);
 
   const fav = async (m: MatchRecord, v: boolean) => {
     await api.setFavorite(m.id, v);
@@ -113,6 +200,15 @@ export default function Library(props: { libVersion: number; openMatch: (id: str
             </button>
           ))}
         </div>
+        {bothGames && (
+          <div className="pills">
+            {GAMES.map((g) => (
+              <button key={g.value} type="button" className={"pill" + (game === g.value ? " is-on" : "")} onClick={() => setGame(g.value)}>
+                {g.label}
+              </button>
+            ))}
+          </div>
+        )}
         <span className="grow" />
         <Button small kind="ghost" onClick={() => api.syncNow(false).then(() => setTimeout(load, 3000))}>
           <RefreshCw size={14} /> 立即同步
@@ -121,7 +217,7 @@ export default function Library(props: { libVersion: number; openMatch: (id: str
       {!shown ? (
         <Spinner />
       ) : shown.length === 0 ? (
-        <p className="empty">{filter === "all" ? "还没有录像。打开 PUBG 打一局，结束后几分钟就会出现在这里。" : "这个分类下没有录像。"}</p>
+        <p className="empty">{filter === "all" ? "还没有录像。打开 PUBG 或英雄联盟打一局，结束后很快就会出现在这里。" : "这个分类下没有录像。"}</p>
       ) : (
         <div className="cards">
           {shown.map((m) => (

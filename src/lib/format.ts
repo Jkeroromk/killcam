@@ -1,4 +1,4 @@
-import type { EventKind } from "./api";
+import type { EventKind, MatchRecord } from "./api";
 
 export const KIND_LABEL: Record<EventKind, string> = {
   kill: "击杀",
@@ -7,9 +7,32 @@ export const KIND_LABEL: Record<EventKind, string> = {
   knocked: "被击倒",
   win: "吃鸡",
   manual: "手动标记",
+  assist: "助攻",
+  objective: "资源",
 };
 
-export const KIND_ORDER: EventKind[] = ["kill", "knock", "win", "manual", "death", "knocked"];
+/** The label of a kind in a given game (a League win isn't a chicken dinner). */
+export function kindLabel(kind: EventKind, game?: string | null): string {
+  if (kind === "win" && game === "lol") return "胜利";
+  return KIND_LABEL[kind];
+}
+
+export const KIND_ORDER: EventKind[] = ["kill", "knock", "win", "manual", "death", "knocked", "assist", "objective"];
+
+export const isLol = (m: Pick<MatchRecord, "game">) => m.game === "lol";
+
+export function gameName(id?: string | null): string {
+  return id === "lol" ? "英雄联盟" : "PUBG";
+}
+
+/** Champion square icon by Data Dragon key (e.g. "MonkeyKing"). */
+export function championIcon(key: string): string {
+  return `https://cdn.communitydragon.org/latest/champion/${encodeURIComponent(key)}/square`;
+}
+
+export function kda(k: number, d: number, a: number): string {
+  return d === 0 ? "完美" : ((k + a) / d).toFixed(1);
+}
 
 export function clock(s: number): string {
   if (!isFinite(s) || s < 0) s = 0;
@@ -39,8 +62,11 @@ export function when(ms: number): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
 }
 
-export function eventLine(e: { kind: EventKind; victim: string | null; weapon: string | null; distanceM: number | null; headshot: boolean }): string {
+export function eventLine(e: { kind: EventKind; victim: string | null; weapon: string | null; distanceM: number | null; headshot: boolean; detail?: string | null }): string {
   const parts: string[] = [];
+  if (e.kind === "objective" && e.victim) {
+    return e.detail === "抢" ? `抢下 ${e.victim}` : e.victim;
+  }
   if (e.kind === "death" || e.kind === "knocked") {
     if (e.victim) parts.push(`被 ${e.victim}`);
   } else if (e.victim) {
@@ -49,5 +75,6 @@ export function eventLine(e: { kind: EventKind; victim: string | null; weapon: s
   if (e.weapon) parts.push(e.weapon);
   if (e.distanceM != null && e.distanceM > 0) parts.push(`${Math.round(e.distanceM)} 米`);
   if (e.headshot) parts.push("爆头");
+  if (e.detail) parts.push(e.detail);
   return parts.join("，");
 }

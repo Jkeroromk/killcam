@@ -355,12 +355,14 @@ export function AudioSection(props: { settings: Settings; set: SetSettings; game
 
 // ---------------------------------------------------------------------------
 
-const RULE_KINDS: { kind: EventKind; note: string }[] = [
-  { kind: "kill", note: "你拿到的击杀" },
-  { kind: "knock", note: "你打倒的人" },
-  { kind: "win", note: "大吉大利，今晚吃鸡" },
+const RULE_KINDS: { kind: EventKind; label?: string; note: string }[] = [
+  { kind: "kill", note: "你拿到的击杀（英雄联盟的多杀会合成一段）" },
+  { kind: "knock", note: "PUBG：你打倒的人" },
+  { kind: "win", label: "吃鸡 / 胜利", note: "PUBG 吃鸡，英雄联盟推掉水晶" },
   { kind: "death", note: "你被淘汰的那一下" },
-  { kind: "knocked", note: "你被打倒" },
+  { kind: "knocked", note: "PUBG：你被打倒" },
+  { kind: "assist", note: "英雄联盟：你参与的击杀" },
+  { kind: "objective", note: "英雄联盟：你拿下或参与的小龙、先锋、大龙，你推掉的塔" },
   { kind: "manual", note: "按快捷键手动标记" },
 ];
 
@@ -399,7 +401,7 @@ export function EventsSection(props: { settings: Settings; set: SetSettings; det
         hint={
           props.detector === "uncalibrated"
             ? "还在校准：先正常打一局，每次击倒 / 击杀 / 被淘汰后按一下标记键，用这局的录像做识别样本"
-            : "当场认出你的击杀、击倒和吃鸡提示并打标记，不需要 PUBG 账号。被击倒和被淘汰还在收集样本"
+            : "PUBG：当场认出你的击杀、击倒和吃鸡提示并打标记，不需要 PUBG 账号。英雄联盟用游戏自带的数据，不需要读屏"
         }
       >
         <Toggle
@@ -414,7 +416,7 @@ export function EventsSection(props: { settings: Settings; set: SetSettings; det
           <span>事件前</span>
           <span>事件后</span>
         </div>
-        {RULE_KINDS.map(({ kind, note }) => {
+        {RULE_KINDS.map(({ kind, label, note }) => {
           const r = settings.events[kind];
           return (
             <div className={"rule" + (r.enabled || kind === "manual" ? "" : " is-off")} key={kind}>
@@ -425,7 +427,7 @@ export function EventsSection(props: { settings: Settings; set: SetSettings; det
                   <Toggle checked={r.enabled} onChange={(v) => setRule(kind, { enabled: v })} />
                 )}
                 <KindDot kind={kind} />
-                <b>{KIND_LABEL[kind]}</b>
+                <b>{label ?? KIND_LABEL[kind]}</b>
                 <small>{note}</small>
               </span>
               <Seconds value={r.pre} max={60} onChange={(v) => setRule(kind, { pre: v })} />
@@ -578,7 +580,7 @@ export function StorageSection(props: { settings: Settings; set: SetSettings; ha
         <Toggle
           checked={settings.autoRecord}
           onChange={(v) => set((s) => ({ ...s, autoRecord: v }))}
-          label={settings.autoRecord ? "打开 PUBG 时自动开始，关游戏自动结束" : "手动开始录制"}
+          label={settings.autoRecord ? "打开游戏时自动开始，关游戏自动结束" : "手动开始录制"}
         />
       </Field>
     </div>

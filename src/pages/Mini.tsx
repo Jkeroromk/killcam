@@ -57,6 +57,7 @@ export default function Mini() {
   // counts and time are per game: they start over when the next game starts
   const round = rec && s?.roundStartedMs ? Math.max(0, (now - s.roundStartedMs) / 1000) : null;
   const reading = s?.detector === "active";
+  const lol = rec && s?.game === "lol";
   // the screen reader restarts itself after display-mode changes; only show real problems
   const problem = s?.lastError || s?.warnings[0] || null;
 
@@ -97,14 +98,25 @@ export default function Mini() {
       </div>
 
       <div className="mini-stats">
-        <span className="mini-stat" title={reading ? "这局读屏识别到的击杀" : "读屏没开启，结束后用 PUBG 数据补上"}>
-          <Skull size={14} strokeWidth={2.4} />
-          <b>{reading ? s!.liveKills : "–"}</b>
-        </span>
-        <span className="mini-stat" title="这局读屏识别到的击倒">
-          <Crosshair size={14} strokeWidth={2.4} />
-          <b>{reading ? s!.liveKnocks : "–"}</b>
-        </span>
+        {lol ? (
+          <span className="mini-stat" title="这局的击杀 / 阵亡 / 助攻（来自游戏数据）">
+            <Skull size={14} strokeWidth={2.4} />
+            <b>
+              {s!.liveKills ?? 0}/{s!.liveDeaths ?? 0}/{s!.liveAssists ?? 0}
+            </b>
+          </span>
+        ) : (
+          <>
+            <span className="mini-stat" title={reading ? "这局读屏识别到的击杀" : "读屏没开启，结束后用 PUBG 数据补上"}>
+              <Skull size={14} strokeWidth={2.4} />
+              <b>{reading ? s!.liveKills : "–"}</b>
+            </span>
+            <span className="mini-stat" title="这局读屏识别到的击倒">
+              <Crosshair size={14} strokeWidth={2.4} />
+              <b>{reading ? s!.liveKnocks : "–"}</b>
+            </span>
+          </>
+        )}
         <span className="mini-stat" title="这局的手动标记">
           <Bookmark size={14} strokeWidth={2.4} />
           <b>{s?.roundMarkers ?? s?.markers ?? 0}</b>

@@ -8,7 +8,7 @@ type Ev = { id?: string; t: number; kind: EventKind };
 type Hl = { id: string; start: number; end: number };
 
 /** which icon represents a group of pins that sit too close together */
-const RANK: Record<EventKind, number> = { win: 6, kill: 5, knock: 4, knocked: 3, death: 3, manual: 1 };
+const RANK: Record<EventKind, number> = { win: 6, kill: 5, objective: 4, knock: 4, assist: 3, knocked: 3, death: 3, manual: 1 };
 /** px a pin needs before the next one gets merged into it */
 const PIN = 26;
 const RULER_STEPS = [5, 10, 15, 30, 60, 120, 300, 600];

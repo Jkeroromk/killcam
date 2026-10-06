@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type MatchRecord } from "../lib/api";
-import { when } from "../lib/format";
+import { isLol, kda, when } from "../lib/format";
 import { Segmented, Spinner } from "../components/ui";
+import { ChampIcon } from "./Library";
 
 type Range = 20 | 50 | 0;
 type Metric = "kills" | "damage" | "place";
@@ -101,10 +102,124 @@ function MatchColumns(props: { matches: MatchRecord[]; metric: Metric; onOpen: (
   );
 }
 
+/** League of Legends: win rate, KDA, champions. */
+function LolStatsView(props: { list: MatchRecord[]; range: Range; openMatch: (id: string) => void }) {
+  const all = props.list.filter((m) => m.lol);
+  const pick = props.range ? all.slice(0, props.range) : all;
+  if (pick.length === 0) {
+    return <p className="empty">还没有英雄联盟对局。打开英雄联盟打一局，结束后这里会有胜率、KDA 和常用英雄。</p>;
+  }
+  const L = pick.map((m) => m.lol!);
+  const n = L.length;
+  const sum = (f: (l: (typeof L)[number]) => number) => L.reduce((a, l) => a + f(l), 0);
+  const k = sum((l) => l.kills);
+  const d = sum((l) => l.deaths);
+  const a = sum((l) => l.assists);
+  const decided = L.filter((l) => l.win != null);
+  const wins = decided.filter((l) => l.win).length;
+  const withMins = pick.filter((m) => (m.lol!.gameLengthS || m.durationS) > 60);
+  const cs = withMins.reduce((x, m) => x + m.lol!.cs, 0);
+  const mins = withMins.reduce((x, m) => x + (m.lol!.gameLengthS || m.durationS) / 60, 0);
+  const dmg = L.filter((l) => l.damage != null);
+  const multis = L.filter((l) => l.bestMultikill >= 3).length;
+  const pentas = L.filter((l) => l.bestMultikill >= 5).length;
+
+  const cmap = new Map<string, { key: string; n: number; wins: number; k: number; d: number; a: number }>();
+  for (const l of L) {
+    if (!l.champion) continue;
+    const c = cmap.get(l.champion) ?? { key: l.championKey, n: 0, wins: 0, k: 0, d: 0, a: 0 };
+    c.n += 1;
+    c.wins += l.win ? 1 : 0;
+    c.k += l.kills;
+    c.d += l.deaths;
+    c.a += l.assists;
+    cmap.set(l.champion, c);
+  }
+  const champs = [...cmap.entries()].sort((x, y) => y[1].n - x[1].n).slice(0, 8);
+
+  return (
+    <>
+      <div className="st-tiles">
+        <Tile label="对局" value={String(n)} sub={decided.length ? `${wins} 胜 ${decided.length - wins} 负 · 胜率 ${pct(wins, decided.length)}` : undefined} />
+        <Tile label="KDA" value={kda(k, d, a)} sub={`场均 ${avg(k, n)} / ${avg(d, n)} / ${avg(a, n)}`} />
+        <Tile label="分均补刀" value={avg(cs, mins)} sub={`场均 ${avg(cs, withMins.length, 0)} 补刀`} />
+        <Tile
+          label="场均伤害"
+          value={dmg.length ? Math.round(dmg.reduce((x, l) => x + (l.damage ?? 0), 0) / dmg.length).toLocaleString() : "–"}
+          sub="对英雄"
+        />
+        <Tile label="多杀" value={String(multis)} sub={pentas ? `其中 ${pentas} 次五杀` : "三杀及以上的对局"} />
+      </div>
+
+      <div className="st-row">
+        <section className="st-card">
+          <header>
+            <h2>常用英雄</h2>
+          </header>
+          <table className="st-table">
+            <thead>
+              <tr>
+                <th>英雄</th>
+                <th>对局</th>
+                <th>胜率</th>
+                <th>KDA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {champs.map(([name, c]) => (
+                <tr key={name}>
+                  <td>
+                    <span className="st-champ">
+                      <ChampIcon k={c.key} name={name} size={20} /> {name}
+                    </span>
+                  </td>
+                  <td>{c.n}</td>
+                  <td>{pct(c.wins, c.n)}</td>
+                  <td>{kda(c.k, c.d, c.a)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="st-card">
+          <header>
+            <h2>最近对局</h2>
+            <span className="muted small">点一下打开</span>
+          </header>
+          <table className="st-table st-click">
+            <tbody>
+              {pick.slice(0, 10).map((m) => {
+                const l = m.lol!;
+                return (
+                  <tr key={m.id} onClick={() => props.openMatch(m.id)}>
+                    <td>
+                      <span className="st-champ">
+                        <ChampIcon k={l.championKey} name={l.champion} size={20} /> {l.champion}
+                      </span>
+                    </td>
+                    <td>{l.win == null ? "–" : l.win ? "胜利" : "失败"}</td>
+                    <td className="mono">
+                      {l.kills}/{l.deaths}/{l.assists}
+                    </td>
+                    <td className="muted">{m.gameMode}</td>
+                    <td className="muted">{when(m.createdAtMs)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </>
+  );
+}
+
 export default function StatsPage(props: { libVersion: number; openMatch: (id: string) => void }) {
   const [all, setAll] = useState<MatchRecord[] | null>(null);
   const [range, setRange] = useState<Range>(20);
   const [metric, setMetric] = useState<Metric>("kills");
+  const [game, setGame] = useState<"pubg" | "lol" | null>(null);
 
   useEffect(() => {
     api.listMatches().then(setAll).catch(() => setAll([]));
@@ -113,9 +228,10 @@ export default function StatsPage(props: { libVersion: number; openMatch: (id: s
   const data = useMemo(() => {
     if (!all) return null;
     // newest first from the backend
-    const official = all.filter((m) => m.stats && m.stats.place > 0);
+    const pubgAll = all.filter((m) => !isLol(m));
+    const official = pubgAll.filter((m) => m.stats && m.stats.place > 0);
     // quick records still waiting for PUBG's data are neither yet
-    const others = all.filter((m) => !(m.stats && m.stats.place > 0) && !m.pendingApi);
+    const others = pubgAll.filter((m) => !(m.stats && m.stats.place > 0) && !m.pendingApi);
     const pick = range ? official.slice(0, range) : official;
     const n = pick.length;
     const sum = (f: (m: MatchRecord) => number) => pick.reduce((a, m) => a + f(m), 0);
@@ -186,23 +302,40 @@ export default function StatsPage(props: { libVersion: number; openMatch: (id: s
 
   const d = data;
   const maxW = Math.max(1, ...d.weapons.map(([, w]) => w.kills));
+  const lolList = (all ?? []).filter(isLol);
+  const hasLol = lolList.length > 0;
+  const hasPubg = (all ?? []).some((m) => !isLol(m));
+  // the game played last, until one is picked
+  const shownGame = game ?? (hasLol && (!hasPubg || isLol(all![0])) ? "lol" : "pubg");
 
   return (
     <div className="page stats">
       <header className="page-head">
         <h1>数据</h1>
+        {hasLol && hasPubg && (
+          <Segmented
+            value={shownGame}
+            onChange={setGame}
+            options={[
+              { value: "pubg", label: "PUBG" },
+              { value: "lol", label: "英雄联盟" },
+            ]}
+          />
+        )}
         <Segmented
           value={range}
           onChange={setRange}
           options={[
             { value: 20, label: "最近 20 局" },
             { value: 50, label: "最近 50 局" },
-            { value: 0, label: `全部 ${d.total}` },
+            { value: 0, label: `全部 ${shownGame === "lol" ? lolList.filter((m) => m.lol).length : d.total}` },
           ]}
         />
       </header>
 
-      {d.n === 0 ? (
+      {shownGame === "lol" ? (
+        <LolStatsView list={lolList} range={range} openMatch={props.openMatch} />
+      ) : d.n === 0 ? (
         <p className="empty">
           还没有带官方数据的对局。点左下角绑定 PUBG 账号后，普通和排位对局的击杀、伤害、排名都会汇总到这里。
         </p>

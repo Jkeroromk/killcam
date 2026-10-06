@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bookmark, Circle, Square, X, RefreshCw, Video, Gamepad2, Clock } from "lucide-react";
 import { api, errText, type MatchRecord, type Settings, type Status, type StorageInfo } from "../lib/api";
-import { bytes, clock } from "../lib/format";
+import { bytes, clock, gameName } from "../lib/format";
 import { Button, Spinner } from "../components/ui";
 import { MatchCard } from "./Library";
 
@@ -50,22 +50,24 @@ export default function Dashboard(props: {
               {s?.recording ? (
                 <>
                   <span className="rec-dot big" />
-                  {s.autoSession ? "正在录制 PUBG" : "正在录制"}
+                  {s.autoSession ? `正在录制 ${gameName(s.game)}` : "正在录制"}
                   <span className="status-clock">{clock(s.elapsedS)}</span>
                 </>
               ) : s?.gameRunning ? (
-                "PUBG 正在运行"
+                `${gameName(s.game)} 正在运行`
               ) : (
-                "等待 PUBG 启动"
+                "等待游戏启动"
               )}
             </div>
             <div className="status-sub">
               {s?.recording
-                ? s.detector === "active"
+                ? s.game === "lol"
+                  ? `读取游戏数据中 · ${s.liveKills ?? 0}/${s.liveDeaths ?? 0}/${s.liveAssists ?? 0}`
+                  : s.detector === "active"
                   ? `读屏识别中 · 已识别 ${s.detections} 个事件`
                   : "全程显卡录制，不占游戏帧数"
                 : props.settings.autoRecord
-                  ? "打开 PUBG 会自动开始录制，关掉游戏自动结束"
+                  ? "打开 PUBG 或英雄联盟会自动开始录制，关掉游戏自动结束"
                   : "自动录制已关闭，需要手动开始"}
             </div>
           </div>
@@ -145,8 +147,7 @@ export default function Dashboard(props: {
           <Spinner />
         ) : recent.length === 0 ? (
           <p className="empty">
-            还没有录像。打开 PUBG 打一局，结束后几分钟这里就会出现带高光标记的整局录像。
-            {!props.settings.pubg.apiKey && " 没有填 PUBG API Key 的话，只会保存你按快捷键标记的片段。"}
+            还没有录像。打开 PUBG 或英雄联盟打一局，结束后这里就会出现带高光标记的录像。
           </p>
         ) : (
           <div className="cards">

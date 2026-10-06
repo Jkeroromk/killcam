@@ -1,9 +1,94 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronRight, Download, FolderOpen, Play, Star, Trash2, Scissors, Layers, RotateCcw } from "lucide-react";
-import { api, errText, fileUrl, highlightBounds, joinPath, type ExportOptions, type Highlight, type MatchRecord } from "../lib/api";
-import { KIND_LABEL, bytes, clock, eventLine, when } from "../lib/format";
+import { api, errText, fileUrl, highlightBounds, joinPath, type ExportOptions, type Highlight, type LolStats, type MatchRecord } from "../lib/api";
+import { bytes, clock, eventLine, isLol, kda, kindLabel, when } from "../lib/format";
+import { ChampIcon } from "./Library";
 import { Button, KindIcon, Segmented, Spinner } from "../components/ui";
 import { Timeline } from "../components/Timeline";
+
+function LolStatsRow(props: { l: LolStats; durationS: number }) {
+  const l = props.l;
+  const mins = (l.gameLengthS || props.durationS) / 60;
+  return (
+    <div className="match-stats">
+      <div className="mstat">
+        <b>
+          {l.kills}/{l.deaths}/{l.assists}
+        </b>
+        <span>KDA {kda(l.kills, l.deaths, l.assists)}</span>
+      </div>
+      <div className="mstat">
+        <b>{l.cs}</b>
+        <span>补刀{mins > 1 ? ` · ${(l.cs / mins).toFixed(1)}/分` : ""}</span>
+      </div>
+      {l.damage != null && (
+        <div className="mstat">
+          <b>{l.damage.toLocaleString()}</b>
+          <span>伤害</span>
+        </div>
+      )}
+      {l.gold != null && (
+        <div className="mstat">
+          <b>{(l.gold / 1000).toFixed(1)}k</b>
+          <span>金币</span>
+        </div>
+      )}
+      {l.vision > 0 && (
+        <div className="mstat">
+          <b>{Math.round(l.vision)}</b>
+          <span>视野</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Both teams' final numbers, the player's row marked. */
+function Scoreboard(props: { l: LolStats }) {
+  const teams = ["ORDER", "CHAOS"].map((t) => props.l.players.filter((p) => p.team === t)).filter((t) => t.length > 0);
+  if (teams.length === 0) return null;
+  const myTeam = props.l.players.find((p) => p.me)?.team;
+  return (
+    <div className="scoreboard">
+      {teams.map((ps, i) => {
+        const mine = ps[0].team === myTeam;
+        const won = props.l.win == null ? null : mine ? props.l.win : !props.l.win;
+        return (
+          <div key={i} className="sb-team">
+            <div className="sb-head">
+              <span>{mine ? "我方" : "对方"}</span>
+              {won != null && <span className={won ? "sb-win" : "sb-lose"}>{won ? "胜利" : "失败"}</span>}
+              <span className="grow" />
+              <span className="mono">
+                {ps.reduce((n, p) => n + p.kills, 0)} 击杀
+              </span>
+            </div>
+            {ps.map((p, j) => (
+              <div key={j} className={"sb-row" + (p.me ? " is-me" : "")}>
+                <ChampIcon k={p.championKey} name={p.champion} size={20} />
+                <span className="sb-name" title={`${p.name} · ${p.champion}`}>
+                  {p.name || p.champion}
+                  {p.name && <span className="sb-champ">{p.champion}</span>}
+                </span>
+                <span className="mono sb-kda">
+                  {p.kills}/{p.deaths}/{p.assists}
+                </span>
+                <span className="mono sb-cs" title="补刀">
+                  {p.cs}
+                </span>
+                {p.damage != null && (
+                  <span className="mono sb-dmg" title="对英雄伤害">
+                    {(p.damage / 1000).toFixed(1)}k
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function MatchView(props: { id: string; back: () => void; libVersion?: number }) {
   const [m, setM] = useState<MatchRecord | null>(null);
@@ -17,6 +102,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
   const [exported, setExported] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showEvents, setShowEvents] = useState(false);
+  const [showBoard, setShowBoard] = useState(true);
   const video = useRef<HTMLVideoElement>(null);
   const stopAt = useRef<number | null>(null);
   const pendingSeek = useRef<{ local: number; play: boolean } | null>(null);
@@ -185,9 +271,17 @@ export default function MatchView(props: { id: string; back: () => void; libVers
         </button>
         <div className="match-title">
           <h1>
-            {m.mapLabel}
+            {m.lol?.champion ? (
+              <>
+                <ChampIcon k={m.lol.championKey} name={m.lol.champion} size={26} />
+                {m.lol.champion}
+              </>
+            ) : (
+              m.mapLabel
+            )}
             {m.gameMode && <span className="tag">{m.gameMode}</span>}
             {st && st.place > 0 && <span className={"place" + (st.place === 1 ? " is-win" : "")}>#{st.place}</span>}
+            {m.lol?.win != null && <span className={"place" + (m.lol.win ? " is-win" : "")}>{m.lol.win ? "胜利" : "失败"}</span>}
           </h1>
           <span className="muted small">
             {when(m.createdAtMs)} · {clock(m.durationS)} · {bytes(m.sizeBytes)}
@@ -199,6 +293,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
             高光是读屏先剪好的。PUBG 官方数据到了以后（一般几分钟），会自动补上地图、排名、伤害和每次击杀的武器距离，高光也会按官方数据重新剪一次。
           </p>
         )}
+        {m.lol && <LolStatsRow l={m.lol} durationS={m.durationS} />}
         {st && (
           <div className="match-stats">
             <div className="mstat">
@@ -321,9 +416,9 @@ export default function MatchView(props: { id: string; back: () => void; libVers
             }
             footer={
               <div className="tape-legend">
-                {(["kill", "knock", "win", "manual", "death"] as const).map((k) => (
+                {(isLol(m) ? (["kill", "assist", "objective", "win", "manual", "death"] as const) : (["kill", "knock", "win", "manual", "death"] as const)).map((k) => (
                   <span key={k}>
-                    <KindIcon kind={k} small /> {KIND_LABEL[k]}
+                    <KindIcon kind={k} small game={m.game} /> {kindLabel(k, m.game)}
                   </span>
                 ))}
               </div>
@@ -466,7 +561,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
                       <span className="hl-title">{h.title}</span>
                       <span className="hl-kinds">
                         {h.kinds.slice(0, 8).map((k, i) => (
-                          <KindIcon key={i} kind={k} small />
+                          <KindIcon key={i} kind={k} small game={m.game} />
                         ))}
                       </span>
                       <span className="hl-time">{clock(h.start)}</span>
@@ -490,6 +585,14 @@ export default function MatchView(props: { id: string; back: () => void; libVers
             })}
           </ul>
 
+          {m.lol && m.lol.players.length > 0 && (
+            <>
+              <button type="button" className="collapse" onClick={() => setShowBoard(!showBoard)}>
+                {showBoard ? <ChevronDown size={14} /> : <ChevronRight size={14} />} 记分板
+              </button>
+              {showBoard && <Scoreboard l={m.lol} />}
+            </>
+          )}
           <button type="button" className="collapse" onClick={() => setShowEvents(!showEvents)}>
             {showEvents ? <ChevronDown size={14} /> : <ChevronRight size={14} />} 全部事件 · {m.events.length}
           </button>
@@ -498,8 +601,8 @@ export default function MatchView(props: { id: string; back: () => void; libVers
               {m.events.map((e) => (
                 <li key={e.id}>
                   <button type="button" onClick={() => seekGlobal(Math.max(0, e.t - 3), true)} disabled={clipsOnly && !m.highlights.some((h) => h.file && e.t >= h.start && e.t <= h.end)}>
-                    <KindIcon kind={e.kind} small />
-                    <span className="ev-kind">{KIND_LABEL[e.kind]}</span>
+                    <KindIcon kind={e.kind} small game={m.game} />
+                    <span className="ev-kind">{kindLabel(e.kind, m.game)}</span>
                     <span className="ev-detail">{eventLine(e)}</span>
                     <span className="ev-time mono">{clock(e.t)}</span>
                   </button>

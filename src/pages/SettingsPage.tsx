@@ -133,10 +133,16 @@ export default function SettingsPage(props: { settings: Settings; onSaved: (s: S
       </header>
 
       <Card id="ingame" title="启动和游戏时">
-        <Field label="开机自动启动" hint="开机后安静地待在右下角托盘里，打开 PUBG 就自动开始录">
+        <Field label="录制哪些游戏" hint="打开勾选的游戏时自动开始录制。英雄联盟从进入对局开始录，回到客户端结束">
+          <div className="row">
+            <Toggle checked={draft.games.pubg} onChange={(v) => set((s) => ({ ...s, games: { ...s.games, pubg: v } }))} label="PUBG" />
+            <Toggle checked={draft.games.lol} onChange={(v) => set((s) => ({ ...s, games: { ...s.games, lol: v } }))} label="英雄联盟" />
+          </div>
+        </Field>
+        <Field label="开机自动启动" hint="开机后安静地待在右下角托盘里，打开游戏就自动开始录">
           <Toggle checked={draft.launchAtLogin} onChange={(v) => set((s) => ({ ...s, launchAtLogin: v }))} label={draft.launchAtLogin ? "开启" : "关闭"} />
         </Field>
-        <Field label="迷你录制窗口" hint="打开 PUBG 时自动最小化 KillCam，换成一个小窗口显示录制状态；关掉游戏后小窗口消失，KillCam 回来">
+        <Field label="迷你录制窗口" hint="打开游戏时自动最小化 KillCam，换成一个小窗口显示录制状态；关掉游戏后小窗口消失，KillCam 回来">
           <Toggle checked={draft.miniWindow} onChange={(v) => set((s) => ({ ...s, miniWindow: v }))} label={draft.miniWindow ? "开启" : "关闭"} />
         </Field>
         <p className="muted small">小窗口可以拖到任意位置，会记住。它不会被录进视频里。游戏要用「无边框窗口」模式，小窗口才能盖在游戏上面；用独占全屏的话，可以把它拖到别的显示器上。</p>

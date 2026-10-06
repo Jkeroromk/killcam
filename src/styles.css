@@ -26,6 +26,8 @@
   --k-death: #7a7a7a;
   --k-knocked: #7a7a7a;
   --k-manual: #d6d6d6;
+  --k-assist: #bdbdbd;
+  --k-objective: #e2e2e2;
 
   /* the only colour left in mono: the live REC light and errors */
   --rec: #ff4d42;
@@ -526,6 +528,12 @@ code,
 }
 .k-manual {
   --k: var(--k-manual);
+}
+.k-assist {
+  --k: var(--k-assist);
+}
+.k-objective {
+  --k: var(--k-objective);
 }
 .kdot {
   width: 8px;
@@ -2874,4 +2882,99 @@ button.st-best:hover {
   padding: 8px 12px;
   border: 1px dashed var(--line);
   border-radius: var(--r-sm);
+}
+
+/* ---------- League of Legends ---------- */
+
+.champ {
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.champ-fallback {
+  display: inline-grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.mcard-title .champ {
+  align-self: center;
+}
+
+.scoreboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px 24px;
+  margin: 4px 0 10px;
+}
+.sb-champ {
+  color: var(--faint);
+  margin-left: 6px;
+}
+.sb-team {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0 6px 4px;
+}
+.sb-win {
+  color: var(--text);
+  font-weight: 600;
+}
+.sb-lose {
+  color: var(--faint);
+}
+.sb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.sb-row.is-me {
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.sb-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-kda {
+  width: 62px;
+  text-align: right;
+}
+.sb-cs {
+  width: 30px;
+  text-align: right;
+  color: var(--muted);
+}
+.sb-dmg {
+  width: 38px;
+  text-align: right;
+  color: var(--muted);
+}
+.st-champ {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.st-click tr {
+  cursor: pointer;
+}
+.st-click tr:hover td {
+  background: var(--raised);
 }
