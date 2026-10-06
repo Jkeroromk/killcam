@@ -153,8 +153,7 @@ impl EventRules {
 pub struct GameSettings {
     /// start recording when the game starts
     pub enabled: bool,
-    /// before per-game settings: PUBG's save mode (read once, then moved to game_settings)
-    #[serde(skip_serializing)]
+    /// "full" keeps the whole match video, "highlights" keeps only clips
     pub capture_mode: String,
     pub rules: EventRules,
 }
@@ -235,7 +234,8 @@ pub struct Settings {
     pub ffmpeg_path: Option<String>,
     pub library_dir: String,
     pub storage_limit_gb: u32,
-    /// "full" keeps the whole match video, "highlights" keeps only clips
+    /// before per-game settings: PUBG's save mode (read once, then moved to game_settings)
+    #[serde(skip_serializing)]
     pub capture_mode: String,
     pub auto_record: bool,
     pub video: VideoSettings,
@@ -383,6 +383,7 @@ mod tests {
         assert!(v["gameSettings"]["pubg"].is_object());
         let again = load(&dir);
         assert_eq!(again.game(Game::Pubg).rules.kill.pre, 5.0);
+        assert_eq!(again.game(Game::Pubg).capture_mode, "highlights");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
