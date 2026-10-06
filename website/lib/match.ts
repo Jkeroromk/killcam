@@ -1,4 +1,5 @@
-import type { EventKind, GameId, LolNote } from "./i18n";
+import type { Dict, EventKind, GameId, Locale, LolNote } from "./i18n";
+import type { FilmCard } from "./film";
 
 // Made-up but realistic matches for the hero timeline, one per game.
 // Times in seconds.
@@ -94,4 +95,39 @@ export function timecode(t: number): string {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// ---------- cards for the 3D hero ----------
+
+
+/** games whose footage runs on the hero's film strip */
+const FOOTAGE: GameId[] = ["pubg"];
+
+/** The notable moments of every example match, taking turns between games. */
+export function filmCards(d: Dict, locale: Locale): FilmCard[] {
+  const per = (Object.keys(MATCHES) as GameId[]).map((game) => {
+    const g = d.timeline.games[game];
+    return MATCHES[game].events
+      .filter((e) => e.note || (e.detail && (e.kind === "kill" || e.kind === "knock")) || e.kind === "win")
+      .map((e): FilmCard & { weight: number } => {
+        const title = e.kind === "win" ? g.win : e.note ? d.timeline.notes[e.note] : d.timeline.events[e.kind];
+        let sub = timecode(e.t);
+        if (e.detail) {
+          const { weapon, m, hs } = e.detail;
+          sub = [weapon, locale === "zh" ? `${m} 米` : `${m} m`, hs ? (locale === "zh" ? "爆头" : "headshot") : ""].filter(Boolean).join(" · ");
+        }
+        const tone: FilmCard["tone"] =
+          e.kind === "win" ? "win" : e.kind === "objective" ? "objective" : e.note && e.note !== "firstBlood" ? "multi" : "kill";
+        const weight = e.note === "penta" ? 0 : e.note === "baronSteal" || e.detail?.hs ? 1 : e.kind === "win" ? 4 : e.kind === "knock" ? 3 : 2;
+        return { title, sub, game: g.name, tone, footage: FOOTAGE.includes(game), weight };
+      })
+      // the most impressive moments come first
+      .sort((a, b) => a.weight - b.weight)
+      .map(({ weight: _w, ...card }) => card);
+  });
+  const out: FilmCard[] = [];
+  for (let i = 0; out.length < per.reduce((a, l) => a + l.length, 0); i++) {
+    for (const list of per) if (list[i]) out.push(list[i]);
+  }
+  return out;
 }

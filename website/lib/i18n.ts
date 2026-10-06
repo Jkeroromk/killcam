@@ -30,11 +30,10 @@ export type Dict = {
   };
   timeline: {
     label: string;
-    replay: string;
     clips: string; // {n} = number of clips
     events: Record<EventKind, string>;
     notes: Record<LolNote, string>;
-    games: Record<GameId, { tab: string; match: string; tally: [string, string]; death: string; win: string }>;
+    games: Record<GameId, { name: string; match: string; tally: [string, string]; death: string; win: string }>;
   };
   games: {
     title: string;
@@ -75,24 +74,6 @@ export type Dict = {
     weaponSub: (dist: number, heads: number) => string;
     maps: Record<"erangel" | "miramar" | "taego" | "vikendi" | "deston" | "rondo", string>;
     sample: string;
-    gameTabs: Record<GameId, string>;
-    lol: {
-      matchesSub: (wins: number, rate: string) => string;
-      kda: string;
-      kdaSub: (k: string, d: string, a: string) => string;
-      cs: string;
-      csSub: (n: number) => string;
-      damage: string;
-      damageSub: (total: string) => string;
-      kp: string;
-      kpSub: string;
-      multi: string;
-      multiSub: (d: number, t: number, q: number, p: number) => string;
-      metrics: { kills: string; kda: string; damage: string };
-      winLegend: string;
-      champs: string;
-      champSub: (games: number, rate: string, kda: string) => string;
-    };
   };
   install: {
     title: string;
@@ -138,7 +119,7 @@ const zh: Dict = {
   hero: {
     titleA: "打完这一局，",
     titleB: "高光已经剪好了。",
-    sub: "KillCam 是免费、无广告的自动高光录制，现在支持 PUBG 和英雄联盟。打开游戏就开始录，击杀、多杀、吃鸡、胜利自动剪成片段，不用记任何快捷键。",
+    sub: "KillCam 是免费、无广告的游戏自动高光录制。打开游戏就开始录，击杀、多杀、吃鸡、胜利自动剪成片段，不用记任何快捷键。",
     download: "下载 Windows 版",
     downloadFallback: "去 GitHub 下载",
     free: "免费，开源，不需要注册",
@@ -146,7 +127,6 @@ const zh: Dict = {
   },
   timeline: {
     label: "一局对局的时间轴示例：KillCam 识别到的事件和剪出的高光片段",
-    replay: "重新播放",
     clips: "已剪出 {n} 段高光",
     events: {
       kill: "击杀",
@@ -171,8 +151,8 @@ const zh: Dict = {
       nexus: "推掉水晶",
     },
     games: {
-      pubg: { tab: "PUBG", match: "艾伦格 四排 第 1 名", tally: ["击杀", "击倒"], death: "被淘汰", win: "大吉大利" },
-      lol: { tab: "英雄联盟", match: "召唤师峡谷 排位 胜利", tally: ["击杀", "助攻"], death: "阵亡", win: "胜利" },
+      pubg: { name: "PUBG", match: "艾伦格 四排 第 1 名", tally: ["击杀", "击倒"], death: "被淘汰", win: "大吉大利" },
+      lol: { name: "英雄联盟", match: "召唤师峡谷 排位 胜利", tally: ["击杀", "助攻"], death: "阵亡", win: "胜利" },
     },
   },
   games: {
@@ -250,25 +230,7 @@ const zh: Dict = {
     weapons: "常用武器",
     weaponSub: (d, h) => `平均 ${d} 米${h ? ` · ${h} 爆头` : ""}`,
     maps: { erangel: "艾伦格", miramar: "米拉玛", taego: "泰戈", vikendi: "维寒迪", deston: "帝斯顿", rondo: "荣都" },
-    sample: "示例数据",
-    gameTabs: { pubg: "PUBG", lol: "英雄联盟" },
-    lol: {
-      matchesSub: (w, r) => `${w} 胜 · 胜率 ${r}`,
-      kda: "KDA",
-      kdaSub: (k, d, a) => `场均 ${k} / ${d} / ${a}`,
-      cs: "分均补刀",
-      csSub: (n) => `场均 ${n} 补刀`,
-      damage: "场均伤害",
-      damageSub: (t) => `对英雄共 ${t}`,
-      kp: "参团率",
-      kpSub: "击杀 + 助攻占全队击杀",
-      multi: "多杀",
-      multiSub: (d, t, q, p) => `双杀 ${d} · 三杀 ${t} · 四杀 ${q} · 五杀 ${p}`,
-      metrics: { kills: "击杀", kda: "KDA", damage: "伤害" },
-      winLegend: "胜利",
-      champs: "常用英雄",
-      champSub: (g, r, k) => `${g} 局 · 胜率 ${r} · KDA ${k}`,
-    },
+    sample: "PUBG 示例数据",
   },
   shots: {
     match: "单局回放：时间轴、高光列表和导出选项",
@@ -387,7 +349,7 @@ const en: Dict = {
   hero: {
     titleA: "Finish the match.",
     titleB: "The highlights are already cut.",
-    sub: "KillCam is a free, ad-free highlight recorder, now for PUBG and League of Legends. It starts recording when you play and cuts your kills, multikills, chicken dinners and wins into clips on its own. No hotkeys to remember.",
+    sub: "KillCam is a free, ad-free highlight recorder for your games. It starts recording when you play and cuts your kills, multikills, chicken dinners and wins into clips on its own. No hotkeys to remember.",
     download: "Download for Windows",
     downloadFallback: "Download on GitHub",
     free: "Free, open source, no account",
@@ -395,7 +357,6 @@ const en: Dict = {
   },
   timeline: {
     label: "Example match timeline: the events KillCam detected and the highlight clips it cut",
-    replay: "Replay",
     clips: "{n} highlights cut",
     events: {
       kill: "Kill",
@@ -420,8 +381,8 @@ const en: Dict = {
       nexus: "Nexus down",
     },
     games: {
-      pubg: { tab: "PUBG", match: "Erangel squad, placed #1", tally: ["Kills", "Knocks"], death: "Eliminated", win: "Chicken dinner" },
-      lol: { tab: "League", match: "Summoner's Rift ranked, victory", tally: ["Kills", "Assists"], death: "Died", win: "Victory" },
+      pubg: { name: "PUBG", match: "Erangel squad, placed #1", tally: ["Kills", "Knocks"], death: "Eliminated", win: "Chicken dinner" },
+      lol: { name: "League of Legends", match: "Summoner's Rift ranked, victory", tally: ["Kills", "Assists"], death: "Died", win: "Victory" },
     },
   },
   games: {
@@ -499,25 +460,7 @@ const en: Dict = {
     weapons: "Top weapons",
     weaponSub: (d, h) => `avg ${d} m${h ? ` · ${h} headshots` : ""}`,
     maps: { erangel: "Erangel", miramar: "Miramar", taego: "Taego", vikendi: "Vikendi", deston: "Deston", rondo: "Rondo" },
-    sample: "Example data",
-    gameTabs: { pubg: "PUBG", lol: "League" },
-    lol: {
-      matchesSub: (w, r) => `${w} wins · ${r} win rate`,
-      kda: "KDA",
-      kdaSub: (k, d, a) => `${k} / ${d} / ${a} per match`,
-      cs: "CS per minute",
-      csSub: (n) => `${n} CS per match`,
-      damage: "Damage per match",
-      damageSub: (t) => `${t} to champions`,
-      kp: "Kill participation",
-      kpSub: "Kills + assists of team kills",
-      multi: "Multikills",
-      multiSub: (d, t, q, p) => `${d} double · ${t} triple · ${q} quadra · ${p} penta`,
-      metrics: { kills: "Kills", kda: "KDA", damage: "Damage" },
-      winLegend: "Win",
-      champs: "Top champions",
-      champSub: (g, r, k) => `${g} games · ${r} wins · KDA ${k}`,
-    },
+    sample: "Example PUBG data",
   },
   shots: {
     match: "Match view: timeline, highlight list and export options",

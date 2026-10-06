@@ -7,7 +7,8 @@ import { MatchTimeline } from "@/components/MatchTimeline";
 import { SmartScreen } from "@/components/SmartScreen";
 import { ChevronDown, Github } from "@/components/icons";
 import { ScrollReveal } from "@/components/ScrollReveal";
-import { HeroVideo } from "@/components/HeroVideo";
+import { HeroFilm } from "@/components/HeroFilm";
+import { filmCards } from "@/lib/match";
 import { StatsDemo } from "@/components/StatsDemo";
 import type { CSSProperties } from "react";
 
@@ -28,7 +29,7 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
 
       <main id="main">
         <section className="hero">
-          <HeroVideo />
+          <HeroFilm cards={filmCards(d, lang)} />
           <div className="wrap">
             <div className="hero-copy">
               <h1 className="hero-title">
@@ -45,7 +46,6 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
               </div>
               <p className="hero-free">{d.hero.free}</p>
             </div>
-            <MatchTimeline t={d.timeline} locale={lang} />
           </div>
         </section>
 
@@ -116,6 +116,9 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
               <h2>{d.features.title}</h2>
               <p>{d.features.intro}</p>
             </header>
+            <div className="features-demo" data-reveal>
+              <MatchTimeline t={d.timeline} locale={lang} />
+            </div>
             <ul className="features">
               {d.features.items.map((f) => (
                 <li key={f.title} data-reveal>

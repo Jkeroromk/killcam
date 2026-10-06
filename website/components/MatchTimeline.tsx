@@ -3,16 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GAME_IDS, type Dict, type EventKind, type GameId, type Locale } from "@/lib/i18n";
 import { MATCHES, timecode, type MatchEvent } from "@/lib/match";
-import { EVENT_ICON, RotateCcw } from "./icons";
+import { EVENT_ICON } from "./icons";
 
-// The hero: one match plays back in ~7 seconds. The playhead sweeps the
+// An example match plays back in ~7 seconds: the playhead sweeps the
 // timeline, each event lights up as it's passed and lands in the feed, and
-// the highlight bands fill in. It plays once, when it first scrolls into view
-// (on phones it starts below the fold); "Replay" plays it again, and the game
-// tabs play the other game's example match.
+// the highlight bands fill in. It starts when it scrolls into view, then moves
+// on to the next game's example by itself, so a new game is just one more
+// entry in MATCHES. It pauses while it's off screen.
 
 const PLAY_MS = 7000;
 const START_DELAY_MS = 350;
+const HOLD_MS = 2600; // how long a finished match stays before the next one
 
 // Which icon a grouped marker shows: the most notable event in the clip.
 const RANK: Record<EventKind, number> = { win: 6, kill: 5, objective: 4, knock: 4, assist: 3, eliminated: 2, knocked: 1, manual: 0 };
@@ -27,11 +28,18 @@ export function MatchTimeline(props: { t: Dict["timeline"]; locale: Locale; init
   const figure = useRef<HTMLElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const userScrolled = useRef(false);
+  const visible = useRef(false);
+  const gameRef = useRef<GameId>("pubg");
+  const hold = useRef<number | undefined>(undefined);
 
   const pct = (t: number) => `${(t / match.length) * 100}%`;
 
-  const play = useCallback((length: number) => {
+  const play = useCallback((id: GameId) => {
     if (raf.current) cancelAnimationFrame(raf.current);
+    window.clearTimeout(hold.current);
+    gameRef.current = id;
+    setGame(id);
+    const length = MATCHES[id].length;
     // Plays even with reduced motion turned on: the playhead sweeping the
     // match is the demo itself (the CSS drops the small bounces instead).
     setNow(0);
@@ -44,6 +52,16 @@ export function MatchTimeline(props: { t: Dict["timeline"]; locale: Locale; init
       const eased = 1 - Math.pow(1 - p, 1.6);
       setNow(eased * length);
       if (p < 1) raf.current = requestAnimationFrame(step);
+      else hold.current = window.setTimeout(next, HOLD_MS);
+    };
+    // the next game's example; waits while the timeline is off screen
+    const next = () => {
+      if (!visible.current) {
+        hold.current = window.setTimeout(next, 500);
+        return;
+      }
+      const i = GAME_IDS.indexOf(gameRef.current);
+      play(GAME_IDS[(i + 1) % GAME_IDS.length]);
     };
     raf.current = requestAnimationFrame(step);
   }, []);
@@ -52,17 +70,20 @@ export function MatchTimeline(props: { t: Dict["timeline"]; locale: Locale; init
     const el = figure.current;
     let timer: number | undefined;
     const start = () => {
-      timer = window.setTimeout(() => play(MATCHES.pubg.length), START_DELAY_MS);
+      timer = window.setTimeout(() => play("pubg"), START_DELAY_MS);
     };
     let io: IntersectionObserver | undefined;
+    let started = false;
     if (el && "IntersectionObserver" in window) {
       io = new IntersectionObserver(
         (entries) => {
           // most of the timeline has to be on screen before it plays (or as
           // much as fits, on short landscape screens)
           const need = Math.min(0.6, (window.innerHeight * 0.85) / el.offsetHeight);
-          if (entries.some((e) => e.isIntersecting && e.intersectionRatio >= need)) {
-            io?.disconnect();
+          const seen = entries.some((e) => e.isIntersecting && e.intersectionRatio >= need);
+          visible.current = entries.some((e) => e.isIntersecting);
+          if (seen && !started) {
+            started = true;
             start();
           }
         },
@@ -70,11 +91,13 @@ export function MatchTimeline(props: { t: Dict["timeline"]; locale: Locale; init
       );
       io.observe(el);
     } else {
+      visible.current = true;
       start();
     }
     return () => {
       io?.disconnect();
       window.clearTimeout(timer);
+      window.clearTimeout(hold.current);
       if (raf.current) cancelAnimationFrame(raf.current);
     };
   }, [play]);
@@ -90,12 +113,6 @@ export function MatchTimeline(props: { t: Dict["timeline"]; locale: Locale; init
 
   const stopFollowing = () => {
     userScrolled.current = true;
-  };
-
-  const pick = (id: GameId) => {
-    if (id === game) return;
-    setGame(id);
-    play(MATCHES[id].length);
   };
 
   // a win is 大吉大利 in PUBG and 胜利 in League; dying is 被淘汰 / 阵亡
@@ -120,16 +137,10 @@ export function MatchTimeline(props: { t: Dict["timeline"]; locale: Locale; init
   return (
     <figure className="scene" aria-label={copy.label} ref={figure} data-game={game}>
       <div className="scene-head">
-        <div className="scene-games" role="group">
-          {GAME_IDS.map((id) => (
-            <button key={id} type="button" aria-pressed={game === id} onClick={() => pick(id)}>
-              {copy.games[id].tab}
-            </button>
-          ))}
-        </div>
         <span className="scene-match">
           <span className={done ? "rec-dot is-off" : "rec-dot"} aria-hidden="true" />
-          {g.match}
+          <span className="scene-game">{g.name}</span>
+          <span>{g.match}</span>
         </span>
         <span className="scene-clock" aria-hidden="true">
           {timecode(now)} / {timecode(match.length)}
@@ -195,10 +206,6 @@ export function MatchTimeline(props: { t: Dict["timeline"]; locale: Locale; init
           })}
         </ol>
 
-        <button type="button" className="replay" onClick={() => play(match.length)} disabled={!done}>
-          <RotateCcw size={14} />
-          {copy.replay}
-        </button>
       </div>
     </figure>
   );

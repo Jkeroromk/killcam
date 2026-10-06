@@ -343,6 +343,47 @@ h3 {
     linear-gradient(to right, rgba(22, 26, 20, 0.9) 0%, rgba(22, 26, 20, 0.7) 42%, rgba(22, 26, 20, 0.38) 100%);
 }
 
+/* the 3D film fills the whole hero; its canvas fades in over the still */
+.hero-media.is-film {
+  inset: 0;
+  height: auto;
+}
+
+.hero-film {
+  opacity: 0;
+  transition: opacity 0.9s ease;
+}
+
+.hero-poster {
+  transition: opacity 0.9s ease;
+}
+
+.hero-media.is-ready .hero-film {
+  opacity: 1;
+}
+
+.hero-media.is-ready .hero-poster {
+  opacity: 0;
+}
+
+.hero-media.is-film::after {
+  background:
+    linear-gradient(to right, rgba(232, 229, 220, 0.04) 1px, transparent 1px) center top / 96px 96px,
+    linear-gradient(to bottom, rgba(232, 229, 220, 0.04) 1px, transparent 1px) center top / 96px 96px,
+    linear-gradient(to bottom, rgba(22, 26, 20, 0.5) 0%, rgba(22, 26, 20, 0) 18%, rgba(22, 26, 20, 0) 78%, var(--ink) 100%),
+    linear-gradient(to right, rgba(22, 26, 20, 0.92) 0%, rgba(22, 26, 20, 0.72) 34%, rgba(22, 26, 20, 0.1) 62%, rgba(22, 26, 20, 0) 100%);
+}
+
+.hero:has(.is-film) {
+  min-height: clamp(640px, 94vh, 940px);
+  display: flex;
+  align-items: center;
+}
+
+.hero:has(.is-film) .wrap {
+  width: 100%;
+}
+
 .hero-copy {
   text-shadow: 0 1px 18px rgba(22, 26, 20, 0.55);
 }
@@ -430,8 +471,7 @@ h3 {
   margin-left: auto;
 }
 
-/* game picker: same segmented control as the stats panel */
-.scene-games,
+/* segmented control (stats panel) */
 .sd-seg {
   display: inline-flex;
   border: 1px solid var(--line);
@@ -439,7 +479,6 @@ h3 {
   padding: 2px;
 }
 
-.scene-games button,
 .sd-seg button {
   border: 0;
   background: transparent;
@@ -453,15 +492,26 @@ h3 {
   transition: background 0.15s, color 0.15s;
 }
 
-.scene-games button:hover,
 .sd-seg button:hover {
   color: var(--bone);
 }
 
-.scene-games button[aria-pressed="true"],
 .sd-seg button[aria-pressed="true"] {
   background: var(--bone);
   color: var(--ink);
+}
+
+.scene-game {
+  color: var(--bone);
+  font-weight: 600;
+}
+
+.features-demo {
+  margin-bottom: 56px;
+}
+
+.features-demo .scene {
+  margin-top: 0;
 }
 
 .rec-dot {
@@ -655,10 +705,10 @@ h3 {
   padding-top: 18px;
   border-top: 1px solid var(--line-soft);
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   grid-template-areas:
-    "tally feed replay"
-    "clips feed replay";
+    "tally feed"
+    "clips feed";
   column-gap: 40px;
   row-gap: 6px;
   align-items: start;
@@ -767,30 +817,6 @@ h3 {
   color: var(--dust);
 }
 
-.replay {
-  grid-area: replay;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--bone);
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  transition: border-color 0.15s, opacity 0.2s;
-}
-
-.replay:hover:not(:disabled) {
-  border-color: var(--dust);
-}
-
-.replay:disabled {
-  opacity: 0;
-  pointer-events: none;
-}
 
 /* ---------- screenshots ---------- */
 
@@ -1853,22 +1879,6 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
     gap: 56px;
   }
 
-  .scene-foot {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas:
-      "tally feed"
-      "clips feed"
-      "replay replay";
-  }
-
-  .replay {
-    justify-self: start;
-    margin-top: 6px;
-  }
-
-  .replay:disabled {
-    display: none;
-  }
 }
 
 @media (max-width: 760px) {
@@ -1898,6 +1908,22 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
       rgba(22, 26, 20, 0.25);
   }
 
+  /* phones: text on top, the film and its cards below it */
+  .hero:has(.is-film) {
+    min-height: 0;
+    display: block;
+    padding-bottom: 360px;
+  }
+
+  .hero-media.is-film {
+    height: auto;
+  }
+
+  .hero-media.is-film::after {
+    background:
+      linear-gradient(to bottom, rgba(22, 26, 20, 0.86) 0%, rgba(22, 26, 20, 0.8) 52%, rgba(22, 26, 20, 0.1) 70%, rgba(22, 26, 20, 0) 92%, var(--ink) 100%);
+  }
+
   .hero-sub {
     font-size: 17px;
   }
@@ -1917,16 +1943,7 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
     padding: 14px 14px 18px;
   }
 
-  /* game picker gets its own row, buttons share the width */
-  .scene-games {
-    flex: 1 0 100%;
-  }
-
-  .scene-games button {
-    flex: 1;
-  }
-
-  /* keep the download button on one line on narrow phones */
+    /* keep the download button on one line on narrow phones */
   .btn-dl,
   .btn-dl.is-big {
     white-space: nowrap;
@@ -1937,8 +1954,7 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
     grid-template-areas:
       "tally"
       "clips"
-      "feed"
-      "replay";
+      "feed";
     column-gap: 0;
   }
 
