@@ -343,6 +343,47 @@ h3 {
     linear-gradient(to right, rgba(22, 26, 20, 0.9) 0%, rgba(22, 26, 20, 0.7) 42%, rgba(22, 26, 20, 0.38) 100%);
 }
 
+/* the 3D film fills the whole hero; its canvas fades in over the still */
+.hero-media.is-film {
+  inset: 0;
+  height: auto;
+}
+
+.hero-film {
+  opacity: 0;
+  transition: opacity 0.9s ease;
+}
+
+.hero-poster {
+  transition: opacity 0.9s ease;
+}
+
+.hero-media.is-ready .hero-film {
+  opacity: 1;
+}
+
+.hero-media.is-ready .hero-poster {
+  opacity: 0;
+}
+
+.hero-media.is-film::after {
+  background:
+    linear-gradient(to right, rgba(232, 229, 220, 0.04) 1px, transparent 1px) center top / 96px 96px,
+    linear-gradient(to bottom, rgba(232, 229, 220, 0.04) 1px, transparent 1px) center top / 96px 96px,
+    linear-gradient(to bottom, rgba(22, 26, 20, 0.5) 0%, rgba(22, 26, 20, 0) 18%, rgba(22, 26, 20, 0) 78%, var(--ink) 100%),
+    linear-gradient(to right, rgba(22, 26, 20, 0.92) 0%, rgba(22, 26, 20, 0.72) 34%, rgba(22, 26, 20, 0.1) 62%, rgba(22, 26, 20, 0) 100%);
+}
+
+.hero:has(.is-film) {
+  min-height: clamp(640px, 94vh, 940px);
+  display: flex;
+  align-items: center;
+}
+
+.hero:has(.is-film) .wrap {
+  width: 100%;
+}
+
 .hero-copy {
   text-shadow: 0 1px 18px rgba(22, 26, 20, 0.55);
 }
@@ -411,9 +452,9 @@ h3 {
 
 .scene-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: 12px 20px;
+  flex-wrap: wrap;
   font-size: 14px;
   color: var(--dust);
 }
@@ -422,6 +463,55 @@ h3 {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.scene-clock {
+  margin-left: auto;
+}
+
+/* segmented control (stats panel) */
+.sd-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 2px;
+}
+
+.sd-seg button {
+  border: 0;
+  background: transparent;
+  color: var(--dust);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 11px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sd-seg button:hover {
+  color: var(--bone);
+}
+
+.sd-seg button[aria-pressed="true"] {
+  background: var(--bone);
+  color: var(--ink);
+}
+
+.scene-game {
+  color: var(--bone);
+  font-weight: 600;
+}
+
+.features-demo {
+  margin-bottom: 56px;
+}
+
+.features-demo .scene {
+  margin-top: 0;
 }
 
 .rec-dot {
@@ -572,12 +662,18 @@ h3 {
   border-color: var(--khaki);
 }
 
+.pin-objective.is-lit .pin-chip {
+  background: var(--khaki);
+  border-color: var(--khaki);
+}
+
 .pin-win.is-lit .pin-chip {
   background: var(--gold);
   border-color: var(--gold);
 }
 
 .pin-manual.is-lit .pin-chip,
+.pin-assist.is-lit .pin-chip,
 .pin-knocked.is-lit .pin-chip,
 .pin-eliminated.is-lit .pin-chip {
   background: var(--ink-3);
@@ -609,10 +705,10 @@ h3 {
   padding-top: 18px;
   border-top: 1px solid var(--line-soft);
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   grid-template-areas:
-    "tally feed replay"
-    "clips feed replay";
+    "tally feed"
+    "clips feed";
   column-gap: 40px;
   row-gap: 6px;
   align-items: start;
@@ -700,8 +796,14 @@ h3 {
   text-overflow: ellipsis;
 }
 
-.feed-knock svg {
+.feed-knock svg,
+.feed-objective svg {
   color: var(--khaki);
+}
+
+.feed-row.is-big .feed-detail {
+  color: var(--bone);
+  font-weight: 600;
 }
 
 .feed-win svg {
@@ -709,34 +811,12 @@ h3 {
 }
 
 .feed-knocked svg,
-.feed-manual svg {
+.feed-manual svg,
+.feed-assist svg,
+.feed-eliminated svg {
   color: var(--dust);
 }
 
-.replay {
-  grid-area: replay;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--bone);
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  transition: border-color 0.15s, opacity 0.2s;
-}
-
-.replay:hover:not(:disabled) {
-  border-color: var(--dust);
-}
-
-.replay:disabled {
-  opacity: 0;
-  pointer-events: none;
-}
 
 /* ---------- screenshots ---------- */
 
@@ -828,6 +908,104 @@ h3 {
   max-width: 34em;
 }
 
+/* supported games */
+
+.block.is-games {
+  padding-bottom: 40px;
+}
+
+.games {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) minmax(0, 0.8fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.game {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 24px 26px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--ink-2);
+}
+
+.game-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.game h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.game-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--dust);
+  white-space: nowrap;
+}
+
+.game-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--signal);
+}
+
+.game-how {
+  color: var(--bone);
+  font-size: 16px;
+}
+
+.game-facts div {
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 2px;
+}
+
+.game-facts dt {
+  font-size: 13px;
+  color: var(--faint);
+}
+
+.game-facts dd {
+  font-size: 15px;
+  color: var(--dust);
+}
+
+.game.is-next {
+  background: transparent;
+  border-style: dashed;
+  justify-content: flex-start;
+}
+
+.game.is-next h3 {
+  color: var(--dust);
+}
+
+.game.is-next p {
+  color: var(--dust);
+  font-size: 15px;
+}
+
+.game.is-next a {
+  align-self: flex-start;
+  font-size: 15px;
+  font-weight: 600;
+  text-underline-offset: 4px;
+}
+
 /* stats */
 
 .stats {
@@ -906,33 +1084,8 @@ h3 {
   padding: 1px 7px;
 }
 
-.sd-seg {
+.sd-head .sd-seg:last-child {
   margin-left: auto;
-  display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 2px;
-}
-
-.sd-seg button {
-  border: 0;
-  background: transparent;
-  color: var(--dust);
-  font: inherit;
-  font-size: 13px;
-  padding: 4px 11px;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.sd-seg button:hover {
-  color: var(--bone);
-}
-
-.sd-seg button[aria-pressed="true"] {
-  background: var(--bone);
-  color: var(--ink);
 }
 
 .sd-seg.is-small button {
@@ -1700,6 +1853,14 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
 /* ---------- responsive ---------- */
 
 @media (max-width: 980px) {
+  .games {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .game.is-next {
+    grid-column: 1 / -1;
+  }
+
   .stats {
     grid-template-columns: minmax(0, 1fr);
     gap: 40px;
@@ -1718,22 +1879,6 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
     gap: 56px;
   }
 
-  .scene-foot {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas:
-      "tally feed"
-      "clips feed"
-      "replay replay";
-  }
-
-  .replay {
-    justify-self: start;
-    margin-top: 6px;
-  }
-
-  .replay:disabled {
-    display: none;
-  }
 }
 
 @media (max-width: 760px) {
@@ -1763,6 +1908,22 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
       rgba(22, 26, 20, 0.25);
   }
 
+  /* phones: text on top, the film and its cards below it */
+  .hero:has(.is-film) {
+    min-height: 0;
+    display: block;
+    padding-bottom: 360px;
+  }
+
+  .hero-media.is-film {
+    height: auto;
+  }
+
+  .hero-media.is-film::after {
+    background:
+      linear-gradient(to bottom, rgba(22, 26, 20, 0.86) 0%, rgba(22, 26, 20, 0.8) 52%, rgba(22, 26, 20, 0.1) 70%, rgba(22, 26, 20, 0) 92%, var(--ink) 100%);
+  }
+
   .hero-sub {
     font-size: 17px;
   }
@@ -1782,13 +1943,18 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
     padding: 14px 14px 18px;
   }
 
+    /* keep the download button on one line on narrow phones */
+  .btn-dl,
+  .btn-dl.is-big {
+    white-space: nowrap;
+  }
+
   .scene-foot {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "tally"
       "clips"
-      "feed"
-      "replay";
+      "feed";
     column-gap: 0;
   }
 
@@ -1807,6 +1973,18 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
   .features,
   .privacy ul {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .games {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .game {
+    padding: 20px 18px 22px;
+  }
+
+  .game h3 {
+    font-size: 30px;
   }
 
   .sd {
@@ -1857,6 +2035,12 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
   .cta-inner .btn-dl {
     width: 100%;
     justify-content: center;
+  }
+}
+
+@media (max-width: 420px) {
+  .btn-dl-meta span + span {
+    display: none;
   }
 }
 

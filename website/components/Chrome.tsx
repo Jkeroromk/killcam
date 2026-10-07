@@ -19,6 +19,7 @@ export function SiteNav({ d, lang, path }: { d: Dict; lang: Locale; path: string
           <span>KillCam</span>
         </Link>
         <nav className="nav-links" aria-label="KillCam">
+          <Link href={`${home}#games`}>{d.nav.games}</Link>
           <Link href={`${home}#features`}>{d.nav.features}</Link>
           <Link href={`${home}#stats`}>{d.nav.stats}</Link>
           <Link href={`${home}#install`}>{d.nav.install}</Link>
@@ -79,6 +80,7 @@ export function SiteFooter({ d, lang }: { d: Dict; lang: Locale }) {
           </li>
         </ul>
         <p className="foot-note">{d.footer.by}</p>
+        <p className="foot-note" lang="en">{d.footer.riot}</p>
       </div>
     </footer>
   );
