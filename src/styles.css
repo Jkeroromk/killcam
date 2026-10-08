@@ -3061,3 +3061,55 @@ button.st-best:hover {
   font-size: 14px;
   font-weight: 600;
 }
+
+/* ---------- picking several recordings ---------- */
+
+.pickbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -6px 0 16px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.pickbar b {
+  font-weight: 600;
+}
+.pickbar .linkbtn {
+  margin-left: 0;
+}
+.pickable {
+  position: relative;
+  display: flex;
+}
+.pickable > .mcard {
+  flex: 1;
+  min-width: 0;
+}
+.cards.is-picking .mcard {
+  user-select: none;
+}
+.pick-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85);
+  color: var(--bg);
+  pointer-events: none;
+}
+.pickable.is-picked .pick-check {
+  background: var(--text);
+  box-shadow: none;
+}
+.pickable.is-picked .mcard {
+  border-color: var(--text);
+  box-shadow: 0 0 0 1px var(--text);
+}

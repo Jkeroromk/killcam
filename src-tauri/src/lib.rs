@@ -817,6 +817,15 @@ fn spawn_processor(app: AppHandle, st: St) {
     let (tx, rx) = mpsc::channel::<bool>();
     *lk(&st.process_tx) = Some(tx);
     thread::spawn(move || {
+        // all of this is background work: lowest CPU and disk priority, so
+        // fetching / parsing match data while a game runs doesn't get in its way
+        #[cfg(windows)]
+        unsafe {
+            use windows_sys::Win32::System::Threading::{
+                GetCurrentThread, SetThreadPriority, THREAD_MODE_BACKGROUND_BEGIN,
+            };
+            SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+        }
         // first pass shortly after launch (picks up unfinished sessions)
         let mut force = false;
         let mut wait = Duration::from_secs(10);
@@ -836,10 +845,9 @@ fn spawn_processor(app: AppHandle, st: St) {
             if !settings.onboarded {
                 continue;
             }
-            // While PUBG runs only the light work happens: each game that is over gets
-            // its highlights cut (stream copy, idle priority), so they're ready in the
-            // lobby. Remuxing whole matches and PUBG's telemetry wait for the game to
-            // close, unless the user asked for it.
+            // While a game runs each game that is over gets its highlights cut (stream
+            // copy, idle priority), so they're ready in the lobby, and PUBG's data for
+            // the games before is fetched at most once a minute.
             let manual = st.sync_requested.swap(false, Ordering::Relaxed);
             let in_game = lk(&st.game_pid).is_some() && !force && !manual;
             if in_game {
@@ -1502,6 +1510,24 @@ fn delete_match(app: AppHandle, st: State<'_, St>, id: String) -> Result<(), Str
     Ok(())
 }
 
+/// Delete several records at once; returns how many went.
+#[tauri::command]
+async fn delete_matches(app: AppHandle, st: State<'_, St>, ids: Vec<String>) -> Result<usize, String> {
+    let lib = st.lib()?;
+    let n = blocking(move || {
+        let mut n = 0;
+        for id in ids {
+            if lib.delete(&id).is_ok() {
+                n += 1;
+            }
+        }
+        Ok(n)
+    })
+    .await?;
+    let _ = app.emit("library-changed", 0);
+    Ok(n)
+}
+
 #[tauri::command]
 async fn export_clip(
     st: State<'_, St>,
@@ -2041,6 +2067,7 @@ pub fn run() {
             set_favorite,
             trim_highlight,
             delete_match,
+            delete_matches,
             export_clip,
             export_montage,
             reveal,

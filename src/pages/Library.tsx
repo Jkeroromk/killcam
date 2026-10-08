@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Crosshair, RefreshCw, Skull, Star, Film } from "lucide-react";
+import { Check, CheckSquare, Crosshair, RefreshCw, Skull, Star, Film, Trash2 } from "lucide-react";
 import { api, fileUrl, joinPath, type GameId, type MatchRecord } from "../lib/api";
 import { GameSwitch } from "../components/GameSwitch";
 import { clock, isLol, when } from "../lib/format";
@@ -174,6 +174,12 @@ const killsOf = (m: MatchRecord) => (isLol(m) ? m.lol?.kills : m.stats?.kills) ?
 export default function Library(props: { game: GameId; setGame: (g: GameId) => void; libVersion: number; openMatch: (id: string) => void }) {
   const [list, setList] = useState<MatchRecord[] | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["value"]>("all");
+  // picking several recordings to delete at once
+  const [picking, setPicking] = useState(false);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [lastPick, setLastPick] = useState<number | null>(null);
+  const [confirm, setConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = () => api.listMatches().then(setList).catch(() => setList([]));
   useEffect(() => {
@@ -195,6 +201,52 @@ export default function Library(props: { game: GameId; setGame: (g: GameId) => v
     }
   }, [list, filter, props.game]);
 
+  // a different game or filter starts a new selection
+  useEffect(() => {
+    setSel(new Set());
+    setLastPick(null);
+    setConfirm(false);
+  }, [props.game, filter]);
+
+  const stopPicking = () => {
+    setPicking(false);
+    setSel(new Set());
+    setLastPick(null);
+    setConfirm(false);
+  };
+
+  // shift-click picks everything between the last pick and this one
+  const pick = (i: number, range: boolean) => {
+    if (!shown) return;
+    const n = new Set(sel);
+    const id = shown[i].id;
+    if (range && lastPick != null) {
+      const [a, b] = lastPick < i ? [lastPick, i] : [i, lastPick];
+      for (let k = a; k <= b; k++) n.add(shown[k].id);
+    } else if (n.has(id)) {
+      n.delete(id);
+    } else {
+      n.add(id);
+    }
+    setSel(n);
+    setLastPick(i);
+    setConfirm(false);
+  };
+
+  const allPicked = !!shown && shown.length > 0 && shown.every((m) => sel.has(m.id));
+  const favPicked = (list ?? []).filter((m) => sel.has(m.id) && m.favorite).length;
+
+  const removePicked = async () => {
+    setDeleting(true);
+    try {
+      await api.deleteMatches([...sel]);
+    } finally {
+      setDeleting(false);
+      stopPicking();
+      load();
+    }
+  };
+
   const fav = async (m: MatchRecord, v: boolean) => {
     await api.setFavorite(m.id, v);
     setList((l) => l?.map((x) => (x.id === m.id ? { ...x, favorite: v } : x)) ?? null);
@@ -215,18 +267,60 @@ export default function Library(props: { game: GameId; setGame: (g: GameId) => v
           ))}
         </div>
         <span className="grow" />
-        <Button small kind="ghost" onClick={() => api.syncNow(false).then(() => setTimeout(load, 3000))}>
-          <RefreshCw size={14} /> 立即同步
-        </Button>
+        {!picking && (
+          <>
+            <Button small kind="ghost" onClick={() => setPicking(true)} disabled={!shown || shown.length === 0}>
+              <CheckSquare size={14} /> 选择
+            </Button>
+            <Button small kind="ghost" onClick={() => api.syncNow(false).then(() => setTimeout(load, 3000))}>
+              <RefreshCw size={14} /> 立即同步
+            </Button>
+          </>
+        )}
       </header>
+      {picking && (
+        <div className="pickbar">
+          <b>已选 {sel.size} 局</b>
+          <button type="button" className="linkbtn" onClick={() => setSel(allPicked ? new Set() : new Set((shown ?? []).map((m) => m.id)))}>
+            {allPicked ? "取消全选" : "全选"}
+          </button>
+          <span className="muted small">按住 Shift 点击可以连选</span>
+          <span className="grow" />
+          {confirm ? (
+            <Button kind="danger" small onClick={removePicked} disabled={deleting}>
+              {deleting ? <Spinner /> : <Trash2 size={14} />} 确认删除 {sel.size} 局{favPicked ? `（含 ${favPicked} 个收藏）` : ""}
+            </Button>
+          ) : (
+            <Button kind="ghost" small onClick={() => setConfirm(true)} disabled={sel.size === 0}>
+              <Trash2 size={14} /> 删除
+            </Button>
+          )}
+          <Button kind="ghost" small onClick={stopPicking} disabled={deleting}>
+            完成
+          </Button>
+        </div>
+      )}
       {!shown ? (
         <Spinner />
       ) : shown.length === 0 ? (
         <p className="empty">{filter === "all" ? props.game === "lol" ? "还没有英雄联盟录像。进入一局英雄联盟就会自动开始录，结束后很快出现在这里。" : "还没有 PUBG 录像。打开 PUBG 打一局，结束后很快就会出现在这里。" : "这个分类下没有录像。"}</p>
       ) : (
-        <div className="cards">
-          {shown.map((m) => (
-            <MatchCard key={m.id} m={m} onOpen={() => props.openMatch(m.id)} onFavorite={(v) => fav(m, v)} />
+        <div className={"cards" + (picking ? " is-picking" : "")}>
+          {shown.map((m, i) => (
+            <div
+              key={m.id}
+              className={"pickable" + (sel.has(m.id) ? " is-picked" : "")}
+              onClickCapture={(e) => {
+                if (!picking) return;
+                // while picking, a click selects instead of opening
+                e.stopPropagation();
+                e.preventDefault();
+                pick(i, e.shiftKey);
+              }}
+            >
+              <MatchCard m={m} onOpen={() => props.openMatch(m.id)} onFavorite={picking ? undefined : (v) => fav(m, v)} />
+              {picking && <span className="pick-check">{sel.has(m.id) && <Check size={15} strokeWidth={3} />}</span>}
+            </div>
           ))}
         </div>
       )}

@@ -362,6 +362,7 @@ export const api = {
   trimHighlight: (id: string, hid: string, start: number | null, end: number | null) =>
     invoke<MatchRecord>("trim_highlight", { id, hid, start, end }),
   deleteMatch: (id: string) => invoke<void>("delete_match", { id }),
+  deleteMatches: (ids: string[]) => invoke<number>("delete_matches", { ids }),
   exportClip: (id: string, start: number, end: number, title: string, options: ExportOptions) =>
     invoke<string>("export_clip", { id, start, end, title, options }),
   exportMontage: (id: string, highlightIds: string[], options: ExportOptions) =>
