@@ -1141,10 +1141,24 @@ pub fn process_sessions(
         .collect();
     dirs.sort();
 
-    // fetch the player's recent matches once per pass (not while PUBG runs:
-    // telemetry is big and the quick records cover the wait)
+    // fetch the player's recent matches once per pass. While a game runs this
+    // still happens, at most once a minute: the game before the one being played
+    // gets its official data meanwhile, so after the session there is at most
+    // one game left to wait for.
     let api_cfg = settings.pubg.configured();
-    let api = if api_cfg && !in_game {
+    let api_due = {
+        static LAST_IN_GAME: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+        let mut last = LAST_IN_GAME.lock().unwrap_or_else(|e| e.into_inner());
+        if !in_game {
+            true
+        } else if last.map(|t| t.elapsed() < std::time::Duration::from_secs(60)).unwrap_or(false) {
+            false
+        } else {
+            *last = Some(std::time::Instant::now());
+            true
+        }
+    };
+    let api = if api_cfg && api_due {
         Some(pubg::Api::new(&settings.pubg.api_key, &settings.pubg.shard))
     } else {
         None
