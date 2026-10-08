@@ -434,6 +434,10 @@ pub fn weapon_name(raw: &str) -> String {
 
 pub fn mode_label(raw: &str) -> String {
     let r = raw.to_lowercase();
+    // arcade modes the API also lists
+    if r.starts_with("tdm") {
+        return "团队死斗".into();
+    }
     let team = if r.contains("squad") {
         "四排"
     } else if r.contains("duo") {
@@ -448,5 +452,17 @@ pub fn mode_label(raw: &str) -> String {
         raw.to_string()
     } else {
         format!("{team}{fpp}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mode_labels() {
+        assert_eq!(mode_label("squad-fpp"), "四排 FPP");
+        assert_eq!(mode_label("duo"), "双排");
+        assert_eq!(mode_label("tdm"), "团队死斗");
     }
 }

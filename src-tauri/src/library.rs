@@ -1325,6 +1325,14 @@ pub fn process_sessions(
                         (None, Some(e)) => e + 10_000,
                         _ => match_end_guess + 10_000,
                     };
+                    // the game (piece) the player was in: the one their first own
+                    // moment falls in. Arcade modes (team deathmatch…) let players
+                    // join a match that is already running, so the match itself can
+                    // start while the player is still in the game before.
+                    let first_own = sum.events.iter().map(|e| e.at_ms).chain(sum.death_ms).min();
+                    let key = piece_of(first_own.unwrap_or(w0 + 30_000));
+                    // joined late: the record starts at the join, not at the match start
+                    let w0 = if key != i64::MIN && key > w0 { key - 2_000 } else { w0 };
                     if w1 > recorded_until && !ended {
                         // not fully recorded yet, try again next pass
                         continue;
@@ -1382,13 +1390,18 @@ pub fn process_sessions(
                         longest_kill: p.longest_kill,
                     });
                     progress("正在生成录像和高光");
-                    // the quick record for this game (if any) becomes the real one
-                    // (the match starts a little after its server join)
-                    let key = piece_of(w0 + 30_000);
+                    // the quick record for this game (if any) becomes the real one:
+                    // the one of the same game, else one whose moments lie in this
+                    // match (so a game never ends up in the library twice)
                     let reuse = ps
                         .quick
                         .iter()
                         .position(|q| q.from == key)
+                        .or_else(|| {
+                            ps.quick
+                                .iter()
+                                .position(|q| q.upto >= w0 && q.upto <= w1 && q.from < w1)
+                        })
                         .map(|i| ps.quick.remove(i).id);
                     match build_record(
                         lib,
