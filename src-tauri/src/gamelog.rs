@@ -30,6 +30,12 @@ impl Join {
         self.mode == "BATTLEROYALE"
     }
 
+    /// Modes whose games show up in PUBG's API as well: KillCam waits for
+    /// their match data before a record is final.
+    pub fn in_api(&self) -> bool {
+        self.official() || self.mode == "TDM"
+    }
+
     /// (map label, mode label) for games without API data.
     pub fn labels(&self) -> (String, String) {
         let m = self.mode.as_str();

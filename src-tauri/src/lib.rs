@@ -1978,6 +1978,9 @@ pub fn run() {
                 let _ = std::fs::create_dir_all(lib.tmp_dir());
                 lib.migrate_ids();
                 lib.migrate_thumbs();
+                // one game, one record: older versions could keep a screen-read
+                // record next to the official one of the same game
+                lib.drop_duplicate_quick();
                 lib.hide_internal_dirs();
             }
 

@@ -106,6 +106,27 @@ pub struct Lib {
     pub root: PathBuf,
 }
 
+fn is_pubg(m: &MatchRecord) -> bool {
+    m.game.is_empty() || m.game == "pubg"
+}
+
+/// built from screen reading (no PUBG match data behind it)
+fn is_quick_pubg(m: &MatchRecord) -> bool {
+    is_pubg(m) && m.kind == "session" && m.pubg_match_id.is_none()
+}
+
+/// wall clock span of a record's footage
+fn span(m: &MatchRecord) -> (i64, i64) {
+    (m.video_start_ms, m.video_start_ms + (m.duration_s * 1000.0) as i64)
+}
+
+/// at least 80% of `a` lies inside `b`
+fn covered(a: (i64, i64), b: (i64, i64)) -> bool {
+    let len = a.1 - a.0;
+    let inside = (a.1.min(b.1) - a.0.max(b.0)).max(0);
+    len > 0 && inside * 10 >= len * 8
+}
+
 fn dir_size(p: &Path) -> u64 {
     let mut total = 0;
     if let Ok(rd) = fs::read_dir(p) {
@@ -289,6 +310,40 @@ impl Lib {
                 let _ = self.save(&r);
             }
         }
+    }
+
+    /// A screen-read PUBG record that is the same game as the footage
+    /// `from`..`to`: most of it lies inside that span.
+    pub fn quick_covered_by(&self, from: i64, to: i64) -> Option<MatchRecord> {
+        self.list()
+            .into_iter()
+            .filter(is_quick_pubg)
+            .find(|q| covered(span(q), (from, to)))
+    }
+
+    /// One game, one record: drop screen-read PUBG records whose game also got
+    /// an official record (older versions could keep both). A favorite moves to
+    /// the official record. Returns how many went.
+    pub fn drop_duplicate_quick(&self) -> usize {
+        let all = self.list();
+        let mut n = 0;
+        for q in all.iter().filter(|m| is_quick_pubg(m)) {
+            let Some(real) = all.iter().find(|m| {
+                is_pubg(m) && m.pubg_match_id.is_some() && covered(span(q), span(m))
+            }) else {
+                continue;
+            };
+            if q.favorite && !real.favorite {
+                if let Some(mut r) = self.get(&real.id) {
+                    r.favorite = true;
+                    let _ = self.save(&r);
+                }
+            }
+            if self.delete(&q.id).is_ok() {
+                n += 1;
+            }
+        }
+        n
     }
 
     pub fn has_pubg_match(&self, pubg_id: &str) -> bool {
@@ -1409,7 +1464,12 @@ pub fn process_sessions(
                                 .iter()
                                 .position(|q| q.upto >= w0 && q.upto <= w1 && q.from < w1)
                         })
-                        .map(|i| ps.quick.remove(i).id);
+                        .map(|i| ps.quick.remove(i).id)
+                        // last resort: any screen-read record of this game in the library
+                        .or_else(|| lib.quick_covered_by(w0, w1).map(|q| q.id));
+                    if let Some(id) = &reuse {
+                        ps.quick.retain(|q| &q.id != id);
+                    }
                     match build_record(
                         lib,
                         ffmpeg_path,
@@ -1458,7 +1518,8 @@ pub fn process_sessions(
             .iter()
             .filter(|mid| lib.has_pubg_match(mid))
             .count();
-        let official_pending = joins.iter().filter(|j| j.official()).count() > official_built;
+        // battle royale and team deathmatch games show up in PUBG's API
+        let official_pending = joins.iter().filter(|j| j.in_api()).count() > official_built;
         // without the log we can't know, so wait for the API as before
         let nothing_to_wait_for = !joins.is_empty() && !official_pending;
         // give up on PUBG's data after 15 minutes, but only once we actually
@@ -1498,6 +1559,8 @@ pub fn process_sessions(
             labels: Option<(String, String)>,
             /// may show up in PUBG's API (unknown without the log)
             official: bool,
+            /// its match data shows up in PUBG's API (battle royale, team deathmatch)
+            api: bool,
         }
         let mut pieces: Vec<Piece> = Vec::new();
         if joins.is_empty() {
@@ -1506,6 +1569,7 @@ pub fn process_sessions(
                 to: i64::MAX,
                 labels: None,
                 official: true,
+                api: true,
             });
         } else {
             for (i, j) in joins.iter().enumerate() {
@@ -1520,6 +1584,7 @@ pub fn process_sessions(
                         j.labels()
                     }),
                     official: j.official(),
+                    api: j.in_api(),
                 });
             }
         }
@@ -1596,14 +1661,16 @@ pub fn process_sessions(
                     result.retry_soon = true; // the end isn't on disk yet
                     continue;
                 }
-                let pending = piece.official && api_cfg;
+                let pending = piece.api && api_cfg;
                 progress("正在生成这局的高光");
                 let title_ms = if piece.from == i64::MIN {
                     w0.max(meta.start_ms)
                 } else {
                     piece.from
                 };
-                let labels = if pending {
+                // battle royale: normal or custom is only known from the API;
+                // team deathmatch keeps its name while waiting
+                let labels = if pending && piece.official {
                     Some(("普通对局".to_string(), String::new()))
                 } else {
                     piece.labels.clone()
@@ -2253,4 +2320,61 @@ pub fn ensure_thumbs(lib: &Lib, ffmpeg_path: &Path, id: &str) -> Option<MatchRec
         let _ = lib.save(&rec);
     }
     Some(rec)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rec(id: &str, kind: &str, api: bool, start: i64, secs: f64, fav: bool) -> MatchRecord {
+        MatchRecord {
+            id: id.into(),
+            kind: kind.into(),
+            pubg_match_id: api.then(|| format!("m-{id}")),
+            video_start_ms: start,
+            duration_s: secs,
+            favorite: fav,
+            game: "pubg".into(),
+            ..Default::default()
+        }
+    }
+
+    fn temp_lib(name: &str) -> Lib {
+        let root = std::env::temp_dir().join(format!("kc-test-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        Lib::new(&root)
+    }
+
+    #[test]
+    fn duplicate_quick_records_go_and_keep_the_favorite() {
+        let lib = temp_lib("dedupe");
+        let t = 1_791_489_373_295;
+        // today's team deathmatch: official 15:56:13 + 510 s, screen-read 15:58:03 + 410 s
+        lib.save(&rec("261008-1556", "match", true, t, 510.0, false)).unwrap();
+        lib.save(&rec("261008-1558", "session", false, t + 110_000, 410.0, true)).unwrap();
+        // a different game later on, screen-read only: stays
+        lib.save(&rec("261008-1613", "session", false, t + 1_000_000, 300.0, false)).unwrap();
+        // F9 in the lobby right after the match: mostly outside it, stays
+        lib.save(&rec("261008-1605", "session", false, t + 500_000, 60.0, false)).unwrap();
+
+        assert_eq!(lib.drop_duplicate_quick(), 1);
+        let mut ids: Vec<String> = lib.list().into_iter().map(|m| m.id).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["261008-1556", "261008-1605", "261008-1613"]);
+        assert!(lib.get("261008-1556").unwrap().favorite);
+        // nothing left to do the second time
+        assert_eq!(lib.drop_duplicate_quick(), 0);
+
+        assert!(lib.quick_covered_by(t + 1_000_000, t + 1_400_000).is_some());
+        assert!(lib.quick_covered_by(t, t + 510_000).is_none());
+        let _ = fs::remove_dir_all(&lib.root);
+    }
+
+    #[test]
+    fn covered_needs_most_of_the_footage() {
+        assert!(covered((100, 200), (0, 1000)));
+        assert!(covered((100, 200), (110, 300)));
+        assert!(!covered((100, 200), (150, 300)));
+        assert!(!covered((100, 100), (0, 1000)));
+    }
 }
