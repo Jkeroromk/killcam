@@ -321,6 +321,16 @@ pub fn summarize(events: &[Value], me: &str, won: bool) -> Summary {
             });
         }
     }
+    // kills that come in after the player's last death (a knocked enemy bleeding
+    // out, finished by someone else…): the player is spectating or back in the
+    // lobby by then, so they count but get no clip of their own
+    if let Some(d) = s.death_ms {
+        for e in s.events.iter_mut() {
+            if e.kind == "kill" && e.at_ms > d {
+                e.credited = true;
+            }
+        }
+    }
     s.events.sort_by_key(|e| e.at_ms);
     s
 }
@@ -458,6 +468,28 @@ pub fn mode_label(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kill_after_last_death_gets_no_clip() {
+        let me = "account.me";
+        let ev = |t: &str, d: &str, k: &str, v: &str| {
+            serde_json::json!({
+                "_T": t, "_D": d,
+                "killer": {"accountId": k, "name": k},
+                "victim": {"accountId": v, "name": v},
+                "attacker": {"accountId": k, "name": k},
+            })
+        };
+        let tele = vec![
+            ev("LogPlayerKillV2", "2026-10-08T01:25:10.000Z", me, "a"),
+            ev("LogPlayerKillV2", "2026-10-08T01:26:55.000Z", "b", me),
+            // a knocked enemy bleeds out after the player died
+            ev("LogPlayerKillV2", "2026-10-08T01:27:15.000Z", me, "c"),
+        ];
+        let s = summarize(&tele, me, false);
+        let kills: Vec<bool> = s.events.iter().filter(|e| e.kind == "kill").map(|e| e.credited).collect();
+        assert_eq!(kills, vec![false, true]);
+    }
 
     #[test]
     fn mode_labels() {
