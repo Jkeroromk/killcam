@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Bookmark, Crosshair, Crown, Flag, HeartCrack, ShieldAlert, Skull, Users } from "lucide-react";
 import type { EventKind } from "../lib/api";
 import { kindLabel } from "../lib/format";
+import { t } from "../lib/i18n";
 
 export function Button(props: {
   children: ReactNode;
@@ -161,7 +162,11 @@ export function HotkeyInput(props: { value: string; onChange: (v: string) => voi
       onClick={() => setListening(true)}
       onBlur={() => setListening(false)}
     >
-      {listening ? "按下新的组合键…" : props.value ? props.value.split("+").map((k) => <kbd key={k}>{k}</kbd>) : "未设置"}
+      {listening
+        ? t("按下新的组合键…", "Press a new key combo…")
+        : props.value
+          ? props.value.split("+").map((k) => <kbd key={k}>{k}</kbd>)
+          : t("未设置", "Not set")}
     </button>
   );
 }
@@ -231,5 +236,5 @@ export function KindDot({ kind }: { kind: EventKind }) {
 }
 
 export function Spinner() {
-  return <span className="spinner" aria-label="加载中" />;
+  return <span className="spinner" aria-label={t("加载中", "Loading")} />;
 }

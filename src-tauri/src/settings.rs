@@ -257,6 +257,8 @@ pub struct Settings {
     pub launch_at_login: bool,
     /// short sound when F9 marks a highlight (a low one when nothing is recording)
     pub marker_sound: bool,
+    /// "auto" (the Windows display language), "zh" or "en"
+    pub language: String,
 }
 
 impl Default for Settings {
@@ -282,6 +284,7 @@ impl Default for Settings {
             mini_window: true,
             launch_at_login: true,
             marker_sound: true,
+            language: "auto".into(),
         }
     }
 }

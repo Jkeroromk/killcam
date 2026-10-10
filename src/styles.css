@@ -3158,3 +3158,19 @@ button.st-best:hover {
 .update-progress-lg p {
   margin: 0;
 }
+
+/* onboarding language switch */
+.ob-welcome {
+  position: relative;
+}
+.ob-lang {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  gap: 2px;
+}
+.ob-lang .btn.is-on {
+  background: var(--raised);
+  color: var(--text);
+}

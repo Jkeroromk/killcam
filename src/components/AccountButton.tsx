@@ -3,6 +3,7 @@ import { UserRound, X } from "lucide-react";
 import { api, errText, type Settings } from "../lib/api";
 import { Button, Spinner } from "./ui";
 import { PubgSection } from "./sections";
+import { t } from "../lib/i18n";
 
 /** Side rail: who you are in PUBG. Opens a small dialog to fill in the
  *  player name and API key. */
@@ -16,8 +17,8 @@ export function AccountButton(props: { settings: Settings; onSaved: (s: Settings
       <button type="button" className={"account-btn" + (linked ? "" : " is-empty")} onClick={() => setOpen(true)}>
         <span className="account-avatar">{linked ? p.playerName.slice(0, 1).toUpperCase() : <UserRound size={15} />}</span>
         <span className="account-text">
-          <b>{linked ? p.playerName : "绑定 PUBG 账号"}</b>
-          <span>{linked ? (p.shard === "kakao" ? "Kakao" : "Steam") + (p.accountId ? " · 已验证" : "") : "用来读取官方对局数据"}</span>
+          <b>{linked ? p.playerName : t("绑定 PUBG 账号", "Link PUBG account")}</b>
+          <span>{linked ? (p.shard === "kakao" ? "Kakao" : "Steam") + (p.accountId ? t(" · 已验证", " · Verified") : "") : t("用来读取官方对局数据", "For official match data")}</span>
         </span>
       </button>
       {open && <AccountDialog settings={props.settings} onSaved={props.onSaved} onClose={() => setOpen(false)} />}
@@ -58,23 +59,26 @@ function AccountDialog(props: { settings: Settings; onSaved: (s: Settings) => vo
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && props.onClose()}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="account-title">
         <header>
-          <h2 id="account-title">PUBG 账号</h2>
+          <h2 id="account-title">{t("PUBG 账号", "PUBG account")}</h2>
           <span className="grow" />
-          <button type="button" className="icon-btn" onClick={props.onClose} aria-label="关闭">
+          <button type="button" className="icon-btn" onClick={props.onClose} aria-label={t("关闭", "Close")}>
             <X size={16} />
           </button>
         </header>
         <p className="muted small">
-          不填也能用：读屏会识别击杀、击倒和吃鸡。填了以后，普通和排位对局会有地图、排名、伤害、武器等官方数据，「数据」页也靠它。Key 只存在你自己电脑上。
+          {t(
+            "不填也能用：读屏会识别击杀、击倒和吃鸡。填了以后，普通和排位对局会有地图、排名、伤害、武器等官方数据，「数据」页也靠它。Key 只存在你自己电脑上。",
+            "Optional: screen reading already catches kills, knocks and Chicken Dinners. With it, normal and ranked matches get official data like map, place, damage and weapons, and the Stats page relies on it. The key stays on your PC.",
+          )}
         </p>
         <PubgSection settings={draft} set={(fn) => setDraft((s) => fn(s))} />
         {err && <p className="warn-text small">{err}</p>}
         <footer>
           <Button kind="ghost" onClick={props.onClose}>
-            取消
+            {t("取消", "Cancel")}
           </Button>
           <Button kind="primary" onClick={save} disabled={saving || !dirty}>
-            {saving ? <Spinner /> : "保存"}
+            {saving ? <Spinner /> : t("保存", "Save")}
           </Button>
         </footer>
       </div>

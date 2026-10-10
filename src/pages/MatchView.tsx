@@ -6,6 +6,10 @@ import { gameDef } from "../lib/games";
 import { ChampIcon } from "./Library";
 import { Button, KindIcon, Segmented, Spinner } from "../components/ui";
 import { Timeline } from "../components/Timeline";
+import { isEn, label, plural, t, title } from "../lib/i18n";
+
+/** a stored detail ("双杀 · 团灭") in the current language; "抢" stays as eventLine checks it */
+const detailLabel = (d: string) => d.split(" · ").map(label).join(" · ");
 
 function LolStatsRow(props: { l: LolStats; durationS: number }) {
   const l = props.l;
@@ -20,24 +24,24 @@ function LolStatsRow(props: { l: LolStats; durationS: number }) {
       </div>
       <div className="mstat">
         <b>{l.cs}</b>
-        <span>补刀{mins > 1 ? ` · ${(l.cs / mins).toFixed(1)}/分` : ""}</span>
+        <span>{t("补刀", "CS")}{mins > 1 ? t(` · ${(l.cs / mins).toFixed(1)}/分`, ` · ${(l.cs / mins).toFixed(1)}/min`) : ""}</span>
       </div>
       {l.damage != null && (
         <div className="mstat">
           <b>{l.damage.toLocaleString()}</b>
-          <span>伤害</span>
+          <span>{t("伤害", "Damage")}</span>
         </div>
       )}
       {l.gold != null && (
         <div className="mstat">
           <b>{(l.gold / 1000).toFixed(1)}k</b>
-          <span>金币</span>
+          <span>{t("金币", "Gold")}</span>
         </div>
       )}
       {l.vision > 0 && (
         <div className="mstat">
           <b>{Math.round(l.vision)}</b>
-          <span>视野</span>
+          <span>{t("视野", "Vision")}</span>
         </div>
       )}
     </div>
@@ -54,14 +58,15 @@ function Scoreboard(props: { l: LolStats }) {
       {teams.map((ps, i) => {
         const mine = ps[0].team === myTeam;
         const won = props.l.win == null ? null : mine ? props.l.win : !props.l.win;
+        const kills = ps.reduce((n, p) => n + p.kills, 0);
         return (
           <div key={i} className="sb-team">
             <div className="sb-head">
-              <span>{mine ? "我方" : "对方"}</span>
-              {won != null && <span className={won ? "sb-win" : "sb-lose"}>{won ? "胜利" : "失败"}</span>}
+              <span>{mine ? t("我方", "Your team") : t("对方", "Enemy team")}</span>
+              {won != null && <span className={won ? "sb-win" : "sb-lose"}>{won ? t("胜利", "Victory") : t("失败", "Defeat")}</span>}
               <span className="grow" />
               <span className="mono">
-                {ps.reduce((n, p) => n + p.kills, 0)} 击杀
+                {t(`${kills} 击杀`, `${kills} ${plural(kills, "kill", "kills")}`)}
               </span>
             </div>
             {ps.map((p, j) => (
@@ -74,11 +79,11 @@ function Scoreboard(props: { l: LolStats }) {
                 <span className="mono sb-kda">
                   {p.kills}/{p.deaths}/{p.assists}
                 </span>
-                <span className="mono sb-cs" title="补刀">
+                <span className="mono sb-cs" title={t("补刀", "CS")}>
                   {p.cs}
                 </span>
                 {p.damage != null && (
-                  <span className="mono sb-dmg" title="对英雄伤害">
+                  <span className="mono sb-dmg" title={t("对英雄伤害", "Damage to champions")}>
                     {(p.damage / 1000).toFixed(1)}k
                   </span>
                 )}
@@ -95,7 +100,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
   const [m, setM] = useState<MatchRecord | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState<string | null>(null);
-  const [t, setT] = useState(0);
+  const [pos, setPos] = useState(0);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [opts, setOpts] = useState<ExportOptions>({ aspect: "source", height: 1080, audio: "mix", sizeMb: 0 });
   const [range, setRange] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
@@ -228,16 +233,16 @@ export default function MatchView(props: { id: string; back: () => void; libVers
     try {
       let path: string;
       if (what === "highlight" && activeH) {
-        setExporting(`正在导出「${activeH.title}」`);
-        path = await api.exportClip(m.id, activeH.start, activeH.end, activeH.title, opts);
+        setExporting(t(`正在导出「${activeH.title}」`, `Exporting "${title(activeH.title)}"`));
+        path = await api.exportClip(m.id, activeH.start, activeH.end, title(activeH.title), opts);
       } else if (what === "montage") {
-        setExporting(`正在导出 ${picked.size} 段高光合集`);
+        setExporting(t(`正在导出 ${picked.size} 段高光合集`, `Exporting a montage of ${picked.size} ${plural(picked.size, "highlight", "highlights")}`));
         path = await api.exportMontage(m.id, m.highlights.filter((h) => picked.has(h.id)).map((h) => h.id), opts);
       } else {
         const a = Math.min(range.a ?? 0, range.b ?? 0);
         const b = Math.max(range.a ?? 0, range.b ?? 0);
-        setExporting("正在导出选定区间");
-        path = await api.exportClip(m.id, a, b, "片段", opts);
+        setExporting(t("正在导出选定区间", "Exporting the selected range"));
+        path = await api.exportClip(m.id, a, b, t("片段", "Clip"), opts);
       }
       setExported(path);
     } catch (e) {
@@ -251,7 +256,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
     return (
       <div className="page">
         <Button kind="ghost" small onClick={props.back}>
-          <ArrowLeft size={16} /> 返回
+          <ArrowLeft size={16} /> {t("返回", "Back")}
         </Button>
         <p className="warn-text">{err}</p>
       </div>
@@ -267,7 +272,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
   return (
     <div className="page match">
       <header className="match-head">
-        <button type="button" className="iconbtn" onClick={props.back} title="返回">
+        <button type="button" className="iconbtn" onClick={props.back} title={t("返回", "Back")}>
           <ArrowLeft size={18} />
         </button>
         <div className="match-title">
@@ -278,11 +283,11 @@ export default function MatchView(props: { id: string; back: () => void; libVers
                 {m.lol.champion}
               </>
             ) : (
-              m.mapLabel
+              label(m.mapLabel)
             )}
-            {m.gameMode && <span className="tag">{m.gameMode}</span>}
+            {m.gameMode && <span className="tag">{label(m.gameMode)}</span>}
             {st && st.place > 0 && <span className={"place" + (st.place === 1 ? " is-win" : "")}>#{st.place}</span>}
-            {m.lol?.win != null && <span className={"place" + (m.lol.win ? " is-win" : "")}>{m.lol.win ? "胜利" : "失败"}</span>}
+            {m.lol?.win != null && <span className={"place" + (m.lol.win ? " is-win" : "")}>{m.lol.win ? t("胜利", "Victory") : t("失败", "Defeat")}</span>}
           </h1>
           <span className="muted small">
             {when(m.createdAtMs)} · {clock(m.durationS)} · {bytes(m.sizeBytes)}
@@ -291,7 +296,10 @@ export default function MatchView(props: { id: string; back: () => void; libVers
         <span className="grow" />
         {m.pendingApi && (
           <p className="pending-note">
-            高光是读屏先剪好的。PUBG 官方数据到了以后（一般几分钟），会自动补上地图、排名、伤害和每次击杀的武器距离，高光也会按官方数据重新剪一次。
+            {t(
+              "高光是读屏先剪好的。PUBG 官方数据到了以后（一般几分钟），会自动补上地图、排名、伤害和每次击杀的武器距离，高光也会按官方数据重新剪一次。",
+              "These highlights were cut from screen reading. When PUBG's official data arrives (usually a few minutes), the map, place, damage and each kill's weapon and distance are filled in, and the highlights are re-cut from the official data.",
+            )}
           </p>
         )}
         {m.lol && <LolStatsRow l={m.lol} durationS={m.durationS} />}
@@ -299,24 +307,24 @@ export default function MatchView(props: { id: string; back: () => void; libVers
           <div className="match-stats">
             <div className="mstat">
               <b>{st.kills}</b>
-              <span>击杀</span>
+              <span>{t("击杀", "Kills")}</span>
             </div>
             <div className="mstat">
               <b>{st.knocks}</b>
-              <span>击倒</span>
+              <span>{t("击倒", "Knocks")}</span>
             </div>
             <div className="mstat">
               <b>{Math.round(st.damage)}</b>
-              <span>伤害</span>
+              <span>{t("伤害", "Damage")}</span>
             </div>
             <div className="mstat">
               <b>{st.headshots}</b>
-              <span>爆头</span>
+              <span>{t("爆头", "Headshots")}</span>
             </div>
             {st.longestKill > 0 && (
               <div className="mstat">
                 <b>{Math.round(st.longestKill)}m</b>
-                <span>最远击杀</span>
+                <span>{t("最远击杀", "Longest kill")}</span>
               </div>
             )}
           </div>
@@ -324,7 +332,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
         <button
           type="button"
           className={"iconbtn" + (m.favorite ? " is-on" : "")}
-          title={m.favorite ? "取消收藏" : "收藏（不会被自动清理）"}
+          title={m.favorite ? t("取消收藏", "Remove from favorites") : t("收藏（不会被自动清理）", "Favorite (never auto-deleted)")}
           onClick={async () => {
             await api.setFavorite(m.id, !m.favorite);
             setM({ ...m, favorite: !m.favorite });
@@ -332,7 +340,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
         >
           <Star size={17} fill={m.favorite ? "currentColor" : "none"} />
         </button>
-        <button type="button" className="iconbtn" onClick={() => api.reveal(m.dir)} title="打开文件夹">
+        <button type="button" className="iconbtn" onClick={() => api.reveal(m.dir)} title={t("打开文件夹", "Open folder")}>
           <FolderOpen size={17} />
         </button>
         {confirmDelete ? (
@@ -344,10 +352,10 @@ export default function MatchView(props: { id: string; back: () => void; libVers
               props.back();
             }}
           >
-            确认删除
+            {t("确认删除", "Confirm delete")}
           </Button>
         ) : (
-          <button type="button" className="iconbtn" onClick={() => setConfirmDelete(true)} title="删除这场录像">
+          <button type="button" className="iconbtn" onClick={() => setConfirmDelete(true)} title={t("删除这场录像", "Delete this recording")}>
             <Trash2 size={17} />
           </button>
         )}
@@ -371,7 +379,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
                 }}
                 onTimeUpdate={(e) => {
                   const g = base + e.currentTarget.currentTime;
-                  setT(g);
+                  setPos(g);
                   if (stopAt.current != null && g >= stopAt.current) {
                     e.currentTarget.pause();
                     stopAt.current = null;
@@ -387,7 +395,12 @@ export default function MatchView(props: { id: string; back: () => void; libVers
               />
             ) : (
               <div className="player-empty">
-                {m.highlights.some((h) => h.file) ? "选一段右边的高光播放" : "这场的录像没有保留下来（当时没有生成任何高光，整局录像按「只留高光片段」被删掉了）"}
+                {m.highlights.some((h) => h.file)
+                  ? t("选一段右边的高光播放", "Pick a highlight on the right to play")
+                  : t(
+                      "这场的录像没有保留下来（当时没有生成任何高光，整局录像按「只留高光片段」被删掉了）",
+                      "This recording wasn't kept (no highlights were made, and the full recording was deleted by the \"Highlights only\" setting)",
+                    )}
               </div>
             )}
           </div>
@@ -397,7 +410,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
             events={m.events}
             highlights={m.highlights}
             activeHighlight={active}
-            playhead={t}
+            playhead={pos}
             onSeek={(g) => seekGlobal(g)}
             trim={
               activeH
@@ -419,7 +432,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
               <div className="tape-legend">
                 {gameDef(m.game).legend.map((k) => (
                   <span key={k}>
-                    <KindIcon kind={k} small game={m.game} /> {kindLabel(k, m.game)}
+                    <KindIcon kind={k} small game={m.game} /> {label(kindLabel(k, m.game))}
                   </span>
                 ))}
               </div>
@@ -430,25 +443,25 @@ export default function MatchView(props: { id: string; back: () => void; libVers
             {activeH && (
               <div className="export-row trim-row">
                 <span className="trim-title">
-                  {activeH.title}
+                  {title(activeH.title)}
                   <span className="mono muted">
                     {" "}
                     {clock(activeH.start)} – {clock(activeH.end)} · {Math.round(activeH.end - activeH.start)}s
                   </span>
                 </span>
                 <span className="grow" />
-                <span className="muted small">开头</span>
+                <span className="muted small">{t("开头", "Start")}</span>
                 <div className="nudge">
-                  <button type="button" onClick={() => nudge(activeH, "a", -1)} title="开头提前 1 秒">−1s</button>
-                  <button type="button" onClick={() => nudge(activeH, "a", 1)} title="开头推后 1 秒">+1s</button>
+                  <button type="button" onClick={() => nudge(activeH, "a", -1)} title={t("开头提前 1 秒", "Start 1s earlier")}>−1s</button>
+                  <button type="button" onClick={() => nudge(activeH, "a", 1)} title={t("开头推后 1 秒", "Start 1s later")}>+1s</button>
                 </div>
-                <span className="muted small">结尾</span>
+                <span className="muted small">{t("结尾", "End")}</span>
                 <div className="nudge">
-                  <button type="button" onClick={() => nudge(activeH, "b", -1)} title="结尾提前 1 秒">−1s</button>
-                  <button type="button" onClick={() => nudge(activeH, "b", 1)} title="结尾推后 1 秒">+1s</button>
+                  <button type="button" onClick={() => nudge(activeH, "b", -1)} title={t("结尾提前 1 秒", "End 1s earlier")}>−1s</button>
+                  <button type="button" onClick={() => nudge(activeH, "b", 1)} title={t("结尾推后 1 秒", "End 1s later")}>+1s</button>
                 </div>
                 {activeH.origStart != null && (Math.abs(activeH.origStart - activeH.start) > 0.05 || Math.abs((activeH.origEnd ?? activeH.end) - activeH.end) > 0.05) && (
-                  <button type="button" className="iconbtn sm" title="恢复原来的范围" onClick={() => trim(activeH, null, null)}>
+                  <button type="button" className="iconbtn sm" title={t("恢复原来的范围", "Restore original range")} onClick={() => trim(activeH, null, null)}>
                     <RotateCcw size={14} />
                   </button>
                 )}
@@ -459,16 +472,16 @@ export default function MatchView(props: { id: string; back: () => void; libVers
                 value={opts.aspect}
                 onChange={(a) => setOpts({ ...opts, aspect: a, height: a === "9:16" ? 1080 : opts.height })}
                 options={[
-                  { value: "source", label: "原比例" },
+                  { value: "source", label: t("原比例", "Original") },
                   { value: "16:9", label: "16:9" },
-                  { value: "9:16", label: "竖屏" },
+                  { value: "9:16", label: t("竖屏", "Vertical (9:16)") },
                 ]}
               />
               <Segmented
                 value={opts.height}
                 onChange={(h) => setOpts({ ...opts, height: h })}
                 options={[
-                  { value: 0, label: "原始" },
+                  { value: 0, label: t("原始", "Source") },
                   { value: 1080, label: "1080p" },
                   { value: 720, label: "720p" },
                 ]}
@@ -477,15 +490,15 @@ export default function MatchView(props: { id: string; back: () => void; libVers
                 value={opts.sizeMb > 0 ? "mix" : opts.audio}
                 onChange={(a) => setOpts({ ...opts, audio: a })}
                 options={[
-                  { value: "mix", label: "混音" },
-                  { value: "all", label: "分轨", disabled: opts.sizeMb > 0 },
+                  { value: "mix", label: t("混音", "Mixed audio") },
+                  { value: "all", label: t("分轨", "Separate tracks"), disabled: opts.sizeMb > 0 },
                 ]}
               />
               <Segmented
                 value={opts.sizeMb}
                 onChange={(n) => setOpts({ ...opts, sizeMb: n })}
                 options={[
-                  { value: 0, label: "不限大小" },
+                  { value: 0, label: t("不限大小", "Any size") },
                   { value: 10, label: "10MB" },
                   { value: 25, label: "25MB" },
                   { value: 50, label: "50MB" },
@@ -493,29 +506,36 @@ export default function MatchView(props: { id: string; back: () => void; libVers
               />
               <span className="grow" />
               <Button kind="primary" small onClick={() => doExport("highlight")} disabled={!activeH || !!exporting}>
-                <Download size={14} /> 导出这段
+                <Download size={14} /> {t("导出这段", "Export clip")}
               </Button>
               <Button small onClick={() => doExport("montage")} disabled={picked.size === 0 || !!exporting}>
-                <Layers size={14} /> 合集 · {picked.size}
+                <Layers size={14} /> {t("合集", "Montage")} · {picked.size}
               </Button>
             </div>
             {opts.sizeMb > 0 && (
               <p className="muted small">
-                {opts.sizeMb === 10 ? "10MB 是 Discord 免费用户的上限。" : opts.sizeMb === 25 ? "25MB 适合大多数聊天软件，画质好一些。" : "50MB 适合 Discord Nitro Basic。"}
-                会自动降低分辨率和帧率来压到这个大小以内，片段越长越模糊，建议 30 秒以内。
+                {opts.sizeMb === 10
+                  ? t("10MB 是 Discord 免费用户的上限。", "10MB is Discord's limit for free users. ")
+                  : opts.sizeMb === 25
+                    ? t("25MB 适合大多数聊天软件，画质好一些。", "25MB works in most chat apps, with better quality. ")
+                    : t("50MB 适合 Discord Nitro Basic。", "50MB fits Discord Nitro Basic. ")}
+                {t(
+                  "会自动降低分辨率和帧率来压到这个大小以内，片段越长越模糊，建议 30 秒以内。",
+                  "Resolution and frame rate are lowered to fit; longer clips get blurrier, so keep it under 30 seconds.",
+                )}
               </p>
             )}
             {!clipsOnly && (
               <div className="export-row">
-                <span className="muted small">自选区间</span>
-                <Button small kind="ghost" onClick={() => setRange({ ...range, a: t })}>
-                  起点 {range.a != null ? clock(range.a) : "–"}
+                <span className="muted small">{t("自选区间", "Custom range")}</span>
+                <Button small kind="ghost" onClick={() => setRange({ ...range, a: pos })}>
+                  {t("起点", "Start")} {range.a != null ? clock(range.a) : "–"}
                 </Button>
-                <Button small kind="ghost" onClick={() => setRange({ ...range, b: t })}>
-                  终点 {range.b != null ? clock(range.b) : "–"}
+                <Button small kind="ghost" onClick={() => setRange({ ...range, b: pos })}>
+                  {t("终点", "End")} {range.b != null ? clock(range.b) : "–"}
                 </Button>
                 <Button small kind="ghost" onClick={() => doExport("range")} disabled={!hasRange || !!exporting}>
-                  <Scissors size={14} /> 导出区间
+                  <Scissors size={14} /> {t("导出区间", "Export range")}
                 </Button>
               </div>
             )}
@@ -526,9 +546,9 @@ export default function MatchView(props: { id: string; back: () => void; libVers
             )}
             {exported && (
               <p className="ok-text small">
-                已导出 <span className="mono">{exported.split(/[\\/]/).pop()}</span>
+                {t("已导出", "Exported")} <span className="mono">{exported.split(/[\\/]/).pop()}</span>
                 <button type="button" className="link" onClick={() => api.reveal(exported)}>
-                  在文件夹中显示
+                  {t("在文件夹中显示", "Show in folder")}
                 </button>
               </p>
             )}
@@ -538,12 +558,14 @@ export default function MatchView(props: { id: string; back: () => void; libVers
 
         <aside className="side">
           <div className="side-head">
-            高光 · {m.highlights.length}
+            {t("高光", "Highlights")} · {m.highlights.length}
             <span className="grow" />
-            <span className="faint small">勾选的进合集</span>
+            <span className="faint small">{t("勾选的进合集", "Checked ones go in the montage")}</span>
           </div>
           {m.highlights.length === 0 && (
-            <p className="muted small">{m.video ? "这局没有符合规则的高光，可以在左边自选区间导出。" : "没有高光，也没有保留整局录像，这条记录可以删掉。"}</p>
+            <p className="muted small">{m.video
+                ? t("这局没有符合规则的高光，可以在左边自选区间导出。", "No highlights matched your rules. You can export a custom range on the left.")
+                : t("没有高光，也没有保留整局录像，这条记录可以删掉。", "No highlights and no full recording. This entry can be deleted.")}</p>
           )}
           <ul className="hl-list">
             {m.highlights.map((h) => {
@@ -559,7 +581,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
                       </span>
                     </div>
                     <div className="hl-info">
-                      <span className="hl-title">{h.title}</span>
+                      <span className="hl-title">{title(h.title)}</span>
                       <span className="hl-kinds">
                         {h.kinds.slice(0, 8).map((k, i) => (
                           <KindIcon key={i} kind={k} small game={m.game} />
@@ -578,7 +600,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
                         else n.delete(h.id);
                         setPicked(n);
                       }}
-                      title="加入合集"
+                      title={t("加入合集", "Add to montage")}
                     />
                   </div>
                 </li>
@@ -589,13 +611,13 @@ export default function MatchView(props: { id: string; back: () => void; libVers
           {m.lol && m.lol.players.length > 0 && (
             <>
               <button type="button" className="collapse" onClick={() => setShowBoard(!showBoard)}>
-                {showBoard ? <ChevronDown size={14} /> : <ChevronRight size={14} />} 记分板
+                {showBoard ? <ChevronDown size={14} /> : <ChevronRight size={14} />} {t("记分板", "Scoreboard")}
               </button>
               {showBoard && <Scoreboard l={m.lol} />}
             </>
           )}
           <button type="button" className="collapse" onClick={() => setShowEvents(!showEvents)}>
-            {showEvents ? <ChevronDown size={14} /> : <ChevronRight size={14} />} 全部事件 · {m.events.length}
+            {showEvents ? <ChevronDown size={14} /> : <ChevronRight size={14} />} {t("全部事件", "All events")} · {m.events.length}
           </button>
           {showEvents && (
             <ul className="ev-list">
@@ -603,8 +625,19 @@ export default function MatchView(props: { id: string; back: () => void; libVers
                 <li key={e.id}>
                   <button type="button" onClick={() => seekGlobal(Math.max(0, e.t - 3), true)} disabled={clipsOnly && !m.highlights.some((h) => h.file && e.t >= h.start && e.t <= h.end)}>
                     <KindIcon kind={e.kind} small game={m.game} />
-                    <span className="ev-kind">{kindLabel(e.kind, m.game)}</span>
-                    <span className="ev-detail">{eventLine(e)}</span>
+                    <span className="ev-kind">{label(kindLabel(e.kind, m.game))}</span>
+                    <span className="ev-detail">
+                      {eventLine(
+                        isEn()
+                          ? {
+                              ...e,
+                              victim: e.kind === "objective" && e.victim ? label(e.victim) : e.victim,
+                              weapon: e.weapon ? label(e.weapon) : e.weapon,
+                              detail: e.detail ? detailLabel(e.detail) : e.detail,
+                            }
+                          : e,
+                      )}
+                    </span>
                     <span className="ev-time mono">{clock(e.t)}</span>
                   </button>
                 </li>

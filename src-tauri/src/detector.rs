@@ -658,7 +658,9 @@ fn grab(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("无法启动识别进程：{e}"))
+        .map_err(|e| {
+            crate::i18n::tr(format!("无法启动识别进程：{e}"), format!("Couldn't start the screen reader: {e}"))
+        })
 }
 
 // ---- spectating ------------------------------------------------------------
@@ -825,7 +827,7 @@ fn card_geometry(screen_w: u32, screen_h: u32, ref_h: u32) -> Result<(u32, u32, 
     let bw = (((x1 as f32 / f).ceil() as u32 + 1) & !1).min(screen_w & !1);
     let bh = ((((y1 as f32 / f).ceil() as u32).saturating_sub(by) + 1) & !1).min(screen_h.saturating_sub(by) & !1);
     if bw < 8 || bh < 8 {
-        return Err("观战识别区域无效".into());
+        return Err(crate::i18n::tr("观战识别区域无效", "Invalid spectating detection area"));
     }
     let aw = ((bw as f32 * f).round() as usize).max(8);
     let ah = ((bh as f32 * f).round() as usize).max(8);
@@ -848,7 +850,7 @@ where
     let (by, bw, bh, aw, ah, eye_y) = card_geometry(screen_w, screen_h, ref_h)?;
 
     let mut child = grab(ffmpeg_path, monitor_index, SPEC_FPS, (0, by, bw, bh), (aw, ah), "bicubic")?;
-    let mut out = child.stdout.take().ok_or("识别进程没有输出")?;
+    let mut out = child.stdout.take().ok_or_else(|| crate::i18n::tr("识别进程没有输出", "The screen reader gave no output"))?;
     let child = Arc::new(Mutex::new(child));
     let handle = thread::Builder::new()
         .name("spectate".into())
@@ -897,9 +899,9 @@ where
     F: Fn(Detection) + Send + 'static,
     G: Fn(bool, i64) + Send + 'static,
 {
-    let pack = load_pack().ok_or("还没有识别样本")?;
+    let pack = load_pack().ok_or_else(|| crate::i18n::tr("还没有识别样本", "No screen-reading samples yet"))?;
     if screen_w == 0 || screen_h == 0 {
-        return Err("还没有识别显示器分辨率".into());
+        return Err(crate::i18n::tr("还没有识别显示器分辨率", "Display resolution not detected yet"));
     }
     // f: screen pixels -> analysis pixels (= reference pixels). The HUD scales with height.
     let f = pack.scale * pack.ref_h as f32 / screen_h as f32;
@@ -932,13 +934,13 @@ where
     let bw = ((x1.min(screen_w as f32) as u32).saturating_sub(bx) + 1) & !1;
     let bh = ((y1.min(screen_h as f32) as u32).saturating_sub(by) + 1) & !1;
     if bw < 8 || bh < 8 {
-        return Err("识别区域无效".into());
+        return Err(crate::i18n::tr("识别区域无效", "Invalid detection area"));
     }
     let aw = ((bw as f32 * f).round() as usize).max(8);
     let ah = ((bh as f32 * f).round() as usize).max(8);
 
     let mut child = grab(ffmpeg_path, monitor_index, FPS, (bx, by, bw, bh), (aw, ah), "area")?;
-    let mut out = child.stdout.take().ok_or("识别进程没有输出")?;
+    let mut out = child.stdout.take().ok_or_else(|| crate::i18n::tr("识别进程没有输出", "The screen reader gave no output"))?;
 
     let placed: Vec<Placed> = pack
         .templates
@@ -971,7 +973,7 @@ where
                     if out.read_exact(&mut frame).is_err() {
                         if !stop.load(Ordering::Relaxed) {
                             if let Ok(mut e) = error.lock() {
-                                *e = Some("识别进程退出了".into());
+                                *e = Some(crate::i18n::tr("识别进程退出了", "The screen reader stopped"));
                             }
                         }
                         break;

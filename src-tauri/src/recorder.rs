@@ -222,7 +222,7 @@ impl Recording {
     pub fn exited(&self) -> Option<String> {
         let mut c = self.child.lock().ok()?;
         match c.try_wait() {
-            Ok(Some(st)) => Some(format!("ffmpeg 已退出（{}）", st)),
+            Ok(Some(st)) => Some(crate::i18n::tr(format!("ffmpeg 已退出（{}）", st), format!("ffmpeg exited ({})", st))),
             Ok(None) => None,
             Err(e) => Some(e.to_string()),
         }
@@ -444,12 +444,15 @@ pub fn start(
     settings: &Settings,
     opts: StartOptions,
 ) -> Result<Recording, String> {
-    fs::create_dir_all(&opts.dir).map_err(|e| format!("无法创建录像目录：{e}"))?;
+    fs::create_dir_all(&opts.dir).map_err(|e| {
+        crate::i18n::tr(format!("无法创建录像目录：{e}"), format!("Couldn't create the recording folder: {e}"))
+    })?;
     let info = ffmpeg::info(ffmpeg_path);
     if !info.has_ddagrab {
-        return Err(
-            "当前 FFmpeg 不支持 ddagrab（显卡抓屏），请换用 gyan.dev 的 git-full 版本".into(),
-        );
+        return Err(crate::i18n::tr(
+            "当前 FFmpeg 不支持 ddagrab（显卡抓屏），请换用 gyan.dev 的 git-full 版本",
+            "This FFmpeg doesn't support ddagrab (GPU screen capture); use the git-full build from gyan.dev",
+        ));
     }
     let plan = ffmpeg::capture_plan(&settings.video, opts.gpu_scale, opts.cpu_feed);
     let video = ffmpeg::effective_video(&settings.video);
@@ -647,7 +650,9 @@ fn launch(
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = cmd.spawn().map_err(|e| format!("无法启动 ffmpeg：{e}"))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| crate::i18n::tr(format!("无法启动 ffmpeg：{e}"), format!("Couldn't start ffmpeg: {e}")))?;
 
     let stats = Arc::new(Mutex::new(LiveStats::default()));
     let log = Arc::new(Mutex::new(VecDeque::with_capacity(80)));

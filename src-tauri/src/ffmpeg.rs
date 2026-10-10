@@ -115,7 +115,7 @@ pub fn run(ffmpeg: &Path, args: &[String], priority: u32) -> Result<Output, Stri
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .map_err(|e| format!("无法启动 ffmpeg: {e}"))
+        .map_err(|e| crate::i18n::tr(format!("无法启动 ffmpeg: {e}"), format!("Couldn't start ffmpeg: {e}")))
 }
 
 pub fn run_ok(ffmpeg: &Path, args: &[String], priority: u32) -> Result<(), String> {
@@ -193,6 +193,15 @@ pub const ENCODERS: [(&str, &str, &str); 7] = [
     ("av1_amf", "AV1 (AMD AMF)", "amd"),
     (SOFTWARE_ENCODER, "H.264（CPU 软件编码）", "cpu"),
 ];
+
+/// An encoder's label as shown: the software one is worded per language.
+fn encoder_label(id: &str, label: &str) -> String {
+    if id == SOFTWARE_ENCODER {
+        crate::i18n::tr(label, "H.264 (CPU software)")
+    } else {
+        s(label)
+    }
+}
 
 /// Pixel format an encoder wants when frames come from the CPU.
 fn cpu_pix_fmt(encoder: &str) -> &'static str {
@@ -272,7 +281,7 @@ pub fn probe_encoders(ffmpeg: &Path, monitor: Option<u32>, gpu_scale: bool) -> V
             };
             EncoderInfo {
                 id: s(id),
-                label: s(label),
+                label: encoder_label(id, label),
                 vendor: s(vendor),
                 available,
                 cpu_feed,
@@ -338,7 +347,7 @@ pub fn fallback_encoder(
             .iter()
             .map(|(id, label, vendor)| EncoderInfo {
                 id: s(id),
-                label: s(label),
+                label: encoder_label(id, label),
                 vendor: s(vendor),
                 available: true,
                 cpu_feed: *id == SOFTWARE_ENCODER,
@@ -712,7 +721,7 @@ pub fn gpu_name() -> String {
                 return if drv.is_empty() {
                     name
                 } else {
-                    format!("{name}（驱动 {drv}）")
+                    crate::i18n::tr(format!("{name}（驱动 {drv}）"), format!("{name} (driver {drv})"))
                 };
             }
         }
@@ -730,5 +739,5 @@ pub fn gpu_name() -> String {
             return t;
         }
     }
-    "未知显卡".into()
+    crate::i18n::tr("未知显卡", "Unknown GPU")
 }

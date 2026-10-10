@@ -1,4 +1,5 @@
 import type { EventKind, GameId } from "./api";
+import { t } from "./i18n";
 
 export interface RuleKind {
   kind: EventKind;
@@ -22,37 +23,46 @@ export interface GameDef {
   win: string;
 }
 
-/** Every supported game. Pages, switches and rule lists are built from this. */
+/**
+ * Every supported game. Pages, switches and rule lists are built from this.
+ * Text fields are getters so they follow the current UI language.
+ */
 export const GAMES: Record<GameId, GameDef> = {
   pubg: {
     id: "pubg",
     name: "PUBG",
     short: "PUBG",
     logo: "/games/pubg.png",
-    win: "吃鸡",
+    get win() {
+      return t("吃鸡", "Chicken Dinner");
+    },
     legend: ["kill", "knock", "win", "manual", "death"],
     rules: [
-      { kind: "kill", note: "你拿到的击杀" },
-      { kind: "knock", note: "你打倒的人" },
-      { kind: "win", label: "吃鸡", note: "大吉大利，今晚吃鸡" },
-      { kind: "death", note: "你被淘汰的那一下" },
-      { kind: "knocked", note: "你被打倒" },
-      { kind: "manual", note: "按快捷键手动标记" },
+      { kind: "kill", get note() { return t("你拿到的击杀", "Your kills"); } },
+      { kind: "knock", get note() { return t("你打倒的人", "Players you knock"); } },
+      { kind: "win", get label() { return t("吃鸡", "Chicken Dinner"); }, get note() { return t("大吉大利，今晚吃鸡", "Winner winner, chicken dinner"); } },
+      { kind: "death", get note() { return t("你被淘汰的那一下", "The moment you're eliminated"); } },
+      { kind: "knocked", get note() { return t("你被打倒", "When you get knocked"); } },
+      { kind: "manual", get note() { return t("按快捷键手动标记", "Marked with the hotkey"); } },
     ],
   },
   lol: {
     id: "lol",
-    name: "英雄联盟",
+    get name() {
+      return t("英雄联盟", "League of Legends");
+    },
     short: "LoL",
-    win: "胜利",
+    get win() {
+      return t("胜利", "Victory");
+    },
     legend: ["kill", "assist", "objective", "win", "manual", "death"],
     rules: [
-      { kind: "kill", note: "你拿到的击杀，双杀到五杀会合成一段" },
-      { kind: "objective", note: "你拿下或参与的小龙、先锋、大龙，你推掉的塔和水晶" },
-      { kind: "assist", note: "你参与的击杀" },
-      { kind: "win", label: "胜利", note: "推掉对面水晶" },
-      { kind: "death", note: "你被击杀的那一下" },
-      { kind: "manual", note: "按快捷键手动标记" },
+      { kind: "kill", get note() { return t("你拿到的击杀，双杀到五杀会合成一段", "Your kills; double to penta kills become one clip"); } },
+      { kind: "objective", get note() { return t("你拿下或参与的小龙、先锋、大龙，你推掉的塔和水晶", "Drakes, Herald and Baron you take or help with; turrets and inhibitors you destroy"); } },
+      { kind: "assist", get note() { return t("你参与的击杀", "Kills you help with"); } },
+      { kind: "win", get label() { return t("胜利", "Victory"); }, get note() { return t("推掉对面水晶", "Destroy the enemy Nexus"); } },
+      { kind: "death", get note() { return t("你被击杀的那一下", "The moment you die"); } },
+      { kind: "manual", get note() { return t("按快捷键手动标记", "Marked with the hotkey"); } },
     ],
   },
 };

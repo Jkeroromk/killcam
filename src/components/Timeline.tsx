@@ -3,6 +3,7 @@ import { Minus, Plus, Scan } from "lucide-react";
 import type { EventKind } from "../lib/api";
 import { KIND_LABEL, clock } from "../lib/format";
 import { KindIcon } from "./ui";
+import { isEn, label, plural, t } from "../lib/i18n";
 
 type Ev = { id?: string; t: number; kind: EventKind };
 type Hl = { id: string; start: number; end: number };
@@ -12,6 +13,16 @@ const RANK: Record<EventKind, number> = { win: 6, kill: 5, objective: 4, knock: 
 /** px a pin needs before the next one gets merged into it */
 const PIN = 26;
 const RULER_STEPS = [5, 10, 15, 30, 60, 120, 300, 600];
+/** English plurals for the group summary ("3 Kills") */
+const KIND_PLURAL_EN: Partial<Record<EventKind, string>> = {
+  kill: "Kills",
+  knock: "Knocks",
+  death: "Deaths",
+  knocked: "Times knocked",
+  manual: "Markers",
+  assist: "Assists",
+  objective: "Objectives",
+};
 
 interface Cluster {
   x0: number;
@@ -27,7 +38,11 @@ function summary(items: Ev[]): string {
   for (const e of items) n.set(e.kind, (n.get(e.kind) ?? 0) + 1);
   return [...n.entries()]
     .sort((a, b) => RANK[b[0]] - RANK[a[0]])
-    .map(([k, c]) => `${c} ${KIND_LABEL[k]}`)
+    .map(([k, c]) => {
+      if (!isEn()) return `${c} ${KIND_LABEL[k]}`;
+      const one = label(KIND_LABEL[k]);
+      return `${c} ${plural(c, one, KIND_PLURAL_EN[k] ?? one)}`;
+    })
     .join(" · ");
 }
 
@@ -279,7 +294,7 @@ export function Timeline(props: {
               <span
                 className={"tl-handle is-a" + (drag?.edge === "a" ? " is-drag" : "")}
                 style={{ left: x(ts) }}
-                title="拖动调整开头"
+                title={t("拖动调整开头", "Drag to adjust the start")}
                 onMouseDown={(e) => startTrim("a", e)}
               >
                 {drag?.edge === "a" && <b className="tl-handle-time">{clock(ts)}</b>}
@@ -287,7 +302,7 @@ export function Timeline(props: {
               <span
                 className={"tl-handle is-b" + (drag?.edge === "b" ? " is-drag" : "")}
                 style={{ left: x(te) }}
-                title="拖动调整结尾"
+                title={t("拖动调整结尾", "Drag to adjust the end")}
                 onMouseDown={(e) => startTrim("b", e)}
               >
                 {drag?.edge === "b" && <b className="tl-handle-time">{clock(te)}</b>}
@@ -303,7 +318,7 @@ export function Timeline(props: {
               type="button"
               className={`tl-pin k-${c.top.kind}` + (c.items.length > 1 ? " is-group" : "")}
               style={{ left: (c.x0 + c.x1) / 2 }}
-              title={`${clock(c.t0)}  ${summary(c.items)}` + (c.items.length > 1 ? "\n点击放大" : "")}
+              title={`${clock(c.t0)}  ${summary(c.items)}` + (c.items.length > 1 ? t("\n点击放大", "\nClick to zoom in") : "")}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() => openCluster(c)}
             >
@@ -319,14 +334,14 @@ export function Timeline(props: {
         {props.footer}
         <span className="grow" />
         <div className="tl-zoom">
-          <button type="button" className="iconbtn sm" title="缩小" onClick={() => zoomButton(1 / 1.6)} disabled={z <= 1}>
+          <button type="button" className="iconbtn sm" title={t("缩小", "Zoom out")} onClick={() => zoomButton(1 / 1.6)} disabled={z <= 1}>
             <Minus size={15} />
           </button>
           <span className="mono tl-z">{z < 10 ? z.toFixed(1) : Math.round(z)}×</span>
-          <button type="button" className="iconbtn sm" title="放大（也可以在时间轴上滚动滚轮）" onClick={() => zoomButton(1.6)} disabled={z >= maxZ}>
+          <button type="button" className="iconbtn sm" title={t("放大（也可以在时间轴上滚动滚轮）", "Zoom in (or scroll on the timeline)")} onClick={() => zoomButton(1.6)} disabled={z >= maxZ}>
             <Plus size={15} />
           </button>
-          <button type="button" className="iconbtn sm" title="显示整局" onClick={() => zoomAt(1, 0, 0)} disabled={z <= 1}>
+          <button type="button" className="iconbtn sm" title={t("显示整局", "Show whole match")} onClick={() => zoomAt(1, 0, 0)} disabled={z <= 1}>
             <Scan size={15} />
           </button>
         </div>

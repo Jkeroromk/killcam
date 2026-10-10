@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, fileUrl, on, type GameId } from "../lib/api";
 import { GAME_IDS, GAMES } from "../lib/games";
+import { label } from "../lib/i18n";
 
 // icons come from the games installed on this PC; read them once per run
 let iconCache: Partial<Record<GameId, string>> | null = null;
@@ -81,7 +82,7 @@ export function GameSwitch<T extends string>(props: {
           onClick={() => props.onChange(g)}
         >
           <GameLogo game={g} />
-          {GAMES[g].name}
+          {label(GAMES[g].name)}
         </button>
       ))}
     </div>

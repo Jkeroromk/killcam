@@ -3,6 +3,7 @@ import { ArrowRight, ArrowUpCircle, RefreshCw, X } from "lucide-react";
 import { api, errText, on, type Status, type UpdateInfo } from "../lib/api";
 import { bytes, shortVersion } from "../lib/format";
 import { Button, Spinner } from "./ui";
+import { t } from "../lib/i18n";
 
 const DISMISSED = "kc.updateLater";
 
@@ -63,21 +64,21 @@ export function UpdateCard(props: { status: Status | null }) {
         <button type="button" className="update-ready" onClick={() => setOpen(true)}>
           <ArrowUpCircle size={16} />
           <span className="update-ready-text">
-            <b>有新版本</b>
-            <span>v{shortVersion(u.version)} · 点这里更新</span>
+            <b>{t("有新版本", "Update available")}</b>
+            <span>v{shortVersion(u.version)} · {t("点这里更新", "click to update")}</span>
           </span>
         </button>
       ) : (
-        <button type="button" className="update-check" onClick={run} disabled={check === "checking"} title={err ?? "检查有没有新版本"}>
+        <button type="button" className="update-check" onClick={run} disabled={check === "checking"} title={err ?? t("检查有没有新版本", "Check for a new version")}>
           {check === "checking" ? <Spinner /> : <RefreshCw size={13} />}
           <span>
             {check === "checking"
-              ? "正在检查…"
+              ? t("正在检查…", "Checking…")
               : check === "latest"
-                ? "已经是最新版本"
+                ? t("已经是最新版本", "You're up to date")
                 : check === "error"
-                  ? "检查失败，点一下重试"
-                  : "检查更新"}
+                  ? t("检查失败，点一下重试", "Check failed, click to retry")
+                  : t("检查更新", "Check for updates")}
           </span>
           <span className="update-ver">v{shortVersion(props.status?.version)}</span>
         </button>
@@ -129,10 +130,10 @@ function UpdateDialog(props: { update: UpdateInfo; current: string; recording: b
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && props.onClose()}>
       <div className="modal update-modal" role="dialog" aria-modal="true" aria-labelledby="update-title">
         <header>
-          <h2 id="update-title">KillCam 有新版本了</h2>
+          <h2 id="update-title">{t("KillCam 有新版本了", "A new version of KillCam is out")}</h2>
           <span className="grow" />
           {!busy && (
-            <button type="button" className="icon-btn" onClick={props.onClose} aria-label="关闭">
+            <button type="button" className="icon-btn" onClick={props.onClose} aria-label={t("关闭", "Close")}>
               <X size={16} />
             </button>
           )}
@@ -146,7 +147,7 @@ function UpdateDialog(props: { update: UpdateInfo; current: string; recording: b
 
         {u.notes?.trim() ? (
           <section className="update-notes-box">
-            <h3>更新了什么</h3>
+            <h3>{t("更新了什么", "What's new")}</h3>
             <Notes text={u.notes} />
           </section>
         ) : null}
@@ -157,14 +158,24 @@ function UpdateDialog(props: { update: UpdateInfo; current: string; recording: b
               <i style={{ width: `${pct ?? 4}%` }} />
             </div>
             <div className="update-progress-text">
-              <span>{got ? "正在下载新版本" : "准备下载…"}</span>
+              <span>{got ? t("正在下载新版本", "Downloading the new version") : t("准备下载…", "Preparing download…")}</span>
               <span className="mono">{got ? (pct != null ? `${pct}%` : bytes(got[0])) : ""}</span>
             </div>
-            <p className="muted small">下载完 KillCam 会自己关掉、装好新版本再打开，录像和设置都会保留。</p>
+            <p className="muted small">
+              {t(
+                "下载完 KillCam 会自己关掉、装好新版本再打开，录像和设置都会保留。",
+                "Once downloaded, KillCam closes, installs the new version and reopens. Your recordings and settings are kept.",
+              )}
+            </p>
           </div>
         ) : (
           <p className="muted small">
-            {props.recording ? "正在录制，这局录完再更新。" : "更新时 KillCam 会自己关掉、装好再打开，录像和设置都会保留。"}
+            {props.recording
+              ? t("正在录制，这局录完再更新。", "Recording now. Update after this match.")
+              : t(
+                  "更新时 KillCam 会自己关掉、装好再打开，录像和设置都会保留。",
+                  "KillCam closes, installs the update and reopens. Your recordings and settings are kept.",
+                )}
           </p>
         )}
 
@@ -173,10 +184,10 @@ function UpdateDialog(props: { update: UpdateInfo; current: string; recording: b
         {!busy && (
           <footer>
             <Button kind="ghost" onClick={props.onClose}>
-              稍后
+              {t("稍后", "Later")}
             </Button>
             <Button kind="primary" onClick={go} disabled={props.recording}>
-              {props.recording ? "录完再更新" : "更新并重启"}
+              {props.recording ? t("录完再更新", "Update after recording") : t("更新并重启", "Update and restart")}
             </Button>
           </footer>
         )}

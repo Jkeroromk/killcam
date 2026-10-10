@@ -1,3 +1,4 @@
+import type { LangSetting } from "./i18n";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
@@ -40,6 +41,8 @@ export interface Settings {
   launchAtLogin: boolean;
   /** short sound when F9 marks a highlight */
   markerSound: boolean;
+  /** "auto" follows the Windows display language */
+  language: LangSetting;
 }
 
 export interface GameSettings {

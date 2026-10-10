@@ -3,6 +3,7 @@
 use crate::ffmpeg::{self, IDLE_PRIORITY_CLASS};
 use crate::gamelog;
 use crate::game::Game;
+use crate::i18n::tr;
 use crate::lol;
 use crate::pubg;
 use crate::recorder::{self, now_ms, Segment, SessionMeta};
@@ -635,10 +636,8 @@ fn remux(
     if o.status.success() {
         Ok(())
     } else {
-        Err(format!(
-            "合并录像失败：{}",
-            ffmpeg::tail(&String::from_utf8_lossy(&o.stderr), 6)
-        ))
+        let tail = ffmpeg::tail(&String::from_utf8_lossy(&o.stderr), 6);
+        Err(tr(format!("合并录像失败：{tail}"), format!("Couldn't merge the recording: {tail}")))
     }
 }
 
@@ -723,7 +722,7 @@ fn cut_highlight(
         }
         acc += len;
     }
-    let off = offset.ok_or("这段没有录像")?;
+    let off = offset.ok_or_else(|| tr("这段没有录像", "No recording for this part"))?;
     let list = write_concat_list(session_dir, &pick, &format!("concat_{tag}.txt"))?;
     let tmp = out.with_extension("part.mp4");
     let res = remux(ffmpeg_path, session_dir, &list, &tmp, meta);
@@ -1272,7 +1271,7 @@ pub fn process_sessions(
                 result.retry_soon = true;
                 continue;
             }
-            progress("正在剪辑英雄联盟对局");
+            progress(&tr("正在剪辑英雄联盟对局", "Cutting the LoL match"));
             match build_lol(lib, ffmpeg_path, settings, &dir, &mut meta, &segs, recorded_until) {
                 Ok(rec) => {
                     if let Some(rec) = rec {
@@ -1286,9 +1285,10 @@ pub fn process_sessions(
                     if meta.finalize_failures < 3 {
                         continue;
                     }
-                    result.messages.push(format!(
-                        "这次录制处理失败了 3 次，原始文件保留在 {}",
-                        dir.to_string_lossy()
+                    let kept = dir.to_string_lossy();
+                    result.messages.push(tr(
+                        format!("这次录制处理失败了 3 次，原始文件保留在 {kept}"),
+                        format!("Processing this recording failed 3 times; the raw files are kept in {kept}"),
                     ));
                     meta.finalized = true;
                     meta.store(&dir, is_active);
@@ -1300,7 +1300,10 @@ pub fn process_sessions(
             if fs::remove_dir_all(&dir).is_err() {
                 result
                     .messages
-                    .push("临时录像文件夹暂时删不掉（可能在资源管理器里开着），稍后会再试".into());
+                    .push(tr(
+                        "临时录像文件夹暂时删不掉（可能在资源管理器里开着），稍后会再试",
+                        "Couldn't delete the temporary recording folder yet (maybe open in Explorer); will try again later",
+                    ));
             }
             continue;
         }
@@ -1352,7 +1355,10 @@ pub fn process_sessions(
                     if info.created_at_ms > recorded_until {
                         continue;
                     }
-                    progress(&format!("正在分析对局 {}", pubg::map_label(&info.map_name)));
+                    progress(&tr(
+                        format!("正在分析对局 {}", pubg::map_label(&info.map_name)),
+                        "Analyzing the match",
+                    ));
                     let Some(url) = info.telemetry_url.clone() else {
                         continue;
                     };
@@ -1451,7 +1457,7 @@ pub fn process_sessions(
                         headshots: p.headshots,
                         longest_kill: p.longest_kill,
                     });
-                    progress("正在生成录像和高光");
+                    progress(&tr("正在生成录像和高光", "Building the recording and highlights"));
                     // the quick record for this game (if any) becomes the real one:
                     // the one of the same game, else one whose moments lie in this
                     // match (so a game never ends up in the library twice)
@@ -1665,7 +1671,7 @@ pub fn process_sessions(
                     continue;
                 }
                 let pending = piece.api && api_cfg;
-                progress("正在生成这局的高光");
+                progress(&tr("正在生成这局的高光", "Building this game's highlights"));
                 let title_ms = if piece.from == i64::MIN {
                     w0.max(meta.start_ms)
                 } else {
@@ -1781,7 +1787,7 @@ pub fn process_sessions(
                 ps.save(&dir);
                 continue;
             }
-            progress("正在保存这次录制的片段");
+            progress(&tr("正在保存这次录制的片段", "Saving clips from this recording"));
             let title_ms = if piece.from == i64::MIN {
                 w0.max(meta.start_ms)
             } else {
@@ -1844,9 +1850,10 @@ pub fn process_sessions(
             if meta.finalize_failures < 3 {
                 continue;
             }
-            result.messages.push(format!(
-                "这次录制处理失败了 3 次，原始文件保留在 {}",
-                dir.to_string_lossy()
+            let kept = dir.to_string_lossy();
+            result.messages.push(tr(
+                format!("这次录制处理失败了 3 次，原始文件保留在 {kept}"),
+                format!("Processing this recording failed 3 times; the raw files are kept in {kept}"),
             ));
             meta.finalized = true;
             meta.store(&dir, is_active);
@@ -1858,7 +1865,10 @@ pub fn process_sessions(
             // usually Explorer holding a thumbnail open; try again later
             result
                 .messages
-                .push("临时录像文件夹暂时删不掉（可能在资源管理器里开着），稍后会再试".into());
+                .push(tr(
+                        "临时录像文件夹暂时删不掉（可能在资源管理器里开着），稍后会再试",
+                        "Couldn't delete the temporary recording folder yet (maybe open in Explorer); will try again later",
+                    ));
         }
     }
     if let Some(e) = api_error {
@@ -1868,7 +1878,14 @@ pub fn process_sessions(
     if removed > 0 {
         result
             .messages
-            .push(format!("存储空间超出上限，已清理 {removed} 场旧录像"));
+            .push(tr(
+                format!("存储空间超出上限，已清理 {removed} 场旧录像"),
+                if removed == 1 {
+                    format!("Storage limit exceeded: removed {removed} old recording")
+                } else {
+                    format!("Storage limit exceeded: removed {removed} old recordings")
+                },
+            ));
     }
     result
 }
@@ -1908,8 +1925,13 @@ fn budget_for(size_mb: u32, dur: f64, margin: f64) -> Result<Budget, String> {
     let video = total - audio as f64;
     if video < 250.0 {
         let max_s = (size_mb as f64 * 8000.0 * 0.9 / 650.0).floor();
-        return Err(format!(
-            "这段有 {dur:.0} 秒，压到 {size_mb} MB 以内画面会糊掉。建议剪到 {max_s:.0} 秒以内，或者选大一点的上限"
+        return Err(tr(
+            format!(
+                "这段有 {dur:.0} 秒，压到 {size_mb} MB 以内画面会糊掉。建议剪到 {max_s:.0} 秒以内，或者选大一点的上限"
+            ),
+            format!(
+                "This clip is {dur:.0} s; squeezing it under {size_mb} MB would look blurry. Trim it to {max_s:.0} s or less, or pick a bigger limit"
+            ),
         ));
     }
     let max_height = if video >= 3500.0 {
@@ -2088,7 +2110,7 @@ pub fn trim_highlight(
         .highlights
         .iter_mut()
         .find(|h| h.id == hid)
-        .ok_or("找不到这段高光")?;
+        .ok_or_else(|| tr("找不到这段高光", "Highlight not found"))?;
     let (lo, hi) = highlight_bounds(&snapshot, h);
     match range {
         None => {
@@ -2105,7 +2127,7 @@ pub fn trim_highlight(
             let a = a.clamp(lo, hi);
             let b = b.clamp(lo, hi);
             if b - a < 1.0 {
-                return Err("高光至少要 1 秒".into());
+                return Err(tr("高光至少要 1 秒", "A highlight must be at least 1 s long"));
             }
             h.start = a;
             h.end = b;
@@ -2143,7 +2165,13 @@ fn source_for(rec: &MatchRecord, start: f64, end: f64) -> Option<(PathBuf, f64, 
 
 pub fn export_name(rec: &MatchRecord, title: &str, o: &ExportOptions) -> String {
     let mut tag = match o.aspect.as_str() {
-        "9:16" => "_竖屏",
+        "9:16" => {
+            if crate::i18n::en() {
+                "_vertical"
+            } else {
+                "_竖屏"
+            }
+        }
         "16:9" => "_16x9",
         _ => "",
     }
@@ -2171,7 +2199,8 @@ pub fn export_range(
     title: &str,
     o: &ExportOptions,
 ) -> Result<PathBuf, String> {
-    let (src, a, b) = source_for(rec, start, end).ok_or("这段没有可用的录像")?;
+    let (src, a, b) = source_for(rec, start, end)
+        .ok_or_else(|| tr("这段没有可用的录像", "No usable recording for this part"))?;
     let out = lib.exports_dir().join(export_name(rec, title, o));
     if o.size_mb == 0 {
         encode_range(ffmpeg_path, encoder, rec, &src, a, b, o, &out, None)?;
@@ -2186,9 +2215,9 @@ pub fn export_range(
             return Ok(out);
         }
     }
-    Err(format!(
-        "压不到 {} MB 以内，建议剪短一点再试",
-        o.size_mb
+    Err(tr(
+        format!("压不到 {} MB 以内，建议剪短一点再试", o.size_mb),
+        format!("Couldn't get it under {} MB; trim it shorter and try again", o.size_mb),
     ))
 }
 
@@ -2230,14 +2259,14 @@ pub fn export_montage(
     }
     if parts.is_empty() {
         let _ = fs::remove_dir_all(&tmp);
-        return Err("没有选中任何高光".into());
+        return Err(tr("没有选中任何高光", "No highlights selected"));
     }
     let mut list = String::from("ffconcat version 1.0\n");
     for p in &parts {
         list.push_str(&format!("file '{}'\n", p));
     }
     fs::write(tmp.join("list.txt"), list).map_err(|e| e.to_string())?;
-    let out = lib.exports_dir().join(export_name(rec, "合集", o));
+    let out = lib.exports_dir().join(export_name(rec, &tr("合集", "Montage"), o));
     let args: Vec<String> = vec![
         "-hide_banner".into(),
         "-loglevel".into(),
@@ -2279,7 +2308,7 @@ pub fn remux_all(
 ) -> Result<(), String> {
     let segs = recorder::segments(ffmpeg_path, session_dir, true);
     if segs.is_empty() {
-        return Err("没有录到任何画面".into());
+        return Err(tr("没有录到任何画面", "Nothing was recorded"));
     }
     let refs: Vec<&Segment> = segs.iter().collect();
     let list = write_concat_list(session_dir, &refs, "concat_all.txt")?;

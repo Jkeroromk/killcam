@@ -3,6 +3,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
 import Mini from "./pages/Mini";
 import "./styles.css";
+import { setLang, systemLang } from "./lib/i18n";
+
+// until the settings are read: the Windows display language
+setLang(systemLang());
 
 let isMini = false;
 try {

@@ -1,5 +1,6 @@
 //! PUBG developer API + telemetry parsing.
 
+use crate::i18n::tr;
 use serde_json::Value;
 use std::time::Duration;
 
@@ -99,14 +100,22 @@ impl Api {
             .header("Authorization", format!("Bearer {}", self.key))
             .header("Accept", "application/vnd.api+json")
             .send()
-            .map_err(|e| format!("网络错误：{e}"))?;
+            .map_err(|e| tr(format!("网络错误：{e}"), format!("Network error: {e}")))?;
         let status = resp.status().as_u16();
         match status {
-            200 => resp.json::<Value>().map_err(|e| format!("解析失败：{e}")),
-            401 => Err("API Key 无效（401）".into()),
-            404 => Err("找不到这个玩家（404），检查游戏 ID 大小写和平台".into()),
-            429 => Err("请求太频繁（429），稍后自动重试".into()),
-            s => Err(format!("PUBG API 返回 {s}")),
+            200 => resp
+                .json::<Value>()
+                .map_err(|e| tr(format!("解析失败：{e}"), format!("Couldn't read the response: {e}"))),
+            401 => Err(tr("API Key 无效（401）", "Invalid API key (401)")),
+            404 => Err(tr(
+                "找不到这个玩家（404），检查游戏 ID 大小写和平台",
+                "Player not found (404): check the in-game name's capitalization and the platform",
+            )),
+            429 => Err(tr(
+                "请求太频繁（429），稍后自动重试",
+                "Too many requests (429); will retry automatically",
+            )),
+            s => Err(tr(format!("PUBG API 返回 {s}"), format!("PUBG API returned {s}"))),
         }
     }
 
@@ -118,8 +127,8 @@ impl Api {
             .get("data")
             .and_then(|d| d.as_array())
             .and_then(|a| a.first())
-            .ok_or("找不到这个玩家")?;
-        let id = sv(p, "id").ok_or("返回数据缺少玩家 ID")?;
+            .ok_or_else(|| tr("找不到这个玩家", "Player not found"))?;
+        let id = sv(p, "id").ok_or_else(|| tr("返回数据缺少玩家 ID", "The response has no player ID"))?;
         let matches = p
             .pointer("/relationships/matches/data")
             .and_then(|m| m.as_array())
@@ -184,16 +193,17 @@ impl Api {
             .get(url)
             .header("Accept-Encoding", "gzip")
             .send()
-            .map_err(|e| format!("下载 telemetry 失败：{e}"))?;
+            .map_err(|e| tr(format!("下载 telemetry 失败：{e}"), format!("Couldn't download telemetry: {e}")))?;
         if !resp.status().is_success() {
-            return Err(format!("telemetry 返回 {}", resp.status()));
+            let status = resp.status();
+            return Err(tr(format!("telemetry 返回 {status}"), format!("Telemetry returned {status}")));
         }
         let v: Value = resp
             .json()
-            .map_err(|e| format!("解析 telemetry 失败：{e}"))?;
+            .map_err(|e| tr(format!("解析 telemetry 失败：{e}"), format!("Couldn't read telemetry: {e}")))?;
         match v {
             Value::Array(a) => Ok(a),
-            _ => Err("telemetry 格式不对".into()),
+            _ => Err(tr("telemetry 格式不对", "Unexpected telemetry format")),
         }
     }
 }

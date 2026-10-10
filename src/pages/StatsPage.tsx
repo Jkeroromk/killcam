@@ -4,11 +4,23 @@ import { GameSwitch } from "../components/GameSwitch";
 import { isLol, kda, when } from "../lib/format";
 import { Segmented, Spinner } from "../components/ui";
 import { ChampIcon } from "./Library";
+import { label, plural, t } from "../lib/i18n";
 
 type Range = 20 | 50 | 0;
 type Metric = "kills" | "damage" | "place";
 
-const METRIC_LABEL: Record<Metric, string> = { kills: "击杀", damage: "伤害", place: "排名" };
+const metricLabel = (m: Metric): string =>
+  m === "kills" ? t("击杀", "Kills") : m === "damage" ? t("伤害", "Damage") : t("排名", "Place");
+
+/** "3 击杀 · 1 击倒 · 420 伤害" */
+function killsLine(kills: number, damage: number, knocks?: number): string {
+  const dmg = Math.round(damage);
+  if (knocks == null) return t(`${kills} 击杀 · ${dmg} 伤害`, `${kills} ${plural(kills, "kill", "kills")} · ${dmg} damage`);
+  return t(
+    `${kills} 击杀 · ${knocks} 击倒 · ${dmg} 伤害`,
+    `${kills} ${plural(kills, "kill", "kills")} · ${knocks} ${plural(knocks, "knock", "knocks")} · ${dmg} damage`,
+  );
+}
 
 function pct(a: number, b: number): string {
   return b > 0 ? `${Math.round((a / b) * 100)}%` : "–";
@@ -76,7 +88,7 @@ function MatchColumns(props: { matches: MatchRecord[]; metric: Metric; onOpen: (
                 onMouseEnter={() => setHover(i)}
                 onFocus={() => setHover(i)}
                 onClick={() => props.onOpen(m.id)}
-                aria-label={`${m.mapLabel} ${when(m.createdAtMs)} ${METRIC_LABEL[props.metric]} ${shown(m)}`}
+                aria-label={`${label(m.mapLabel)} ${when(m.createdAtMs)} ${metricLabel(props.metric)} ${shown(m)}`}
               >
                 <i style={{ height: `${Math.max(v > 0 ? 2 : 0, (v / max) * 100)}%` }} />
               </button>
@@ -86,18 +98,16 @@ function MatchColumns(props: { matches: MatchRecord[]; metric: Metric; onOpen: (
         {h && hover != null && (
           <div className="st-tip" style={tipStyle((hover + 0.5) / props.matches.length)}>
             <b>
-              {h.mapLabel} · #{h.stats!.place}
+              {label(h.mapLabel)} · #{h.stats!.place}
             </b>
             <span>{when(h.createdAtMs)}</span>
-            <span>
-              {h.stats!.kills} 击杀 · {h.stats!.knocks} 击倒 · {Math.round(h.stats!.damage)} 伤害
-            </span>
+            <span>{killsLine(h.stats!.kills, h.stats!.damage, h.stats!.knocks)}</span>
           </div>
         )}
       </div>
       <div className="st-axis">
         <span>{props.matches.length ? when(props.matches[0].createdAtMs) : ""}</span>
-        <span>最近</span>
+        <span>{t("最近", "Latest")}</span>
       </div>
     </div>
   );
@@ -108,7 +118,14 @@ function LolStatsView(props: { list: MatchRecord[]; range: Range; openMatch: (id
   const all = props.list.filter((m) => m.lol);
   const pick = props.range ? all.slice(0, props.range) : all;
   if (pick.length === 0) {
-    return <p className="empty">还没有英雄联盟对局。打开英雄联盟打一局，结束后这里会有胜率、KDA 和常用英雄。</p>;
+    return (
+      <p className="empty">
+        {t(
+          "还没有英雄联盟对局。打开英雄联盟打一局，结束后这里会有胜率、KDA 和常用英雄。",
+          "No League of Legends matches yet. Play one and your win rate, KDA and top champions show up here.",
+        )}
+      </p>
+    );
   }
   const L = pick.map((m) => m.lol!);
   const n = L.length;
@@ -141,28 +158,43 @@ function LolStatsView(props: { list: MatchRecord[]; range: Range; openMatch: (id
   return (
     <>
       <div className="st-tiles">
-        <Tile label="对局" value={String(n)} sub={decided.length ? `${wins} 胜 ${decided.length - wins} 负 · 胜率 ${pct(wins, decided.length)}` : undefined} />
-        <Tile label="KDA" value={kda(k, d, a)} sub={`场均 ${avg(k, n)} / ${avg(d, n)} / ${avg(a, n)}`} />
-        <Tile label="分均补刀" value={avg(cs, mins)} sub={`场均 ${avg(cs, withMins.length, 0)} 补刀`} />
         <Tile
-          label="场均伤害"
-          value={dmg.length ? Math.round(dmg.reduce((x, l) => x + (l.damage ?? 0), 0) / dmg.length).toLocaleString() : "–"}
-          sub="对英雄"
+          label={t("对局", "Matches")}
+          value={String(n)}
+          sub={
+            decided.length
+              ? t(
+                  `${wins} 胜 ${decided.length - wins} 负 · 胜率 ${pct(wins, decided.length)}`,
+                  `${wins}W ${decided.length - wins}L · ${pct(wins, decided.length)} win rate`,
+                )
+              : undefined
+          }
         />
-        <Tile label="多杀" value={String(multis)} sub={pentas ? `其中 ${pentas} 次五杀` : "三杀及以上的对局"} />
+        <Tile label="KDA" value={kda(k, d, a)} sub={t(`场均 ${avg(k, n)} / ${avg(d, n)} / ${avg(a, n)}`, `Avg ${avg(k, n)} / ${avg(d, n)} / ${avg(a, n)}`)} />
+        <Tile label={t("分均补刀", "CS/min")} value={avg(cs, mins)} sub={t(`场均 ${avg(cs, withMins.length, 0)} 补刀`, `${avg(cs, withMins.length, 0)} CS per game`)} />
+        <Tile
+          label={t("场均伤害", "Avg damage")}
+          value={dmg.length ? Math.round(dmg.reduce((x, l) => x + (l.damage ?? 0), 0) / dmg.length).toLocaleString() : "–"}
+          sub={t("对英雄", "To champions")}
+        />
+        <Tile
+          label={t("多杀", "Multikills")}
+          value={String(multis)}
+          sub={pentas ? t(`其中 ${pentas} 次五杀`, `Incl. ${pentas} ${plural(pentas, "pentakill", "pentakills")}`) : t("三杀及以上的对局", "Games with a triple kill or more")}
+        />
       </div>
 
       <div className="st-row">
         <section className="st-card">
           <header>
-            <h2>常用英雄</h2>
+            <h2>{t("常用英雄", "Top champions")}</h2>
           </header>
           <table className="st-table">
             <thead>
               <tr>
-                <th>英雄</th>
-                <th>对局</th>
-                <th>胜率</th>
+                <th>{t("英雄", "Champion")}</th>
+                <th>{t("对局", "Games")}</th>
+                <th>{t("胜率", "Win rate")}</th>
                 <th>KDA</th>
               </tr>
             </thead>
@@ -185,8 +217,8 @@ function LolStatsView(props: { list: MatchRecord[]; range: Range; openMatch: (id
 
         <section className="st-card">
           <header>
-            <h2>最近对局</h2>
-            <span className="muted small">点一下打开</span>
+            <h2>{t("最近对局", "Recent matches")}</h2>
+            <span className="muted small">{t("点一下打开", "Click to open")}</span>
           </header>
           <table className="st-table st-click">
             <tbody>
@@ -199,11 +231,11 @@ function LolStatsView(props: { list: MatchRecord[]; range: Range; openMatch: (id
                         <ChampIcon k={l.championKey} name={l.champion} size={20} /> {l.champion}
                       </span>
                     </td>
-                    <td>{l.win == null ? "–" : l.win ? "胜利" : "失败"}</td>
+                    <td>{l.win == null ? "–" : l.win ? t("胜利", "Victory") : t("失败", "Defeat")}</td>
                     <td className="mono">
                       {l.kills}/{l.deaths}/{l.assists}
                     </td>
-                    <td className="muted">{m.gameMode}</td>
+                    <td className="muted">{label(m.gameMode)}</td>
                     <td className="muted">{when(m.createdAtMs)}</td>
                   </tr>
                 );
@@ -308,16 +340,16 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
   return (
     <div className="page stats">
       <header className="page-head">
-        <h1>数据</h1>
+        <h1>{t("数据", "Stats")}</h1>
         <GameSwitch value={props.game} onChange={props.setGame} />
         <span className="grow" />
         <Segmented
           value={range}
           onChange={setRange}
           options={[
-            { value: 20, label: "最近 20 局" },
-            { value: 50, label: "最近 50 局" },
-            { value: 0, label: `全部 ${shownGame === "lol" ? lolList.filter((m) => m.lol).length : d.total}` },
+            { value: 20, label: t("最近 20 局", "Last 20") },
+            { value: 50, label: t("最近 50 局", "Last 50") },
+            { value: 0, label: `${t("全部", "All")} ${shownGame === "lol" ? lolList.filter((m) => m.lol).length : d.total}` },
           ]}
         />
       </header>
@@ -326,31 +358,58 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
         <LolStatsView list={lolList} range={range} openMatch={props.openMatch} />
       ) : d.n === 0 ? (
         <p className="empty">
-          还没有带官方数据的对局。点左下角绑定 PUBG 账号后，普通和排位对局的击杀、伤害、排名都会汇总到这里。
+          {t(
+            "还没有带官方数据的对局。点左下角绑定 PUBG 账号后，普通和排位对局的击杀、伤害、排名都会汇总到这里。",
+            "No matches with official data yet. Link your PUBG account at the bottom left and kills, damage and place from normal and ranked matches add up here.",
+          )}
         </p>
       ) : (
         <>
           <div className="st-tiles">
-            <Tile label="对局" value={String(d.n)} sub={`${d.wins} 次吃鸡 · 吃鸡率 ${pct(d.wins, d.n)}`} />
-            <Tile label="场均击杀" value={avg(d.kills, d.n)} sub={`共 ${d.kills} 击杀 · ${d.knocks} 击倒`} />
-            <Tile label="K/D" value={d.deaths > 0 ? (d.kills / d.deaths).toFixed(2) : String(d.kills)} sub={`阵亡 ${d.deaths} 次`} />
-            <Tile label="场均伤害" value={avg(d.damage, d.n, 0)} sub={`共 ${Math.round(d.damage).toLocaleString()}`} />
-            <Tile label="前十率" value={pct(d.top10, d.n)} sub={`${d.top10} 局进前十`} />
-            <Tile label="爆头率" value={pct(d.heads, d.kills)} sub={`${d.heads} 次爆头击杀`} />
+            <Tile
+              label={t("对局", "Matches")}
+              value={String(d.n)}
+              sub={t(`${d.wins} 次吃鸡 · 吃鸡率 ${pct(d.wins, d.n)}`, `${d.wins} ${plural(d.wins, "win", "wins")} · ${pct(d.wins, d.n)} win rate`)}
+            />
+            <Tile
+              label={t("场均击杀", "Avg kills")}
+              value={avg(d.kills, d.n)}
+              sub={t(`共 ${d.kills} 击杀 · ${d.knocks} 击倒`, `${d.kills} ${plural(d.kills, "kill", "kills")} · ${d.knocks} ${plural(d.knocks, "knock", "knocks")} total`)}
+            />
+            <Tile
+              label="K/D"
+              value={d.deaths > 0 ? (d.kills / d.deaths).toFixed(2) : String(d.kills)}
+              sub={t(`阵亡 ${d.deaths} 次`, `${d.deaths} ${plural(d.deaths, "death", "deaths")}`)}
+            />
+            <Tile
+              label={t("场均伤害", "Avg damage")}
+              value={avg(d.damage, d.n, 0)}
+              sub={t(`共 ${Math.round(d.damage).toLocaleString()}`, `${Math.round(d.damage).toLocaleString()} total`)}
+            />
+            <Tile label={t("前十率", "Top 10 rate")} value={pct(d.top10, d.n)} sub={t(`${d.top10} 局进前十`, `Top 10 in ${d.top10} ${plural(d.top10, "game", "games")}`)} />
+            <Tile
+              label={t("爆头率", "Headshot rate")}
+              value={pct(d.heads, d.kills)}
+              sub={t(`${d.heads} 次爆头击杀`, `${d.heads} headshot ${plural(d.heads, "kill", "kills")}`)}
+            />
           </div>
 
           <section className="st-card">
             <header>
-              <h2>每局{METRIC_LABEL[metric]}</h2>
-              <span className="muted small">{metric === "place" ? "越高排名越好，白色是吃鸡" : "白色是吃鸡的对局，点一下打开"}</span>
+              <h2>{t(`每局${metricLabel(metric)}`, `${metricLabel(metric)} per match`)}</h2>
+              <span className="muted small">
+                {metric === "place"
+                  ? t("越高排名越好，白色是吃鸡", "Taller is a better place; white is a win")
+                  : t("白色是吃鸡的对局，点一下打开", "White is a win; click to open")}
+              </span>
               <span className="grow" />
               <Segmented
                 value={metric}
                 onChange={setMetric}
                 options={[
-                  { value: "kills", label: "击杀" },
-                  { value: "damage", label: "伤害" },
-                  { value: "place", label: "排名" },
+                  { value: "kills", label: metricLabel("kills") },
+                  { value: "damage", label: metricLabel("damage") },
+                  { value: "place", label: metricLabel("place") },
                 ]}
               />
             </header>
@@ -360,21 +419,26 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
           <div className="st-row">
             <section className="st-card">
               <header>
-                <h2>常用武器</h2>
-                <span className="muted small">按击杀数</span>
+                <h2>{t("常用武器", "Top weapons")}</h2>
+                <span className="muted small">{t("按击杀数", "By kills")}</span>
               </header>
               {d.weapons.length === 0 ? (
-                <p className="muted small">这些对局里没有武器数据。</p>
+                <p className="muted small">{t("这些对局里没有武器数据。", "No weapon data in these matches.")}</p>
               ) : (
                 <ul className="st-bars">
                   {d.weapons.map(([name, w]) => (
                     <li key={name}>
-                      <span className="st-bar-name">{name}</span>
+                      <span className="st-bar-name">{label(name)}</span>
                       <span className="st-bar-track">
                         <i style={{ width: `${(w.kills / maxW) * 100}%` }} />
                       </span>
                       <b>{w.kills}</b>
-                      <span className="st-bar-sub">平均 {Math.round(w.dist / w.kills)} 米{w.heads ? ` · ${w.heads} 爆头` : ""}</span>
+                      <span className="st-bar-sub">
+                        {t(
+                          `平均 ${Math.round(w.dist / w.kills)} 米${w.heads ? ` · ${w.heads} 爆头` : ""}`,
+                          `Avg ${Math.round(w.dist / w.kills)} m${w.heads ? ` · ${w.heads} ${plural(w.heads, "headshot", "headshots")}` : ""}`,
+                        )}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -383,22 +447,22 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
 
             <section className="st-card">
               <header>
-                <h2>地图</h2>
+                <h2>{t("地图", "Maps")}</h2>
               </header>
               <table className="st-table">
                 <thead>
                   <tr>
-                    <th>地图</th>
-                    <th>对局</th>
-                    <th>吃鸡</th>
-                    <th>场均击杀</th>
-                    <th>平均排名</th>
+                    <th>{t("地图", "Map")}</th>
+                    <th>{t("对局", "Games")}</th>
+                    <th>{t("吃鸡", "Wins")}</th>
+                    <th>{t("场均击杀", "Avg kills")}</th>
+                    <th>{t("平均排名", "Avg place")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {d.maps.map(([map, r]) => (
                     <tr key={map}>
-                      <td>{map}</td>
+                      <td>{label(map)}</td>
                       <td>{r.n}</td>
                       <td>{r.wins}</td>
                       <td>{avg(r.kills, r.n)}</td>
@@ -413,29 +477,29 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
           <div className="st-row">
             {d.best && (
               <button type="button" className="st-card st-best" onClick={() => props.openMatch(d.best!.id)}>
-                <span className="muted small">击杀最多的一局</span>
-                <b>
-                  {d.best.stats!.kills} 击杀 · {Math.round(d.best.stats!.damage)} 伤害
-                </b>
+                <span className="muted small">{t("击杀最多的一局", "Most kills in a match")}</span>
+                <b>{killsLine(d.best.stats!.kills, d.best.stats!.damage)}</b>
                 <span className="muted small">
-                  {d.best.mapLabel} · #{d.best.stats!.place} · {when(d.best.createdAtMs)}
+                  {label(d.best.mapLabel)} · #{d.best.stats!.place} · {when(d.best.createdAtMs)}
                 </span>
               </button>
             )}
             {d.longest && d.longest.stats!.longestKill > 0 && (
               <button type="button" className="st-card st-best" onClick={() => props.openMatch(d.longest!.id)}>
-                <span className="muted small">最远击杀</span>
-                <b>{Math.round(d.longest.stats!.longestKill)} 米</b>
+                <span className="muted small">{t("最远击杀", "Longest kill")}</span>
+                <b>{t(`${Math.round(d.longest.stats!.longestKill)} 米`, `${Math.round(d.longest.stats!.longestKill)} m`)}</b>
                 <span className="muted small">
-                  {d.longest.mapLabel} · {when(d.longest.createdAtMs)}
+                  {label(d.longest.mapLabel)} · {when(d.longest.createdAtMs)}
                 </span>
               </button>
             )}
             {d.others > 0 && (
               <div className="st-card st-best">
-                <span className="muted small">街机 / 自定义 / 训练（不计入上面的统计）</span>
-                <b>{d.others} 次</b>
-                <span className="muted small">读屏识别到 {d.otherKills} 次击杀</span>
+                <span className="muted small">{t("街机 / 自定义 / 训练（不计入上面的统计）", "Arcade / custom / training (not counted above)")}</span>
+                <b>{t(`${d.others} 次`, `${d.others} ${plural(d.others, "match", "matches")}`)}</b>
+                <span className="muted small">
+                  {t(`读屏识别到 ${d.otherKills} 次击杀`, `${d.otherKills} ${plural(d.otherKills, "kill", "kills")} from screen reading`)}
+                </span>
               </div>
             )}
           </div>

@@ -11,6 +11,7 @@ import StatsPage from "./pages/StatsPage";
 import { Spinner } from "./components/ui";
 import { UpdateCard } from "./components/UpdateCard";
 import { AccountButton } from "./components/AccountButton";
+import { label, resolveLang, setLang, t } from "./lib/i18n";
 
 type Page = { name: "home" } | { name: "library" } | { name: "match"; id: string } | { name: "stats" } | { name: "settings" };
 
@@ -54,6 +55,10 @@ export default function App() {
     };
   }, []);
 
+  // every text below reads the language when it renders
+  const uiLang = settings ? resolveLang(settings.language) : null;
+  if (uiLang) setLang(uiLang);
+
   if (!settings) {
     return (
       <div className="boot">
@@ -63,14 +68,14 @@ export default function App() {
   }
 
   if (!settings.onboarded) {
-    return <Onboarding initial={settings} onDone={(s) => setSettings(s)} />;
+    return <Onboarding key={uiLang} initial={settings} onDone={(s) => setSettings(s)} onLanguage={(language) => setSettings({ ...settings, language })} />;
   }
 
   const nav = (name: "home" | "library" | "stats" | "settings") => setPage({ name } as Page);
   const current = page.name === "match" ? "library" : page.name;
 
   return (
-    <div className="shell">
+    <div className="shell" key={uiLang}>
       <aside className="rail">
         <div className="brand">
           <span className="brand-mark" aria-hidden />
@@ -78,16 +83,16 @@ export default function App() {
         </div>
         <nav className="rail-nav">
           <button type="button" className={current === "home" ? "is-on" : ""} onClick={() => nav("home")}>
-            <Crosshair size={18} /> 总览
+            <Crosshair size={18} /> {t("总览", "Overview")}
           </button>
           <button type="button" className={current === "library" ? "is-on" : ""} onClick={() => nav("library")}>
-            <Film size={18} /> 录像库
+            <Film size={18} /> {t("录像库", "Library")}
           </button>
           <button type="button" className={current === "stats" ? "is-on" : ""} onClick={() => nav("stats")}>
-            <BarChart3 size={18} /> 数据
+            <BarChart3 size={18} /> {t("数据", "Stats")}
           </button>
           <button type="button" className={current === "settings" ? "is-on" : ""} onClick={() => nav("settings")}>
-            <Settings2 size={18} /> 设置
+            <Settings2 size={18} /> {t("设置", "Settings")}
           </button>
         </nav>
         <div className="rail-foot">
@@ -95,14 +100,16 @@ export default function App() {
           <UpdateCard status={status} />
           {status?.recording ? (
             <div className="rec-pill is-rec">
-              <span className="rec-dot" /> 录制中 {clock(status.elapsedS)}
+              <span className="rec-dot" /> {t("录制中", "Recording")} {clock(status.elapsedS)}
             </div>
           ) : status?.processing ? (
             <div className="rec-pill">
               <Spinner /> {status.processing}
             </div>
           ) : (
-            <div className="rec-pill">{status?.gameRunning ? `${gameName(status.game)} 运行中` : "等待游戏启动"}</div>
+            <div className="rec-pill">{status?.gameRunning
+                ? t(`${gameName(status.game)} 运行中`, `${label(gameName(status.game))} running`)
+                : t("等待游戏启动", "Waiting for a game")}</div>
           )}
         </div>
       </aside>

@@ -200,12 +200,12 @@ impl AudioPipeline {
         let mut w = Vec::new();
         if let Some(g) = &self.game {
             if let Some(e) = g.error() {
-                w.push(format!("游戏声音采集失败：{e}"));
+                w.push(crate::i18n::tr(format!("游戏声音采集失败：{e}"), format!("Game audio capture failed: {e}")));
             }
         }
         if let Some(m) = &self.mic {
             if let Some(e) = m.error() {
-                w.push(format!("麦克风采集失败：{e}"));
+                w.push(crate::i18n::tr(format!("麦克风采集失败：{e}"), format!("Mic capture failed: {e}")));
             }
         }
         w

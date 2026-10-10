@@ -3,6 +3,7 @@ mod detector;
 mod ffmpeg;
 mod game;
 mod gamelog;
+mod i18n;
 mod icons;
 mod library;
 mod lol;
@@ -38,13 +39,25 @@ fn apply_launch_at_login(app: &AppHandle, on: bool) -> Result<(), String> {
         return Ok(());
     }
     let al = app.autolaunch();
-    let now = al.is_enabled().unwrap_or(false);
-    if on && !now {
-        al.enable().map_err(|e| format!("开机自启设置失败：{e}"))?;
-    } else if !on && now {
-        al.disable().map_err(|e| format!("取消开机自启失败：{e}"))?;
+    if on {
+        // always (re)write it: the entry holds the exe path, which may have
+        // changed since it was made (reinstalled elsewhere, an old test build…)
+        al.enable().map_err(|e| {
+            i18n::tr(format!("开机自启设置失败：{e}"), format!("Couldn't turn on launch at startup: {e}"))
+        })?;
+    } else if al.is_enabled().unwrap_or(false) {
+        al.disable().map_err(|e| {
+            i18n::tr(format!("取消开机自启失败：{e}"), format!("Couldn't turn off launch at startup: {e}"))
+        })?;
     }
     Ok(())
+}
+
+/// The tray menu, in the current language.
+fn tray_menu<R: tauri::Runtime, M: tauri::Manager<R>>(app: &M) -> tauri::Result<Menu<R>> {
+    let open = MenuItem::with_id(app, "open", i18n::tr("打开 KillCam", "Open KillCam"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", i18n::tr("退出", "Quit"), true, None::<&str>)?;
+    Menu::with_items(app, &[&open, &quit])
 }
 
 fn lk<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -100,7 +113,12 @@ impl AppState {
         }
         let explicit = lk(&self.settings).ffmpeg_path.clone();
         let found = ffmpeg::locate(explicit.as_deref())
-            .ok_or("找不到 ffmpeg.exe：把它放进 PATH，或在设置里指定位置")?;
+            .ok_or_else(|| {
+                i18n::tr(
+                    "找不到 ffmpeg.exe：把它放进 PATH，或在设置里指定位置",
+                    "ffmpeg.exe not found: add it to PATH, or set its location in Settings",
+                )
+            })?;
         *lk(&self.ffmpeg_path) = Some(found.clone());
         Ok(found)
     }
@@ -108,7 +126,7 @@ impl AppState {
     fn lib(&self) -> Result<Lib, String> {
         let dir = lk(&self.settings).library_dir.clone();
         if dir.trim().is_empty() {
-            return Err("还没有设置录像保存位置".into());
+            return Err(i18n::tr("还没有设置录像保存位置", "No recording folder set yet"));
         }
         Ok(Lib::new(Path::new(&dir)))
     }
@@ -346,7 +364,13 @@ fn refresh_monitor_size(app: &AppHandle, st: &St, ff: &Path) {
     if settings::save(&st.config_dir, &s).is_ok() {
         *lk(&st.settings) = s;
         let _ = app.emit("settings-changed", ());
-        push_notice(st, format!("屏幕分辨率变成了 {nw}×{nh}，KillCam 已经跟着调整好了"));
+        push_notice(
+            st,
+            i18n::tr(
+                format!("屏幕分辨率变成了 {nw}×{nh}，KillCam 已经跟着调整好了"),
+                format!("Screen resolution changed to {nw}×{nh}; KillCam has adjusted to it"),
+            ),
+        );
     }
 }
 
@@ -414,7 +438,13 @@ fn start_lol_watcher(app: &AppHandle, st: &St, dir: PathBuf) {
         },
         // a replay or someone else's game being watched: not the player's match
         move || {
-            push_notice(&st4, "正在看回放或观战，这局英雄联盟不录".into());
+            push_notice(
+                &st4,
+                i18n::tr(
+                    "正在看回放或观战，这局英雄联盟不录",
+                    "Watching a replay or spectating: this LoL game isn't recorded",
+                ),
+            );
             if st4.auto_session.load(Ordering::Relaxed) {
                 stop_session(&app4, &st4);
             }
@@ -457,7 +487,10 @@ fn start_detector(app: &AppHandle, st: &St, settings: &Settings, ff: &Path) {
         },
     ) {
         Ok(d) => *lk(&st.detector) = Some(d),
-        Err(e) => push_notice(st, format!("读屏识别没有启动：{e}")),
+        Err(e) => push_notice(
+            st,
+            i18n::tr(format!("读屏识别没有启动：{e}"), format!("Screen reading didn't start: {e}")),
+        ),
     }
 }
 
@@ -559,8 +592,9 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                                 // encoder might
                                 let enc_failed = quick && ffmpeg::encoder_failed(&tail);
                                 if bad_args {
-                                    give_up = Some(format!(
-                                        "这个 FFmpeg 不认 KillCam 的录制参数（版本不兼容）\n{tail}"
+                                    give_up = Some(i18n::tr(
+                                        format!("这个 FFmpeg 不认 KillCam 的录制参数（版本不兼容）\n{tail}"),
+                                        format!("This FFmpeg doesn't accept KillCam's recording options (incompatible version)\n{tail}"),
                                     ));
                                 } else if enc_failed
                                     && !r.cpu_feed()
@@ -601,8 +635,9 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                                             Err(e) => give_up = Some(e),
                                         },
                                         None => {
-                                            give_up = Some(format!(
-                                                "编码器 {failed} 用不了这块屏幕的画面，请在「设置 → 画质」里换一个编码器，或点「重新检测」\n{tail}"
+                                            give_up = Some(i18n::tr(
+                                                format!("编码器 {failed} 用不了这块屏幕的画面，请在「设置 → 画质」里换一个编码器，或点「重新检测」\n{tail}"),
+                                                format!("Encoder {failed} can't take this screen's frames: pick another encoder in Settings → Quality, or click \"Detect again\"\n{tail}"),
                                             ))
                                         }
                                     }
@@ -637,7 +672,10 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                     }
                     push_notice(
                         &st,
-                        format!("显卡驱动不接受直接送画面，已改成先由 CPU 转换格式再交给 {next} 编码，继续录制"),
+                        i18n::tr(
+                            format!("显卡驱动不接受直接送画面，已改成先由 CPU 转换格式再交给 {next} 编码，继续录制"),
+                            format!("The graphics driver didn't take frames directly; frames are now converted on the CPU before {next} encodes them. Still recording"),
+                        ),
                     );
                 } else {
                     // remember it, so the next recording starts with the working one
@@ -647,11 +685,17 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                         settings::save(&st.config_dir, &s)
                     };
                     if let Err(e) = saved {
-                        push_notice(&st, format!("编码器设置没能保存：{e}"));
+                        push_notice(
+                            &st,
+                            i18n::tr(format!("编码器设置没能保存：{e}"), format!("Couldn't save the encoder setting: {e}")),
+                        );
                     }
                     push_notice(
                         &st,
-                        format!("编码器 {failed} 在这台电脑上用不了这块屏幕的画面，已自动换成 {next} 继续录制"),
+                        i18n::tr(
+                            format!("编码器 {failed} 在这台电脑上用不了这块屏幕的画面，已自动换成 {next} 继续录制"),
+                            format!("Encoder {failed} can't take this screen's frames on this PC; switched to {next}. Still recording"),
+                        ),
                     );
                 }
                 // the settings page shows the new encoder instead of saving the old one back
@@ -661,15 +705,20 @@ fn spawn_status_loop(app: AppHandle, st: St) {
             if resumed {
                 push_notice(
                     &st,
-                    "画面中断过一下（切换全屏、分辨率或 Alt+Tab 时会这样），已经自动接着录了"
-                        .into(),
+                    i18n::tr(
+                        "画面中断过一下（切换全屏、分辨率或 Alt+Tab 时会这样），已经自动接着录了",
+                        "The picture dropped for a moment (happens on fullscreen, resolution or Alt+Tab switches); recording resumed",
+                    ),
                 );
             }
             if let Some(msg) = give_up {
                 *lk(&st.last_error) = Some(if retry_later {
-                    format!("录制意外停止，两分钟内一直没法恢复（3 分钟后会自动再试）：{msg}")
+                    i18n::tr(
+                        format!("录制意外停止，两分钟内一直没法恢复（3 分钟后会自动再试）：{msg}"),
+                        format!("Recording stopped unexpectedly and couldn't recover for two minutes (will retry in 3 minutes): {msg}"),
+                    )
                 } else {
-                    format!("录制没法开始：{msg}")
+                    i18n::tr(format!("录制没法开始：{msg}"), format!("Recording couldn't start: {msg}"))
                 });
                 stop_session(&app, &st);
                 // e.g. the screen was off or locked: the game watcher tries again later
@@ -773,7 +822,12 @@ fn spawn_game_watcher(app: AppHandle, st: St) {
                 if onboarded && mini_on && !st.perf_running.load(Ordering::Relaxed) {
                     match mini::open(&app, &st.config_dir, game_size) {
                         Ok(()) => st.mini_open.store(true, Ordering::Relaxed),
-                        Err(e) => *lk(&st.last_error) = Some(format!("迷你窗口打不开：{e}")),
+                        Err(e) => {
+                            *lk(&st.last_error) = Some(i18n::tr(
+                                format!("迷你窗口打不开：{e}"),
+                                format!("Couldn't open the mini window: {e}"),
+                            ))
+                        }
                     }
                 }
                 if onboarded && auto && !st.perf_running.load(Ordering::Relaxed) {
@@ -988,6 +1042,7 @@ fn save_settings(
 ) -> Result<Vec<String>, String> {
     settings.migrate(false);
     let login_changed;
+    let lang_changed;
     {
         let mut s = lk(&st.settings);
         // encoders are tested against the recording screen, so a new screen
@@ -995,6 +1050,7 @@ fn save_settings(
         let ff_changed = s.ffmpeg_path != settings.ffmpeg_path
             || s.video.monitor_index != settings.video.monitor_index;
         login_changed = s.launch_at_login != settings.launch_at_login;
+        lang_changed = s.language != settings.language;
         let name_changed = s.pubg.player_name != settings.pubg.player_name;
         *s = settings;
         if name_changed {
@@ -1015,6 +1071,14 @@ fn save_settings(
         if let Err(e) = apply_launch_at_login(&app, on) {
             errs.push(e);
         }
+    }
+    if lang_changed {
+        i18n::set(&lk(&st.settings).language);
+        if let (Some(tray), Ok(menu)) = (app.tray_by_id("main-tray"), tray_menu(&app)) {
+            let _ = tray.set_menu(Some(menu));
+        }
+        // the mini window follows
+        let _ = app.emit("settings-changed", ());
     }
     emit_status(&app, &st);
     Ok(errs)
@@ -1271,10 +1335,10 @@ async fn run_perf_test(
 ) -> Result<PerfResult, String> {
     let st = st.inner().clone();
     if lk(&st.recording).is_some() {
-        return Err("正在录制中，先停止录制再测试".into());
+        return Err(i18n::tr("正在录制中，先停止录制再测试", "Recording: stop recording before testing"));
     }
     if st.perf_running.swap(true, Ordering::Relaxed) {
-        return Err("测试已经在进行".into());
+        return Err(i18n::tr("测试已经在进行", "A test is already running"));
     }
     let secs = seconds.unwrap_or(12).clamp(5, 60);
     let st2 = st.clone();
@@ -1456,11 +1520,15 @@ async fn list_matches(st: State<'_, St>) -> Result<Vec<MatchRecord>, String> {
     blocking(move || Ok(st.lib()?.list())).await
 }
 
+fn no_record() -> String {
+    i18n::tr("找不到这场录像", "Recording not found")
+}
+
 #[tauri::command]
 fn get_match(st: State<'_, St>, id: String) -> Result<MatchRecord, String> {
     st.lib()?
         .get(&id)
-        .ok_or_else(|| "找不到这场录像".to_string())
+        .ok_or_else(no_record)
 }
 
 /// Make missing highlight stills (older records), returns the updated record.
@@ -1470,7 +1538,7 @@ async fn ensure_thumbs(st: State<'_, St>, id: String) -> Result<MatchRecord, Str
     blocking(move || {
         let lib = st.lib()?;
         let ff = st.ffmpeg()?;
-        library::ensure_thumbs(&lib, &ff, &id).ok_or_else(|| "找不到这场录像".to_string())
+        library::ensure_thumbs(&lib, &ff, &id).ok_or_else(no_record)
     })
     .await
 }
@@ -1478,7 +1546,7 @@ async fn ensure_thumbs(st: State<'_, St>, id: String) -> Result<MatchRecord, Str
 #[tauri::command]
 fn set_favorite(st: State<'_, St>, id: String, favorite: bool) -> Result<(), String> {
     let lib = st.lib()?;
-    let mut m = lib.get(&id).ok_or("找不到这场录像")?;
+    let mut m = lib.get(&id).ok_or_else(no_record)?;
     m.favorite = favorite;
     lib.save(&m)
 }
@@ -1493,7 +1561,7 @@ fn trim_highlight(
     end: Option<f64>,
 ) -> Result<MatchRecord, String> {
     let lib = st.lib()?;
-    let mut m = lib.get(&id).ok_or("找不到这场录像")?;
+    let mut m = lib.get(&id).ok_or_else(no_record)?;
     let range = match (start, end) {
         (Some(a), Some(b)) => Some((a.min(b), a.max(b))),
         _ => None,
@@ -1541,7 +1609,7 @@ async fn export_clip(
     blocking(move || {
         let lib = st.lib()?;
         let ff = st.ffmpeg()?;
-        let rec = lib.get(&id).ok_or("找不到这场录像")?;
+        let rec = lib.get(&id).ok_or_else(no_record)?;
         let enc = lk(&st.settings).video.encoder.clone();
         let p = library::export_range(&lib, &ff, &enc, &rec, start, end, &title, &options)?;
         Ok(p.to_string_lossy().to_string())
@@ -1560,7 +1628,7 @@ async fn export_montage(
     blocking(move || {
         let lib = st.lib()?;
         let ff = st.ffmpeg()?;
-        let rec = lib.get(&id).ok_or("找不到这场录像")?;
+        let rec = lib.get(&id).ok_or_else(no_record)?;
         let enc = lk(&st.settings).video.encoder.clone();
         let p = library::export_montage(&lib, &ff, &enc, &rec, &highlight_ids, &options)?;
         Ok(p.to_string_lossy().to_string())
@@ -1681,7 +1749,8 @@ async fn export_diagnostics(st: State<'_, St>, path: String) -> Result<(), Strin
                 f.file_name().unwrap_or_default().to_string_lossy()
             );
         }
-        std::fs::write(&path, out).map_err(|e| format!("保存失败：{e}"))
+        std::fs::write(&path, out)
+            .map_err(|e| i18n::tr(format!("保存失败：{e}"), format!("Couldn't save: {e}")))
     })
     .await
 }
@@ -1708,7 +1777,7 @@ fn reveal(path: String) -> Result<(), String> {
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("https://") {
-        return Err("只能打开 https 链接".into());
+        return Err(i18n::tr("只能打开 https 链接", "Only https links can be opened"));
     }
     ffmpeg::hidden("explorer")
         .arg(&url)
@@ -1794,7 +1863,9 @@ async fn check_for_update(app: &AppHandle) -> Result<Option<UpdateInfo>, String>
         Ok(f) => f,
         // no release published yet (latest.json 404s): nothing newer
         Err(e) if e.to_string().contains("valid release JSON") => None,
-        Err(e) => return Err(format!("检查更新失败：{e}")),
+        Err(e) => {
+            return Err(i18n::tr(format!("检查更新失败：{e}"), format!("Update check failed: {e}")))
+        }
     };
     Ok(found.map(|u| UpdateInfo {
         version: u.version.clone(),
@@ -1839,7 +1910,10 @@ async fn install_update(app: AppHandle, st: State<'_, St>) -> Result<(), String>
     use tauri_plugin_updater::UpdaterExt;
     let st = st.inner().clone();
     if lk(&st.recording).is_some() {
-        return Err("正在录制，等这局录完再更新".into());
+        return Err(i18n::tr(
+            "正在录制，等这局录完再更新",
+            "Recording: update after this game is recorded",
+        ));
     }
     let st_exit = st.clone();
     let updater = app
@@ -1856,9 +1930,9 @@ async fn install_update(app: AppHandle, st: State<'_, St>) -> Result<(), String>
     let Some(update) = updater
         .check()
         .await
-        .map_err(|e| format!("检查更新失败：{e}"))?
+        .map_err(|e| i18n::tr(format!("检查更新失败：{e}"), format!("Update check failed: {e}")))?
     else {
-        return Err("已经是最新版本".into());
+        return Err(i18n::tr("已经是最新版本", "Already up to date"));
     };
     let progress_app = app.clone();
     let mut got: u64 = 0;
@@ -1871,7 +1945,7 @@ async fn install_update(app: AppHandle, st: State<'_, St>) -> Result<(), String>
             || {},
         )
         .await
-        .map_err(|e| format!("更新失败：{e}"))
+        .map_err(|e| i18n::tr(format!("更新失败：{e}"), format!("Update failed: {e}")))
 }
 
 /// While the game runs, putting the main window away brings the mini window
@@ -1932,6 +2006,7 @@ pub fn run() {
             let config_dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&config_dir)?;
             let s = settings::load(&config_dir);
+            i18n::set(&s.language);
             let state: St = Arc::new(AppState {
                 config_dir,
                 settings: Mutex::new(s),
@@ -1989,7 +2064,7 @@ pub fn run() {
             if !errs.is_empty() {
                 *lk(&state.notices) = errs
                     .iter()
-                    .map(|e| format!("快捷键注册失败：{e}"))
+                    .map(|e| i18n::tr(format!("快捷键注册失败：{e}"), format!("Couldn't register hotkey: {e}")))
                     .collect();
             }
             spawn_status_loop(handle.clone(), state.clone());
@@ -1998,9 +2073,7 @@ pub fn run() {
             spawn_update_checker(handle.clone(), state.clone());
 
             // tray
-            let open = MenuItem::with_id(app, "open", "打开 KillCam", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &quit])?;
+            let menu = tray_menu(app)?;
             let mut tray = TrayIconBuilder::with_id("main-tray")
                 .tooltip("KillCam")
                 .menu(&menu);
