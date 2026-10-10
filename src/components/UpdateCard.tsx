@@ -78,7 +78,7 @@ export function UpdateCard(props: { status: Status | null }) {
                 ? t("已经是最新版本", "You're up to date")
                 : check === "error"
                   ? t("检查失败，点一下重试", "Check failed, click to retry")
-                  : t("检查更新", "Check for updates")}
+                  : t("检查更新", "Check updates")}
           </span>
           <span className="update-ver">v{shortVersion(props.status?.version)}</span>
         </button>

@@ -3174,3 +3174,11 @@ button.st-best:hover {
   background: var(--raised);
   color: var(--text);
 }
+
+/* the rail's update button stays on one line (English is longer) */
+.update-check > span:not(.update-ver) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
