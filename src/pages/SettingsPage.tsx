@@ -148,10 +148,20 @@ export default function SettingsPage(props: { game: GameId; settings: Settings; 
     }
   };
 
-  // applies right away, without the save button
-  const setLanguage = async (language: LangSetting) => {
+  // a language picked while other edits aren't saved yet: ask first
+  const [pendingLang, setPendingLang] = useState<LangSetting | null>(null);
+  const pickLanguage = (language: LangSetting) => {
+    if (language === (props.settings.language ?? "auto")) return setPendingLang(null);
+    if (dirty) return setPendingLang(language);
+    setLanguage(language, props.settings);
+  };
+
+  // applies right away, without the save button; `base`: the saved settings,
+  // or the draft when the user chose to save their edits along with it
+  const setLanguage = async (language: LangSetting, base: Settings) => {
     setMsg(null);
-    const next = { ...props.settings, language };
+    setPendingLang(null);
+    const next = { ...base, language };
     reopenGeneral = true;
     try {
       await api.saveSettings(next);
@@ -256,14 +266,32 @@ export default function SettingsPage(props: { game: GameId; settings: Settings; 
       <Card id="language" title={t("语言", "Language")}>
         <Field label={t("界面语言", "Language")} hint={t("跟随系统时，中文 Windows 显示中文，其他显示英文", "\"System\" shows Chinese on Chinese Windows and English otherwise")}>
           <Segmented<LangSetting>
-            value={props.settings.language ?? "auto"}
-            onChange={setLanguage}
+            value={pendingLang ?? props.settings.language ?? "auto"}
+            onChange={pickLanguage}
             options={[
               { value: "auto", label: t("跟随系统", "System") },
               { value: "zh", label: "中文" },
               { value: "en", label: "English" },
             ]}
           />
+          {pendingLang && (
+            <div className="lang-confirm">
+              <span className="warn-text small">
+                {t("还有没保存的修改，切换语言会把它们丢掉。", "You have unsaved changes. Switching the language discards them.")}
+              </span>
+              <div className="row">
+                <Button kind="primary" small onClick={() => setLanguage(pendingLang, draft)}>
+                  {t("保存修改并切换", "Save and switch")}
+                </Button>
+                <Button kind="ghost" small onClick={() => setLanguage(pendingLang, props.settings)}>
+                  {t("不保存，直接切换", "Switch without saving")}
+                </Button>
+                <Button kind="ghost" small onClick={() => setPendingLang(null)}>
+                  {t("取消", "Cancel")}
+                </Button>
+              </div>
+            </div>
+          )}
         </Field>
       </Card>
 

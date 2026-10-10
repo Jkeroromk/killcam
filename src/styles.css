@@ -3182,3 +3182,15 @@ button.st-best:hover {
   text-overflow: ellipsis;
   min-width: 0;
 }
+
+/* switching the language with unsaved edits */
+.lang-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
