@@ -120,11 +120,11 @@ fn span(m: &MatchRecord) -> (i64, i64) {
     (m.video_start_ms, m.video_start_ms + (m.duration_s * 1000.0) as i64)
 }
 
-/// at least 80% of `a` lies inside `b`
+/// most (60%+) of `a` lies inside `b`
 fn covered(a: (i64, i64), b: (i64, i64)) -> bool {
     let len = a.1 - a.0;
     let inside = (a.1.min(b.1) - a.0.max(b.0)).max(0);
-    len > 0 && inside * 10 >= len * 8
+    len > 0 && inside * 10 >= len * 6
 }
 
 fn dir_size(p: &Path) -> u64 {
@@ -1243,7 +1243,7 @@ pub fn process_sessions(
         // (app closed or restarted mid-game): treat it as ended now
         if !is_active && meta.ended_ms.is_none() {
             meta.ended_ms = Some(now_ms());
-            meta.save(&dir);
+            meta.store(&dir, is_active);
         }
         let ended = meta.ended_ms.is_some() && !is_active;
         let segs = recorder::segments(ffmpeg_path, &dir, ended);
@@ -1282,7 +1282,7 @@ pub fn process_sessions(
                 Err(e) => {
                     result.messages.push(e);
                     meta.finalize_failures += 1;
-                    meta.save(&dir);
+                    meta.store(&dir, is_active);
                     if meta.finalize_failures < 3 {
                         continue;
                     }
@@ -1291,12 +1291,12 @@ pub fn process_sessions(
                         dir.to_string_lossy()
                     ));
                     meta.finalized = true;
-                    meta.save(&dir);
+                    meta.store(&dir, is_active);
                     continue;
                 }
             }
             meta.finalized = true;
-            meta.save(&dir);
+            meta.store(&dir, is_active);
             if fs::remove_dir_all(&dir).is_err() {
                 result
                     .messages
@@ -1401,7 +1401,7 @@ pub fn process_sessions(
                     }
                     if w1 < meta.start_ms {
                         meta.processed_matches.push(mid.clone());
-                        meta.save(&dir);
+                        meta.store(&dir, is_active);
                         continue;
                     }
                     // PUBG's server clock and this PC's clock differ by a second or so.
@@ -1503,7 +1503,7 @@ pub fn process_sessions(
                         Err(e) => result.messages.push(e),
                     }
                     meta.processed_matches.push(mid.clone());
-                    meta.save(&dir);
+                    meta.store(&dir, is_active);
                 }
             }
         }
@@ -1606,10 +1606,13 @@ pub fn process_sessions(
             // a spectated teammate's kills aren't the player's (build_record leaves
             // them out too)
             let spectated = spectated_detections(&meta, piece.from, game_end, piece.official);
+            // moments inside a game that already has its official record belong
+            // to that record, whatever the bookkeeping says
             let ev: Vec<i64> = left
                 .iter()
                 .copied()
                 .filter(|t| in_piece(*t) && !spectated.contains(t))
+                .filter(|t| !ps.built_windows.iter().any(|(a, b)| t >= a && t <= b))
                 .collect();
             let quick = ps.quick.iter().position(|q| q.from == piece.from);
             let has_real = !joins.is_empty()
@@ -1752,7 +1755,7 @@ pub fn process_sessions(
                     ps.quick.remove(i);
                     ps.done_pieces.push(piece.from);
                     ps.save(&dir);
-                    meta.save(&dir);
+                    meta.store(&dir, is_active);
                     continue;
                 }
                 // more happened after the quick record (e.g. a recall): rebuild it below
@@ -1837,7 +1840,7 @@ pub fn process_sessions(
         if failed {
             // keep the raw recording; retry on the next passes
             meta.finalize_failures += 1;
-            meta.save(&dir);
+            meta.store(&dir, is_active);
             if meta.finalize_failures < 3 {
                 continue;
             }
@@ -1846,11 +1849,11 @@ pub fn process_sessions(
                 dir.to_string_lossy()
             ));
             meta.finalized = true;
-            meta.save(&dir);
+            meta.store(&dir, is_active);
             continue;
         }
         meta.finalized = true;
-        meta.save(&dir);
+        meta.store(&dir, is_active);
         if fs::remove_dir_all(&dir).is_err() {
             // usually Explorer holding a thumbnail open; try again later
             result
@@ -2354,13 +2357,18 @@ mod tests {
         lib.save(&rec("261008-1558", "session", false, t + 110_000, 410.0, true)).unwrap();
         // a different game later on, screen-read only: stays
         lib.save(&rec("261008-1613", "session", false, t + 1_000_000, 300.0, false)).unwrap();
+        // a leftover that runs past the official record (16:53:36-17:04:16 vs
+        // 16:48:46-17:01:36): 75% inside, goes
+        let t2 = t + 3_000_000;
+        lib.save(&rec("261009-1653", "match", true, t2, 770.0, false)).unwrap();
+        lib.save(&rec("261009-1653-2", "session", false, t2 + 290_000, 640.0, false)).unwrap();
         // F9 in the lobby right after the match: mostly outside it, stays
         lib.save(&rec("261008-1605", "session", false, t + 500_000, 60.0, false)).unwrap();
 
-        assert_eq!(lib.drop_duplicate_quick(), 1);
+        assert_eq!(lib.drop_duplicate_quick(), 2);
         let mut ids: Vec<String> = lib.list().into_iter().map(|m| m.id).collect();
         ids.sort();
-        assert_eq!(ids, vec!["261008-1556", "261008-1605", "261008-1613"]);
+        assert_eq!(ids, vec!["261008-1556", "261008-1605", "261008-1613", "261009-1653"]);
         assert!(lib.get("261008-1556").unwrap().favorite);
         // nothing left to do the second time
         assert_eq!(lib.drop_duplicate_quick(), 0);

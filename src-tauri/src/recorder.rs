@@ -65,14 +65,64 @@ pub fn part_prefix(index: u32) -> String {
     format!("p{:02}_", index)
 }
 
+const PROCESSED: &str = "processed.json";
+
+/// Processing state of a session, kept apart from session.json (see `load`).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct Processed {
+    used_markers: Vec<i64>,
+    used_detections: Vec<i64>,
+    processed_matches: Vec<String>,
+}
+
 impl SessionMeta {
     pub fn path(dir: &Path) -> PathBuf {
         dir.join("session.json")
     }
     pub fn load(dir: &Path) -> Option<SessionMeta> {
         let s = fs::read_to_string(Self::path(dir)).ok()?;
-        serde_json::from_str(&s).ok()
+        let mut m: SessionMeta = serde_json::from_str(&s).ok()?;
+        // what processing already used lives in its own file: the recorder
+        // keeps its own copy of session.json and rewrites it while recording
+        if let Some(p) = fs::read_to_string(dir.join(PROCESSED))
+            .ok()
+            .and_then(|s| serde_json::from_str::<Processed>(&s).ok())
+        {
+            fn add<T: PartialEq>(to: &mut Vec<T>, from: Vec<T>) {
+                for x in from {
+                    if !to.contains(&x) {
+                        to.push(x);
+                    }
+                }
+            }
+            add(&mut m.used_markers, p.used_markers);
+            add(&mut m.used_detections, p.used_detections);
+            add(&mut m.processed_matches, p.processed_matches);
+        }
+        Some(m)
     }
+
+    /// Save what processing changed. `recording`: the recorder still owns
+    /// session.json, so only the processing state is written.
+    pub fn store(&self, dir: &Path, recording: bool) {
+        let p = Processed {
+            used_markers: self.used_markers.clone(),
+            used_detections: self.used_detections.clone(),
+            processed_matches: self.processed_matches.clone(),
+        };
+        if let Ok(j) = serde_json::to_string_pretty(&p) {
+            let path = dir.join(PROCESSED);
+            let tmp = path.with_extension("json.tmp");
+            if fs::write(&tmp, j).is_ok() {
+                let _ = fs::rename(&tmp, &path);
+            }
+        }
+        if !recording {
+            self.save(dir);
+        }
+    }
+
     pub fn save(&self, dir: &Path) {
         if let Ok(j) = serde_json::to_string_pretty(self) {
             let p = Self::path(dir);
@@ -842,4 +892,39 @@ pub fn segments(ffmpeg_path: &Path, dir: &Path, include_trailing: bool) -> Vec<S
         }
     }
     out
+}
+
+#[cfg(test)]
+mod processed_tests {
+    use super::*;
+
+    #[test]
+    fn recorder_rewriting_session_json_keeps_what_processing_used() {
+        let dir = std::env::temp_dir().join(format!("kc-meta-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        // the recorder's own copy, saved at the start
+        let mut rec = SessionMeta {
+            id: "s".into(),
+            ..Default::default()
+        };
+        rec.save(&dir);
+        // processing (while recording) uses a kill and a match
+        let mut m = SessionMeta::load(&dir).unwrap();
+        m.used_detections.push(1_000);
+        m.processed_matches.push("match-a".into());
+        m.store(&dir, true);
+        // the recorder sees a new kill and rewrites session.json from its copy
+        rec.detections.push(ScreenDetection {
+            kind: "kill".into(),
+            at_ms: 2_000,
+            score: 1.0,
+        });
+        rec.save(&dir);
+        let back = SessionMeta::load(&dir).unwrap();
+        assert_eq!(back.used_detections, vec![1_000]);
+        assert_eq!(back.processed_matches, vec!["match-a".to_string()]);
+        assert_eq!(back.detections.len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
