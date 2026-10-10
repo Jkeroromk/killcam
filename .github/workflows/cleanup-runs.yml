@@ -1,0 +1,45 @@
+# Keeps the Actions tab short: for every workflow, only its newest three
+# finished runs stay (deleting a run also deletes its artifacts, e.g. old test
+# installers). Runs still in progress are never touched.
+# Runs after each of the other workflows finishes, once a day, or by hand.
+name: Clean up runs
+
+on:
+  workflow_run:
+    workflows: ["检查", "测试打包（不发布）", "Release", "Prune releases"]
+    types: [completed]
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+# one cleanup at a time; a newer trigger replaces a waiting one
+concurrency:
+  group: cleanup-runs
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep the newest three runs of each workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP: "3"
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          gh api --paginate "repos/$repo/actions/workflows?per_page=100" --jq '.workflows[] | "\(.id)\t\(.name)"' |
+          while IFS=$'\t' read -r wf name; do
+            # newest first; skip the ones to keep
+            gh api --paginate "repos/$repo/actions/workflows/$wf/runs?per_page=100" \
+              --jq '.workflow_runs[] | select(.status == "completed") | .id' |
+            tail -n +"$((KEEP + 1))" |
+            while read -r id; do
+              [ "$id" = "$GITHUB_RUN_ID" ] && continue
+              echo "$name: deleting run $id"
+              gh api -X DELETE "repos/$repo/actions/runs/$id" > /dev/null || echo "  (could not delete $id)"
+            done
+          done
