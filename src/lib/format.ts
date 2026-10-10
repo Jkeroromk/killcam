@@ -74,3 +74,8 @@ export function eventLine(e: { kind: EventKind; victim: string | null; weapon: s
   if (e.detail) parts.push(e.detail);
   return parts.join("，");
 }
+
+/** Versions read as 1.1, 1.2…: the installer needs three parts (1.1.0), people don't. */
+export function shortVersion(v?: string | null): string {
+  return v ? v.replace(/^(\d+\.\d+)\.0$/, "$1") : "–";
+}

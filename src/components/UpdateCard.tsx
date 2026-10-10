@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowRight, ArrowUpCircle, RefreshCw, X } from "lucide-react";
 import { api, errText, on, type Status, type UpdateInfo } from "../lib/api";
-import { bytes } from "../lib/format";
+import { bytes, shortVersion } from "../lib/format";
 import { Button, Spinner } from "./ui";
 
 const DISMISSED = "kc.updateLater";
@@ -64,7 +64,7 @@ export function UpdateCard(props: { status: Status | null }) {
           <ArrowUpCircle size={16} />
           <span className="update-ready-text">
             <b>有新版本</b>
-            <span>v{u.version} · 点这里更新</span>
+            <span>v{shortVersion(u.version)} · 点这里更新</span>
           </span>
         </button>
       ) : (
@@ -79,7 +79,7 @@ export function UpdateCard(props: { status: Status | null }) {
                   ? "检查失败，点一下重试"
                   : "检查更新"}
           </span>
-          <span className="update-ver">v{props.status?.version ?? "–"}</span>
+          <span className="update-ver">v{shortVersion(props.status?.version)}</span>
         </button>
       )}
       {u && open && (
@@ -139,9 +139,9 @@ function UpdateDialog(props: { update: UpdateInfo; current: string; recording: b
         </header>
 
         <div className="update-versions">
-          <span className="update-chip">v{props.current}</span>
+          <span className="update-chip">v{shortVersion(props.current)}</span>
           <ArrowRight size={16} />
-          <span className="update-chip is-new">v{u.version}</span>
+          <span className="update-chip is-new">v{shortVersion(u.version)}</span>
         </div>
 
         {u.notes?.trim() ? (

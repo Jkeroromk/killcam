@@ -1,4 +1,4 @@
-# Push a tag like v0.2.0 (scripts/release.ps1 does it) -> GitHub builds the
+# Push a tag like v1.2 (scripts/release.ps1 does it) -> GitHub builds the
 # installer, signs the update and publishes a release with latest.json, which
 # installed copies of KillCam check for updates.
 name: Release
@@ -71,7 +71,7 @@ jobs:
           if [ -z "$body" ]; then
             prev="$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || true)"
             if [ -n "$prev" ]; then
-              body="$(git log "$prev..$tag" --no-merges --pretty='- %s' | grep -v -E '^- (v[0-9]+\.[0-9]+\.[0-9]+$|Website)' || true)"
+              body="$(git log "$prev..$tag" --no-merges --pretty='- %s' | grep -v -E '^- (v[0-9]+\.[0-9]+(\.[0-9]+)?$|Website)' || true)"
             fi
           fi
           [ -z "$body" ] && body="KillCam $tag"
