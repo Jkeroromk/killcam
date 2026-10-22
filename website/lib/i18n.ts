@@ -165,7 +165,7 @@ const zh: Dict = {
         name: "PUBG",
         how: "边录边读屏幕上的击杀、击倒提示。填了免费的 PUBG API Key，普通对局还会用官方数据把每次击杀标得更准。",
         catches: "击杀、击倒、被击倒、被淘汰、吃鸡",
-        needs: "Steam 版 PUBG，简体中文游戏界面、默认 HUD",
+        needs: "Steam 版 PUBG，简体或繁体中文游戏界面、默认 HUD",
         data: "地图、排名、伤害、武器、距离、爆头",
       },
       lol: {
@@ -262,7 +262,7 @@ const zh: Dict = {
     rows: [
       ["系统", "Windows 10（2004 及以上）或 Windows 11，64 位"],
       ["显卡", "支持 NVENC 的 NVIDIA 显卡（GTX 10 系列及以上）。AMD 显卡理论上可用，还没测试过"],
-      ["PUBG", "Steam 版。读屏识别目前只支持简体中文游戏界面、默认 HUD"],
+      ["PUBG", "Steam 版。读屏识别支持简体和繁体中文游戏界面、默认 HUD"],
       ["英雄联盟", "Riot 客户端（各服务器都可以），暂不支持国服 WeGame"],
     ],
   },
@@ -395,7 +395,7 @@ const en: Dict = {
         name: "PUBG",
         how: "Reads the kill and knock prompts on screen while recording. Add a free PUBG API key and regular matches also get precise kill data from PUBG.",
         catches: "Kills, knocks, getting knocked, getting eliminated, chicken dinners",
-        needs: "PUBG on Steam, with the Simplified Chinese game language and default HUD",
+        needs: "PUBG on Steam, with the game in Simplified or Traditional Chinese and the default HUD",
         data: "Map, placement, damage, weapon, distance, headshots",
       },
       lol: {
@@ -492,7 +492,7 @@ const en: Dict = {
     rows: [
       ["System", "Windows 10 (2004 or later) or Windows 11, 64-bit"],
       ["Graphics", "NVIDIA GPU with NVENC (GTX 10 series or newer). AMD may work but hasn't been tested"],
-      ["PUBG", "On Steam. Screen detection needs the Simplified Chinese game language and default HUD, for now"],
+      ["PUBG", "On Steam. Screen detection needs the game in Simplified or Traditional Chinese and the default HUD, for now"],
       ["League of Legends", "The Riot client, any server except the Chinese WeGame client"],
       ["App language", "The app itself is in Chinese for now"],
     ],

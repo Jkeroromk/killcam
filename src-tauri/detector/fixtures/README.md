@@ -12,4 +12,5 @@ template | per frame a run count, then alternating off / on run lengths
 |---|---|---|
 | `tdm1080_a`–`d.rle` | team deathmatch at 1920×1080: counter 1 → 13 | 1, 3, 5, 4 |
 | `br1440.rle` | battle royale at 3440×1440 | 11 |
+| `br1440_zh-tw_lines.rle` | 95 s of battle royale at 3440×1440 in Traditional Chinese: the **white** mask of the prompt lines; header x / y = the screen centre's column in the region and the region's top row on screen | 3 knocks, 1 knocked |
 | `tdm1440_zh-tw.rle` | a whole team deathmatch at 3440×1440 with PUBG in Traditional Chinese ("1 擊殺", then "N 擊殺數"), counter 1 → 32 | 32 |

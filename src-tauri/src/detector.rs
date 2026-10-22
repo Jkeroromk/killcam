@@ -1119,6 +1119,41 @@ mod tests {
         assert_eq!(kills(include_bytes!("../detector/fixtures/br1440.rle")), 11);
     }
 
+    /// How often the nth template of `kind` fires over a fixture whose header
+    /// x / y are the screen centre's column in the region and the region's top
+    /// row on screen (the lines fixtures; one feature mask, also used for the
+    /// confirm glyphs).
+    fn fires(b: &[u8], kind: &str, nth: usize) -> usize {
+        let (cx, y0, frames) = fixture(b);
+        let t = load_pack()
+            .unwrap()
+            .templates
+            .into_iter()
+            .filter(|t| t.kind == kind)
+            .nth(nth)
+            .unwrap();
+        let p = Placed { px: cx + t.cx, py: t.y - y0, t };
+        let mut tr = Track::default();
+        frames
+            .iter()
+            .enumerate()
+            .map(|(i, m)| step(&p, &mut tr, m, Some(m), 1_000_000 + i as i64 * 1000 / 6).len())
+            .sum()
+    }
+
+    // 95 seconds of a battle royale with PUBG in Traditional Chinese: "您 以 X 擊倒 Y"
+    // three times (once while another line is still up), then "Y 以 X 擊倒 您"
+    // once; the official data has exactly these
+    #[test]
+    fn traditional_knock_lines() {
+        let b = include_bytes!("../detector/fixtures/br1440_zh-tw_lines.rle");
+        assert_eq!(fires(b, "knock", 1), 3);
+        assert_eq!(fires(b, "knocked", 1), 1);
+        // the Simplified templates see nothing here
+        assert_eq!(fires(b, "knock", 0), 0);
+        assert_eq!(fires(b, "knocked", 0), 0);
+    }
+
     // a whole team deathmatch with PUBG in Traditional Chinese at 3440x1440:
     // the counter reads "1 擊殺" first, then "N 擊殺數", up to 32. Once a
     // dark object passes over the "1" while it is still up.

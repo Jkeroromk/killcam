@@ -1528,13 +1528,13 @@ pub fn process_sessions(
         let official_pending = joins.iter().filter(|j| j.in_api()).count() > official_built;
         // without the log we can't know, so wait for the API as before
         let nothing_to_wait_for = !joins.is_empty() && !official_pending;
-        // give up on PUBG's data after 15 minutes, but only once we actually
-        // looked (passes while PUBG runs don't ask the API)
-        let timed_out = !in_game
-            && meta
-                .ended_ms
-                .map(|e| now_ms() - e > 15 * 60_000)
-                .unwrap_or(false);
+        // give up on PUBG's data 15 minutes after the session ended. This also
+        // runs while PUBG is open again (a restart starts a new session): those
+        // passes ask the API too, once a minute
+        let timed_out = meta
+            .ended_ms
+            .map(|e| now_ms() - e > 15 * 60_000)
+            .unwrap_or(false);
         let final_now = ended && (!api_cfg || nothing_to_wait_for || timed_out || force_final);
         if ended && !final_now {
             let left = 15 - meta.ended_ms.map(|e| (now_ms() - e) / 60_000).unwrap_or(0);
