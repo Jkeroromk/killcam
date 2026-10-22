@@ -17,7 +17,9 @@
 //!   appearance, with an optional cooldown and a second glyph group that has to
 //!   sit next to the match (the red "淘汰" before the white "了你").
 //!
-//! Templates live in `detector/pack.bin` (embedded at compile time).
+//! Templates live in `detector/pack.bin` (embedded at compile time). It holds
+//! both Simplified and Traditional Chinese prompts (PUBG's Traditional UI says
+//! "N 擊殺數", "您 以 X 擊殺 Y", "X 以 Y 擊殺 您"); whichever matches is used.
 
 use crate::ffmpeg;
 use std::io::Read;
@@ -44,6 +46,9 @@ const POOL: i32 = 5;
 const POOL_CHANGED: f32 = 0.93;
 /// how long the counter animates after popping in
 const COUNTER_POP_MS: i64 = 700;
+/// Something passing in front of the counter can hide it for a moment; when it
+/// shows again within this long with the same number, that was no new kill.
+const COUNTER_HIDDEN_MS: i64 = 4_000;
 
 const FEAT_RED: u32 = 1;
 const FEAT_WHITE: u32 = 2;
@@ -387,6 +392,9 @@ struct Track {
     reference: Option<Vec<f32>>,
     ref_pooled: Option<Vec<f32>>,
     appeared_ms: i64,
+    /// the number last shown, and when (kept while the counter is hidden)
+    last_num: Option<Vec<f32>>,
+    last_seen_ms: i64,
     drop_at: Option<i64>,
     drop_frames: u32,
     // lines
@@ -499,16 +507,28 @@ fn step(p: &Placed, tr: &mut Track, m: &Mask, cm: Option<&Mask>, now_ms: i64) ->
                 return out;
             };
             if appeared || tr.reference.is_none() || tr.prev.is_none() {
+                // back after a moment behind something, still the same number
+                let same = appeared
+                    && now_ms - tr.last_seen_ms < COUNTER_HIDDEN_MS
+                    && tr
+                        .last_num
+                        .as_deref()
+                        .map(|ln| m.ncc_near(ln, nx, by, nw, nh, 1) >= CHANGE)
+                        .unwrap_or(false);
                 tr.reference = Some(nm.clone());
                 tr.ref_pooled = Some(np);
-                tr.prev = Some(nm);
+                tr.prev = Some(nm.clone());
+                tr.last_num = Some(nm);
+                tr.last_seen_ms = now_ms;
                 tr.drop_at = None;
-                if appeared {
+                if appeared && !same {
                     tr.appeared_ms = now_ms;
                     out.push(det(now_ms, s));
                 }
                 return out;
             }
+            tr.last_num = Some(nm.clone());
+            tr.last_seen_ms = now_ms;
             if now_ms - tr.appeared_ms < COUNTER_POP_MS {
                 // the counter pops in with a little animation
                 tr.reference = Some(nm.clone());
@@ -1058,12 +1078,18 @@ mod tests {
     }
 
     fn kills(b: &[u8]) -> usize {
+        kills_with(b, 0)
+    }
+
+    /// `nth`: which of the pack's kill counters (0 Simplified, 1 Traditional Chinese)
+    fn kills_with(b: &[u8], nth: usize) -> usize {
         let (x, y, frames) = fixture(b);
         let t = load_pack()
             .unwrap()
             .templates
             .into_iter()
-            .find(|t| t.kind == "kill")
+            .filter(|t| t.kind == "kill")
+            .nth(nth)
             .unwrap();
         let p = Placed { t, px: x, py: y };
         let mut tr = Track::default();
@@ -1091,5 +1117,13 @@ mod tests {
     #[test]
     fn counter_1440p_counts_every_kill_once() {
         assert_eq!(kills(include_bytes!("../detector/fixtures/br1440.rle")), 11);
+    }
+
+    // a whole team deathmatch with PUBG in Traditional Chinese at 3440x1440:
+    // the counter reads "1 擊殺" first, then "N 擊殺數", up to 32. Once a
+    // dark object passes over the "1" while it is still up.
+    #[test]
+    fn counter_traditional_counts_every_kill_once() {
+        assert_eq!(kills_with(include_bytes!("../detector/fixtures/tdm1440_zh-tw.rle"), 1), 32);
     }
 }
