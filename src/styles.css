@@ -3194,3 +3194,9 @@ button.st-best:hover {
   border: 1px solid var(--line);
   background: var(--bg);
 }
+
+/* card grids use the whole width: more columns on wide and ultrawide windows */
+.page.page-wide {
+  max-width: none;
+  padding-bottom: 28px;
+}

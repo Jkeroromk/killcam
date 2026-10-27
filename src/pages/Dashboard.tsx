@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Bookmark, Circle, Square, X, RefreshCw, Video, Gamepad2, Clock } from "lucide-react";
 import { api, errText, type MatchRecord, type Settings, type Status, type StorageInfo } from "../lib/api";
 import { bytes, clock, gameName } from "../lib/format";
@@ -9,6 +9,48 @@ import { GAME_IDS, GAMES } from "../lib/games";
 import { isLol } from "../lib/format";
 import type { GameId } from "../lib/api";
 import { plural, t } from "../lib/i18n";
+
+const CARD_MIN_W = 300;
+const CARD_GAP = 18;
+
+/** How many recent cards fit: as many columns as the width allows, and how many
+ *  rows in all fit on screen without scrolling (at least one per game). */
+function useRecentGrid(ref: { current: HTMLElement | null }, games: number) {
+  const [grid, setGrid] = useState({ cols: 3, rows: games || 1 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const cols = Math.max(1, Math.floor((el.clientWidth + CARD_GAP) / (CARD_MIN_W + CARD_GAP)));
+      const view = el.closest(".content") as HTMLElement | null;
+      const page = el.closest(".page") as HTMLElement | null;
+      const card = el.querySelector(".mcard") as HTMLElement | null;
+      let rows = Math.max(1, games);
+      if (view && page && card && games > 0) {
+        const cardH = card.getBoundingClientRect().height;
+        // everything on the page that isn't a card row stays as it is; the
+        // rest of the window is room for card rows
+        const grids = Array.from(el.querySelectorAll(".cards")) as HTMLElement[];
+        const cardsH = grids.reduce((s, g) => s + g.getBoundingClientRect().height, 0);
+        const other = page.getBoundingClientRect().height - cardsH;
+        const room = view.clientHeight - other;
+        // R rows over `games` grids: R card heights + (R - games) gaps
+        const fit = Math.floor((room + games * CARD_GAP) / (cardH + CARD_GAP));
+        rows = Math.max(games, Math.min(games * 3, fit));
+      }
+      setGrid((g) => (g.cols === cols && g.rows === rows ? g : { cols, rows }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [ref, games]);
+  return grid;
+}
 
 export default function Dashboard(props: {
   status: Status | null;
@@ -22,6 +64,26 @@ export default function Dashboard(props: {
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const recentRef = useRef<HTMLElement | null>(null);
+  const gamesShown = recent ? GAME_IDS.filter((g) => recent.some((m) => (g === "lol") === isLol(m))).length : 0;
+  const grid = useRecentGrid(recentRef, gamesShown);
+  // every game gets a row; rows left over go to the games with the most
+  // recordings, and only when they can fill a whole row
+  const rowsFor: Partial<Record<GameId, number>> = {};
+  if (recent) {
+    const count = (g: GameId) => recent.filter((m) => (g === "lol") === isLol(m)).length;
+    const shown = GAME_IDS.filter((g) => count(g) > 0);
+    shown.forEach((g) => (rowsFor[g] = 1));
+    let extra = grid.rows - shown.length;
+    while (extra > 0) {
+      const next = shown
+        .filter((g) => count(g) >= (rowsFor[g]! + 1) * grid.cols)
+        .sort((a, b) => count(b) - rowsFor[b]! * grid.cols - (count(a) - rowsFor[a]! * grid.cols))[0];
+      if (!next) break;
+      rowsFor[next] = (rowsFor[next] ?? 1) + 1;
+      extra--;
+    }
+  }
 
   useEffect(() => {
     api.listMatches().then(setRecent).catch(() => setRecent([]));
@@ -46,7 +108,7 @@ export default function Dashboard(props: {
   const speedOk = !st || !s?.recording || st.reports < 4 || st.speed >= 0.95;
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <section className={"status" + (s?.recording ? " is-rec" : "")}>
         <div className="status-main">
           <div className="status-icon">{s?.recording ? <Video size={22} /> : s?.gameRunning ? <Gamepad2 size={22} /> : <Clock size={22} />}</div>
@@ -143,7 +205,7 @@ export default function Dashboard(props: {
         </section>
       )}
 
-      <section className="block">
+      <section className="block" ref={recentRef}>
         <header className="block-head">
           <h2>{t("最近的对局", "Recent matches")}</h2>
           <span className="grow" />
@@ -176,8 +238,8 @@ export default function Dashboard(props: {
                     {t(`全部 ${GAMES[g].name} 录像`, `All ${GAMES[g].name} recordings`)}
                   </Button>
                 </div>
-                <div className="cards">
-                  {mine.slice(0, 3).map((m) => (
+                <div className="cards" style={{ gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))` }}>
+                  {mine.slice(0, grid.cols * (rowsFor[g] ?? 1)).map((m) => (
                     <MatchCard key={m.id} m={m} onOpen={() => props.openMatch(m.id)} />
                   ))}
                 </div>

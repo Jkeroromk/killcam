@@ -258,7 +258,7 @@ export default function Library(props: { game: GameId; setGame: (g: GameId) => v
   };
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <header className="page-head">
         <h1>
           {t("录像库", "Library")} {shown && <span className="count">{shown.length}</span>}
