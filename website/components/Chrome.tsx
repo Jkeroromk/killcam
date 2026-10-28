@@ -21,6 +21,7 @@ export function SiteNav({ d, lang, path }: { d: Dict; lang: Locale; path: string
         <nav className="nav-links" aria-label="KillCam">
           <Link href={`${home}#games`}>{d.nav.games}</Link>
           <Link href={`${home}#features`}>{d.nav.features}</Link>
+          <Link href={`${home}#edit`}>{d.nav.edit}</Link>
           <Link href={`${home}#stats`}>{d.nav.stats}</Link>
           <Link href={`${home}#install`}>{d.nav.install}</Link>
           <Link href={`${home}#faq`}>{d.nav.faq}</Link>

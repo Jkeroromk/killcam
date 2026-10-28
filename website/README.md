@@ -35,6 +35,7 @@ git diff --quiet HEAD^ HEAD -- .
 |---|---|
 | 所有文字（中英） | `lib/i18n.ts` |
 | 首页时间轴里的示例对局 | `lib/match.ts` |
+| 「卡点成片」演示里的示例歌曲和剪辑 | `lib/beat.ts` |
 | 下载按钮、版本号、更新日志 | GitHub Releases，自动读取，每小时刷新一次 |
 | 截图 | `public/screens/`（和仓库 `docs/screenshots/` 是同一组图） |
 

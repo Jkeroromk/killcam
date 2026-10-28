@@ -10,6 +10,7 @@ import { ScrollReveal } from "@/components/ScrollReveal";
 import { HeroFilm } from "@/components/HeroFilm";
 import { filmCards } from "@/lib/match";
 import { StatsDemo } from "@/components/StatsDemo";
+import { BeatCut } from "@/components/BeatCut";
 import type { CSSProperties } from "react";
 
 /** stagger index for siblings revealed together */
@@ -127,6 +128,30 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
                 </li>
               ))}
             </ul>
+          </div>
+        </section>
+
+        <section id="edit" className="block is-panel is-edit">
+          <div className="wrap">
+            <header className="block-head" data-reveal>
+              <h2>{d.edit.title}</h2>
+              <p>{d.edit.body}</p>
+            </header>
+            <div className="edit-demo" data-reveal>
+              <BeatCut locale={lang} />
+            </div>
+            <div className="edit-copy">
+              <ul className="stats-points edit-points" data-reveal>
+                {d.edit.points.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+              <div className="edit-manual" data-reveal style={at(1)}>
+                <h3>{d.edit.manualTitle}</h3>
+                <p>{d.edit.manual}</p>
+                <p className="stats-note">{d.edit.musicNote}</p>
+              </div>
+            </div>
           </div>
         </section>
 
