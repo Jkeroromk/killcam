@@ -7,6 +7,7 @@ import {
   fileUrl,
   on,
   type AudioDevice,
+  type CompressInfo,
   type EventKind,
   type EventRule,
   type GameId,
@@ -611,6 +612,85 @@ export function HotkeySection(props: { settings: Settings; set: SetSettings }) {
 
 // ---------------------------------------------------------------------------
 
+/** Old recordings to AV1: about half the space, done on the GPU while no game runs. */
+function CompressField(props: { settings: Settings; set: SetSettings }) {
+  const { settings, set } = props;
+  const [info, setInfo] = useState<CompressInfo | null>(null);
+  const [asked, setAsked] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const load = () => api.compressInfo().then((i) => live && setInfo(i)).catch(() => {});
+    load();
+    const un = on<number>("library-changed", load);
+    return () => {
+      live = false;
+      un();
+    };
+  }, [settings.compressAfterDays]);
+  const days = settings.compressAfterDays || 14;
+  const unsupported = info?.supported === false;
+  return (
+    <Field
+      label={t("自动压缩旧录像", "Compress old recordings")}
+      hint={t(
+        `超过 ${days} 天的录像在没开游戏时用显卡转成 AV1，通常省一半空间，画质基本看不出差别。打游戏时会自动暂停`,
+        `Recordings older than ${days} days are re-encoded to AV1 on the GPU while no game runs: usually half the space, hard to tell apart. Pauses while you play`,
+      )}
+    >
+      {unsupported ? (
+        <p className="muted small">
+          {t("这台电脑的显卡没有 AV1 硬件编码（需要 NVIDIA RTX 40 系列或更新），所以不压缩。", "This PC's GPU has no AV1 hardware encoder (needs an NVIDIA RTX 40 series or newer), so nothing is compressed.")}
+        </p>
+      ) : (
+        <div className="stack-tight">
+          <div className="row">
+            <Toggle
+              checked={settings.compressOld}
+              onChange={(v) => set((s) => ({ ...s, compressOld: v }))}
+              label={settings.compressOld ? t("开启", "On") : t("关闭", "Off")}
+            />
+            <Segmented
+              value={days}
+              onChange={(v) => set((s) => ({ ...s, compressAfterDays: v }))}
+              options={[
+                { value: 7, label: t("7 天", "7 days") },
+                { value: 14, label: t("14 天", "14 days") },
+                { value: 30, label: t("30 天", "30 days") },
+              ]}
+            />
+          </div>
+          {info && (
+            <p className="muted small">
+              {t(
+                `已压缩 ${info.compressed} 场，省下 ${bytes(info.savedBytes)}`,
+                `${info.compressed} ${plural(info.compressed, "recording", "recordings")} compressed, ${bytes(info.savedBytes)} saved`,
+              )}
+              {info.due > 0 &&
+                t(` · 还有 ${info.due} 场待压缩`, ` · ${info.due} waiting`)}
+              {info.due > 0 && (
+                <>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="linkbtn"
+                    disabled={asked}
+                    onClick={() => {
+                      setAsked(true);
+                      api.compressNow().catch(() => {});
+                    }}
+                  >
+                    {asked ? t("已开始，没开游戏时会在后台进行", "Started; runs in the background while no game is open") : t("现在压缩", "Compress now")}
+                  </button>
+                </>
+              )}
+            </p>
+          )}
+        </div>
+      )}
+    </Field>
+  );
+}
+
 export function StorageSection(props: { settings: Settings; set: SetSettings; hardware: HardwareInfo | null }) {
   const { settings, set, hardware } = props;
   const disk = useMemo(() => {
@@ -650,6 +730,7 @@ export function StorageSection(props: { settings: Settings; set: SetSettings; ha
           format={(v) => `${v} GB`}
         />
       </Field>
+      <CompressField settings={settings} set={set} />
       <Field label={t("自动录制", "Auto-record")}>
         <Toggle
           checked={settings.autoRecord}

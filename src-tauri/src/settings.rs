@@ -259,6 +259,9 @@ pub struct Settings {
     pub marker_sound: bool,
     /// "auto" (the Windows display language), "zh" or "en"
     pub language: String,
+    /// re-encode recordings older than `compress_after_days` to AV1 in the background
+    pub compress_old: bool,
+    pub compress_after_days: u32,
 }
 
 impl Default for Settings {
@@ -285,6 +288,8 @@ impl Default for Settings {
             launch_at_login: true,
             marker_sound: true,
             language: "auto".into(),
+            compress_old: true,
+            compress_after_days: 14,
         }
     }
 }

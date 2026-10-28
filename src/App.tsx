@@ -106,6 +106,10 @@ export default function App() {
             <div className="rec-pill">
               <Spinner /> {status.processing}
             </div>
+          ) : status?.compressing ? (
+            <div className="rec-pill">
+              <Spinner /> {status.compressing}
+            </div>
           ) : (
             <div className="rec-pill">{status?.gameRunning
                 ? t(`${gameName(status.game)} 运行中`, `${label(gameName(status.game))} running`)

@@ -1,4 +1,5 @@
 mod audio;
+mod compress;
 mod detector;
 mod ffmpeg;
 mod game;
@@ -81,6 +82,12 @@ pub struct AppState {
     last_error: Mutex<Option<String>>,
     auto_session: AtomicBool,
     process_tx: Mutex<Option<Sender<bool>>>,
+    /// wakes the compressor (true = compress what's due even if auto is off)
+    compress_tx: Mutex<Option<Sender<bool>>>,
+    /// "compressing 2 / 5" while it works
+    compressing: Mutex<Option<String>>,
+    /// the GPU's AV1 encoder: None = not probed yet, Some(None) = there is none
+    av1: Mutex<Option<Option<String>>>,
     ffmpeg_path: Mutex<Option<PathBuf>>,
     hotkeys: Mutex<Vec<(Shortcut, &'static str)>>,
     perf_running: AtomicBool,
@@ -198,6 +205,8 @@ struct Status {
     game_running: bool,
     auto_session: bool,
     processing: Option<String>,
+    /// old recordings being re-encoded to AV1
+    compressing: Option<String>,
     waiting_minutes: Option<i64>,
     last_error: Option<String>,
     warnings: Vec<String>,
@@ -325,6 +334,7 @@ fn build_status(st: &AppState) -> Status {
         game_running: lk(&st.game_pid).is_some(),
         auto_session: st.auto_session.load(Ordering::Relaxed),
         processing: lk(&st.processing).clone(),
+        compressing: lk(&st.compressing).clone(),
         waiting_minutes: *lk(&st.waiting),
         last_error: lk(&st.last_error).clone(),
         warnings,
@@ -865,6 +875,130 @@ fn spawn_game_watcher(app: AppHandle, st: St) {
             thread::sleep(Duration::from_secs(3));
         }
     });
+}
+
+/// Busy with a game or recording: compression waits (and stops if it started).
+fn compress_blocked(st: &AppState) -> bool {
+    lk(&st.game_pid).is_some() || lk(&st.recording).is_some() || lk(&st.processing).is_some()
+}
+
+/// Re-encodes old recordings to AV1, one at a time, only while no game runs.
+fn spawn_compressor(app: AppHandle, st: St) {
+    let (tx, rx) = mpsc::channel::<bool>();
+    *lk(&st.compress_tx) = Some(tx);
+    thread::spawn(move || {
+        #[cfg(windows)]
+        unsafe {
+            use windows_sys::Win32::System::Threading::{
+                GetCurrentThread, SetThreadPriority, THREAD_MODE_BACKGROUND_BEGIN,
+            };
+            SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
+        }
+        // let launch settle (startup cleanup, first processing pass) first
+        let mut wait = Duration::from_secs(120);
+        let mut forced = false;
+        loop {
+            if let Ok(f) = rx.recv_timeout(wait) {
+                forced = forced || f;
+                while let Ok(f2) = rx.try_recv() {
+                    forced = forced || f2;
+                }
+            }
+            wait = Duration::from_secs(600);
+            let settings = lk(&st.settings).clone();
+            if !settings.onboarded || !(settings.compress_old || forced) || compress_blocked(&st) {
+                continue;
+            }
+            let (Ok(lib), Ok(ff)) = (st.lib(), st.ffmpeg()) else {
+                continue;
+            };
+            let enc = {
+                let known = lk(&st.av1).clone();
+                match known {
+                    Some(e) => e,
+                    None => {
+                        let e = compress::av1_encoder(&ff).map(|s| s.to_string());
+                        *lk(&st.av1) = Some(e.clone());
+                        e
+                    }
+                }
+            };
+            let Some(enc) = enc else {
+                forced = false;
+                continue;
+            };
+            let due = compress::due_list(&lib, settings.compress_after_days, recorder::now_ms());
+            let total = due.len();
+            let mut finished = true;
+            for (i, rec) in due.iter().enumerate() {
+                if compress_blocked(&st) {
+                    finished = false;
+                    break;
+                }
+                *lk(&st.compressing) = Some(i18n::tr(
+                    format!("正在压缩旧录像 {} / {}", i + 1, total),
+                    format!("Compressing old recordings {} / {}", i + 1, total),
+                ));
+                emit_status(&app, &st);
+                let stop = || compress_blocked(&st);
+                if compress::compress_record(&lib, &ff, &rec.id, &enc, &stop).is_err() {
+                    // paused for a game, or a file in use: next round
+                    finished = false;
+                    if compress_blocked(&st) {
+                        break;
+                    }
+                }
+            }
+            *lk(&st.compressing) = None;
+            if total > 0 {
+                let _ = app.emit("library-changed", 0);
+            }
+            emit_status(&app, &st);
+            if finished {
+                forced = false;
+            } else {
+                // try again soon once the game is closed
+                wait = Duration::from_secs(120);
+            }
+        }
+    });
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompressInfo {
+    /// None = not checked yet
+    supported: Option<bool>,
+    compressed: usize,
+    saved_bytes: u64,
+    /// old enough and not compressed yet
+    due: usize,
+}
+
+#[tauri::command]
+async fn compress_info(st: State<'_, St>) -> Result<CompressInfo, String> {
+    let st = st.inner().clone();
+    blocking(move || {
+        let lib = st.lib()?;
+        let days = lk(&st.settings).compress_after_days;
+        let all = lib.list();
+        let now = recorder::now_ms();
+        Ok(CompressInfo {
+            supported: lk(&st.av1).clone().map(|e| e.is_some()),
+            compressed: all.iter().filter(|m| m.compressed).count(),
+            saved_bytes: all.iter().map(|m| m.saved_bytes).sum(),
+            due: all.iter().filter(|m| compress::due(m, days, now)).count(),
+        })
+    })
+    .await
+}
+
+/// Compress what's due now (also when automatic compression is off).
+#[tauri::command]
+fn compress_now(st: State<'_, St>) {
+    if let Some(tx) = lk(&st.compress_tx).as_ref() {
+        let _ = tx.send(true);
+    }
 }
 
 fn spawn_processor(app: AppHandle, st: St) {
@@ -2021,6 +2155,9 @@ pub fn run() {
                 last_error: Mutex::new(None),
                 auto_session: AtomicBool::new(false),
                 process_tx: Mutex::new(None),
+                compress_tx: Mutex::new(None),
+                compressing: Mutex::new(None),
+                av1: Mutex::new(None),
                 ffmpeg_path: Mutex::new(None),
                 hotkeys: Mutex::new(Vec::new()),
                 perf_running: AtomicBool::new(false),
@@ -2070,6 +2207,7 @@ pub fn run() {
             spawn_status_loop(handle.clone(), state.clone());
             spawn_game_watcher(handle.clone(), state.clone());
             spawn_processor(handle.clone(), state.clone());
+            spawn_compressor(handle.clone(), state.clone());
             spawn_update_checker(handle.clone(), state.clone());
 
             // tray
@@ -2144,6 +2282,8 @@ pub fn run() {
             trim_highlight,
             delete_match,
             delete_matches,
+            compress_info,
+            compress_now,
             export_clip,
             export_montage,
             reveal,

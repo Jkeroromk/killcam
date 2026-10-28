@@ -101,6 +101,9 @@ pub struct MatchRecord {
     pub game: String,
     /// League of Legends: champion, KDA, the scoreboard
     pub lol: Option<lol::LolStats>,
+    /// re-encoded to AV1 to save space (see compress.rs), and how much it saved
+    pub compressed: bool,
+    pub saved_bytes: u64,
 }
 
 pub struct Lib {
@@ -126,6 +129,10 @@ fn covered(a: (i64, i64), b: (i64, i64)) -> bool {
     let len = a.1 - a.0;
     let inside = (a.1.min(b.1) - a.0.max(b.0)).max(0);
     len > 0 && inside * 10 >= len * 6
+}
+
+pub fn folder_size(p: &Path) -> u64 {
+    dir_size(p)
 }
 
 fn dir_size(p: &Path) -> u64 {
@@ -1107,6 +1114,9 @@ pub fn build_record(
         pending_api: input.pending_api,
         game: input.game.id().to_string(),
         lol: input.lol,
+        // new files: compressed later, when they're old enough
+        compressed: false,
+        saved_bytes: 0,
     };
     lib.save(&rec)?;
     let mut out = rec;

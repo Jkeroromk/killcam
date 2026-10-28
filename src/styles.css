@@ -3278,3 +3278,15 @@ button.st-best:hover {
   background: var(--text);
   border-radius: 6px 6px 0 0;
 }
+
+.stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stack-tight > .row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}

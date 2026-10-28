@@ -43,6 +43,17 @@ export interface Settings {
   markerSound: boolean;
   /** "auto" follows the Windows display language */
   language: LangSetting;
+  /** re-encode recordings older than compressAfterDays to AV1 */
+  compressOld: boolean;
+  compressAfterDays: number;
+}
+
+export interface CompressInfo {
+  /** null = not checked yet (it is, a couple of minutes after launch) */
+  supported: boolean | null;
+  compressed: number;
+  savedBytes: number;
+  due: number;
 }
 
 export interface GameSettings {
@@ -101,6 +112,8 @@ export interface Status {
   gameRunning: boolean;
   autoSession: boolean;
   processing: string | null;
+  /** old recordings being re-encoded to AV1 */
+  compressing?: string | null;
   waitingMinutes: number | null;
   lastError: string | null;
   warnings: string[];
@@ -377,6 +390,8 @@ export const api = {
   exportDiagnostics: (path: string) => invoke<void>("export_diagnostics", { path }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   storageInfo: () => invoke<StorageInfo>("storage_info"),
+  compressInfo: () => invoke<CompressInfo>("compress_info"),
+  compressNow: () => invoke<void>("compress_now"),
   checkFfmpeg: (path: string | null) => invoke<FfmpegInfo | null>("check_ffmpeg", { path }),
   defaultLibraryDir: () => invoke<string>("default_library_dir"),
 };
