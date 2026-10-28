@@ -80,6 +80,8 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
   const [drag, setDrag] = useState<number | null>(null);
   const [dropAt, setDropAt] = useState<number | null>(null);
   const [pos, setPos] = useState<number | null>(null);
+  // frame rate of each clip's video file
+  const [fps, setFps] = useState<Record<string, number>>({});
   const [playingAll, setPlayingAll] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
   const pending = useRef<{ local: number; play: boolean } | null>(null);
@@ -103,6 +105,17 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
   }, []);
 
   const items = doc?.items ?? [];
+
+  const fileKey = [...new Set(items.map((i) => i.file))].sort().join("|");
+  useEffect(() => {
+    const files = fileKey ? fileKey.split("|").filter((f) => fps[f] == null) : [];
+    if (files.length === 0) return;
+    api
+      .videoFps(files)
+      .then((r) => setFps((cur) => ({ ...cur, ...Object.fromEntries(files.map((f, i) => [f, r[i]])) })))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileKey]);
   const idx = items.findIndex((i) => i.key === sel);
   const it = idx >= 0 ? items[idx] : null;
 
@@ -192,18 +205,19 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     show({ ...x, start: a, end: b }, false, edge === "a" ? a : Math.max(a, b - 2));
   };
 
-  const doExport = async () => {
+  const doExport = async (only?: EditItem) => {
     if (!doc || doc.items.length === 0) return;
+    const list = only ? [only] : doc.items;
     setErr(null);
     setExported(null);
-    setProgress({ fraction: 0, part: 1, parts: doc.items.length });
+    setProgress({ fraction: 0, part: 1, parts: list.length });
     video.current?.pause();
     stopAll();
     const un = on<EditProgress>("edit-progress", setProgress);
     try {
       const path = await api.exportEdit(
-        doc.items.map((i) => request(i, doc)),
-        doc.opts,
+        list.map((i) => request(i, doc)),
+        { ...doc.opts, fps120: doc.opts.fps120 && canInterp && lowFps > 0 },
       );
       setExported(path);
     } catch (e) {
@@ -228,6 +242,10 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
   const o = doc.opts;
   const setOpts = (p: Partial<EditOptions>) => update({ ...doc, opts: { ...o, ...p } });
   const busy = progress != null;
+  // clips under 120 fps: the only ones interpolation does anything for
+  const lowFps = items.filter((i) => (fps[i.file] ?? 0) > 0 && fps[i.file] < 119).length;
+  const fpsKnown = items.every((i) => fps[i.file] != null);
+  const canInterp = !fpsKnown || lowFps > 0;
 
   return (
     <div className="page page-wide edit-page">
@@ -417,6 +435,9 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                     <Button small onClick={() => { stopAll(); show(it, true); }} disabled={missing.has(it.matchId)}>
                       <Play size={14} /> {t("播放这段", "Play clip")}
                     </Button>
+                    <Button small kind="ghost" onClick={() => doExport(it)} disabled={busy || missing.has(it.matchId)} title={t("用右边的设置只导出这一段", "Export just this clip with the settings on the right")}>
+                      <Download size={14} /> {t("只导出这段", "Export this clip")}
+                    </Button>
                     {playingAll ? (
                       <Button small onClick={() => { stopAll(); video.current?.pause(); }}>
                         <Square size={13} /> {t("停止", "Stop")}
@@ -467,10 +488,10 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                   value={o.sizeMb}
                   onChange={(n) => setOpts({ sizeMb: n })}
                   options={[
-                    { value: 0, label: t("不限", "Any") },
+                    { value: 0, label: t("不限大小", "Any size") },
+                    { value: 10, label: "10MB" },
                     { value: 25, label: "25MB" },
                     { value: 50, label: "50MB" },
-                    { value: 100, label: "100MB" },
                   ]}
                 />
                 {o.sizeMb > 0 && <p className="muted small">{t("会自动降低分辨率和码率来压到这个大小以内，成片越长越模糊。", "Resolution and bitrate are lowered to fit; the longer the video, the blurrier.")}</p>}
@@ -500,15 +521,26 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                   </p>
                 </div>
                 <div className="ed-fx">
-                  <Toggle checked={o.fps120 && o.sizeMb === 0} disabled={o.sizeMb > 0} onChange={(v) => setOpts({ fps120: v })} label={t("补帧到 120 帧", "Interpolate to 120 fps")} />
-                  <p className={"small " + (o.fps120 && o.sizeMb === 0 ? "warn-text" : "muted")}>
-                    {o.sizeMb > 0
-                      ? t("限制大小时不能补帧。", "Not available with a size limit.")
-                      : t(
-                          "用 CPU 算出中间帧，画面和慢动作都更顺滑。非常慢：1 分钟的成片可能要算半小时以上，期间电脑会比较卡，建议打完游戏再导。",
-                          "Works out in-between frames on the CPU, for smoother motion and slow motion. Very slow: a 1-minute video can take half an hour or more and keeps the PC busy, so export when you're done playing.",
-                        )}
-                  </p>
+                  {canInterp ? (
+                    <>
+                      <Toggle checked={o.fps120 && o.sizeMb === 0} disabled={o.sizeMb > 0} onChange={(v) => setOpts({ fps120: v })} label={t("补帧到 120 帧", "Interpolate to 120 fps")} />
+                      <p className={"small " + (o.fps120 && o.sizeMb === 0 ? "warn-text" : "muted")}>
+                        {o.sizeMb > 0
+                          ? t("限制大小时不能补帧。", "Not available with a size limit.")
+                          : t(
+                              `有 ${lowFps} 段不到 120 帧。补帧用 CPU 算出中间帧，画面和慢动作都更顺滑。非常慢：1 分钟的成片可能要算半小时以上，期间电脑会比较卡，建议打完游戏再导。`,
+                              `${lowFps} ${plural(lowFps, "clip is", "clips are")} under 120 fps. Interpolation works out in-between frames on the CPU, for smoother motion and slow motion. Very slow: a 1-minute video can take half an hour or more and keeps the PC busy, so export when you're done playing.`,
+                            )}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <span className="ed-fx-label">{t("帧率", "Frame rate")}</span>
+                      <p className="muted small">
+                        {t("这些片段录的时候就是 120 帧，导出也是 120 帧，不需要补帧；慢动作也有 60 帧，依然流畅。", "These clips were recorded at 120 fps and export at 120 fps, so there's nothing to interpolate. Slow motion still plays at 60 fps.")}
+                      </p>
+                    </>
+                  )}
                 </div>
               </section>
 
@@ -532,7 +564,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                     </div>
                   </>
                 ) : (
-                  <Button kind="primary" onClick={doExport} disabled={nMissing > 0}>
+                  <Button kind="primary" onClick={() => doExport()} disabled={nMissing > 0}>
                     <Download size={15} /> {t("导出视频", "Export video")}
                   </Button>
                 )}

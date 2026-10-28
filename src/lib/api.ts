@@ -67,6 +67,8 @@ export interface RouteView {
   route: { mapName: string; landing: RouteSpot | null; path: RouteSpot[]; marks: RouteMark[] };
   /** local map image, null when it couldn't be downloaded */
   image: string | null;
+  /** the sharp map image, once downloaded */
+  hd?: string | null;
 }
 
 export interface CompressInfo {
@@ -441,6 +443,7 @@ export const api = {
   editSet: (data: string) => invoke<void>("edit_set", { data }),
   exportEdit: (clips: EditClipReq[], options: EditOptions) => invoke<string>("export_edit", { clips, options }),
   cancelEdit: () => invoke<void>("cancel_edit"),
+  videoFps: (paths: string[]) => invoke<number[]>("video_fps", { paths }),
   reveal: (path: string) => invoke<void>("reveal", { path }),
   exportDiagnostics: (path: string) => invoke<void>("export_diagnostics", { path }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
@@ -448,6 +451,7 @@ export const api = {
   compressInfo: () => invoke<CompressInfo>("compress_info"),
   compressNow: () => invoke<void>("compress_now"),
   matchRoute: (id: string) => invoke<RouteView>("match_route", { id }),
+  mapHd: (map: string) => invoke<string>("map_hd", { map }),
   checkFfmpeg: (path: string | null) => invoke<FfmpegInfo | null>("check_ffmpeg", { path }),
   defaultLibraryDir: () => invoke<string>("default_library_dir"),
 };

@@ -68,11 +68,15 @@ export function RouteMap(props: { m: MatchRecord; pos: number; seek: (t: number)
   const [err, setErr] = useState<string | null>(null);
   const [whole, setWhole] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
+  // the sharp map: downloaded once per map, the small one shows meanwhile
+  const [hd, setHd] = useState<string | null>(null);
+  const [hdLoading, setHdLoading] = useState(false);
 
   useEffect(() => {
     let live = true;
     setView(null);
     setErr(null);
+    setHd(null);
     api
       .matchRoute(m.id)
       .then((v) => live && setView(v))
@@ -81,6 +85,26 @@ export function RouteMap(props: { m: MatchRecord; pos: number; seek: (t: number)
       live = false;
     };
   }, [m.id]);
+
+  const mapName = view?.route.mapName;
+  useEffect(() => {
+    if (!view) return;
+    if (view.hd) {
+      setHd(view.hd);
+      return;
+    }
+    let live = true;
+    setHdLoading(true);
+    api
+      .mapHd(view.route.mapName)
+      .then((p) => live && setHd(p))
+      .catch(() => {})
+      .finally(() => live && setHdLoading(false));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, mapName]);
 
   const r = view?.route;
   // zoomed onto where the player was (all of the map when asked, or nothing to frame)
@@ -124,8 +148,8 @@ export function RouteMap(props: { m: MatchRecord; pos: number; seek: (t: number)
         <div className="route-body">
           <div className="route-map">
             <svg viewBox={`${box.x} ${box.y} ${box.s} ${box.s}`} preserveAspectRatio="xMidYMid meet" style={{ ["--k" as string]: k }}>
-              {view.image ? (
-                <image href={fileUrl(view.image)} x={0} y={0} width={1000} height={1000} />
+              {hd || view.image ? (
+                <image href={fileUrl(hd ?? view.image!)} x={0} y={0} width={1000} height={1000} />
               ) : (
                 <rect x={0} y={0} width={1000} height={1000} className="rm-nomap" />
               )}
@@ -144,7 +168,8 @@ export function RouteMap(props: { m: MatchRecord; pos: number; seek: (t: number)
               ))}
               {now && <circle className="rm-now" cx={now.x * 1000} cy={now.y * 1000} r={7 * k} />}
             </svg>
-            {!view.image && <span className="route-nomap muted small">{t("地图图片没下载下来（离线？），路线照常显示", "The map image couldn't be downloaded (offline?); the route still shows")}</span>}
+            {hdLoading && !hd && view.image && <span className="route-nomap muted small">{t("正在下载高清地图（约 100 MB，每张地图只下一次）…", "Downloading the sharp map (about 100 MB, once per map)…")}</span>}
+            {!view.image && !hd && <span className="route-nomap muted small">{t("地图图片没下载下来（离线？），路线照常显示", "The map image couldn't be downloaded (offline?); the route still shows")}</span>}
           </div>
           <ol className="route-list">
             {r!.landing && (

@@ -164,13 +164,13 @@ fn caption_font() -> Option<PathBuf> {
     c.into_iter().find(|p| p.exists())
 }
 
-struct Probe {
-    fps: f64,
-    audio: bool,
+pub struct Probe {
+    pub fps: f64,
+    pub audio: bool,
 }
 
 /// Frame rate and whether there is sound, from `ffmpeg -i`.
-fn probe(ff: &Path, file: &Path) -> Probe {
+pub fn probe(ff: &Path, file: &Path) -> Probe {
     let err = ffmpeg::run(ff, &["-hide_banner".to_string(), "-i".to_string(), file.to_string_lossy().to_string()], 0)
         .map(|o| String::from_utf8_lossy(&o.stderr).to_string())
         .unwrap_or_default();
@@ -403,17 +403,23 @@ pub fn export(
     let size = out_size(first.width, first.height, &o.aspect, height);
     let fill = o.aspect == "16:9" || o.aspect == "9:16";
     let mut probes: HashMap<PathBuf, Probe> = HashMap::new();
-    let src_fps = {
-        let p = probe(ff, &plan[0].0);
-        let f = p.fps;
-        probes.insert(plan[0].0.clone(), p);
-        f
-    };
+    for (src, ..) in &plan {
+        if !probes.contains_key(src) {
+            probes.insert(src.clone(), probe(ff, src));
+        }
+    }
+    // the smoothest clip sets the frame rate (a 60 fps clip next to 120 fps ones gets doubled frames)
+    let src_fps = probes.values().map(|p| p.fps).fold(0.0, f64::max);
     let interpolate = o.fps120 && budget.is_none();
     let fps_out: f64 = if interpolate {
-        120.0
-    } else if budget.map(|b| b.fps30).unwrap_or(false) {
-        30.0
+        src_fps.round().max(120.0)
+    } else if let Some(b) = budget {
+        // a size limit: frames cost bits
+        if b.fps30 {
+            30.0
+        } else {
+            src_fps.round().clamp(24.0, 60.0)
+        }
     } else {
         // 59.94 and the like as a whole number: parts must all match
         src_fps.round().clamp(24.0, 240.0)
@@ -437,7 +443,7 @@ pub fn export(
         let mut jobs: Vec<(Vec<String>, f64)> = Vec::new();
         for (i, (src, a, b, c)) in plan.iter().enumerate() {
             let dur = b - a;
-            let p = probes.remove(src).unwrap_or_else(|| probe(ff, src));
+            let p = probes.get(src).map(|p| Probe { fps: p.fps, audio: p.audio }).unwrap_or_else(|| probe(ff, src));
             let caps: Vec<(f64, String)> = c
                 .captions
                 .iter()
@@ -460,8 +466,6 @@ pub fn export(
                 fps_out,
                 interpolate && p.fps < 119.0,
             );
-            let gname = format!("graph_{i:03}.txt");
-            fs::write(tmp.join(&gname), &graph).map_err(|e| e.to_string())?;
             let mut args: Vec<String> = vec![
                 "-hide_banner".into(),
                 "-loglevel".into(),
@@ -473,8 +477,9 @@ pub fn export(
                 num(dur),
                 "-i".into(),
                 src.to_string_lossy().to_string(),
-                "-filter_complex_script".into(),
-                gname,
+                // inline: -filter_complex_script is gone from ffmpeg 8, and its replacement isn't in 6
+                "-filter_complex".into(),
+                graph,
                 "-map".into(),
                 "[vo]".into(),
                 "-map".into(),

@@ -98,6 +98,56 @@ pub fn map_image(dir: &Path, map: &str) -> Option<PathBuf> {
     Some(path)
 }
 
+/// The sharp map: PUBG's 8192 px image (about 100 MB, downloaded once per
+/// map) scaled to 4096 px. None until it's there.
+pub fn map_hd_cached(dir: &Path, map: &str) -> Option<PathBuf> {
+    let file = map_asset(map)?;
+    let p = dir.join(file.replace("_Low_Res.png", "_4k.jpg"));
+    p.exists().then_some(p)
+}
+
+pub fn map_hd(dir: &Path, ff: &Path, map: &str) -> Result<PathBuf, String> {
+    if let Some(p) = map_hd_cached(dir, map) {
+        return Ok(p);
+    }
+    let file = map_asset(map).ok_or_else(|| tr("这张地图还不支持", "This map isn't supported yet"))?;
+    let high = file.replace("_Low_Res", "_High_Res");
+    let out = dir.join(file.replace("_Low_Res.png", "_4k.jpg"));
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let png = dir.join(format!("{high}.download"));
+    let c = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(900))
+        .build()
+        .map_err(|e| e.to_string())?;
+    // the large images are stored with Git LFS
+    let mut r = c
+        .get(format!("https://media.githubusercontent.com/media/pubg/api-assets/master/Assets/Maps/{high}"))
+        .send()
+        .map_err(|e| tr(format!("高清地图下载失败：{e}"), format!("Couldn't download the sharp map: {e}")))?;
+    if !r.status().is_success() {
+        return Err(tr(format!("高清地图下载失败（{}）", r.status()), format!("Couldn't download the sharp map ({})", r.status())));
+    }
+    let res = (|| -> Result<(), String> {
+        let mut f = fs::File::create(&png).map_err(|e| e.to_string())?;
+        r.copy_to(&mut f).map_err(|e| e.to_string())?;
+        drop(f);
+        let tmp = dir.join(format!("{}.tmp.jpg", file));
+        let args: Vec<String> = [
+            "-hide_banner", "-loglevel", "error", "-y", "-f", "png_pipe", "-i",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .chain([png.to_string_lossy().to_string()])
+        .chain(["-vf", "scale=4096:4096:flags=lanczos", "-q:v", "3", "-frames:v", "1"].iter().map(|s| s.to_string()))
+        .chain([tmp.to_string_lossy().to_string()])
+        .collect();
+        crate::ffmpeg::run_ok(ff, &args, crate::ffmpeg::BELOW_NORMAL_PRIORITY_CLASS)?;
+        fs::rename(&tmp, &out).map_err(|e| e.to_string())
+    })();
+    let _ = fs::remove_file(&png);
+    res.map(|_| out)
+}
+
 fn acc(v: Option<&Value>) -> Option<&str> {
     v.and_then(|c| c.get("accountId")).and_then(|a| a.as_str())
 }

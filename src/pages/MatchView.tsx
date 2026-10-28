@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ChevronDown, ChevronRight, Clapperboard, Download, FolderOpen, Play, Star, Trash2, Scissors, Layers, RotateCcw } from "lucide-react";
-import { api, errText, fileUrl, highlightBounds, joinPath, type ExportOptions, type Highlight, type LolStats, type MatchRecord } from "../lib/api";
+import { ArrowLeft, ChevronDown, ChevronRight, Clapperboard, FolderOpen, Play, Star, Trash2, RotateCcw } from "lucide-react";
+import { api, errText, fileUrl, highlightBounds, joinPath, type Highlight, type LolStats, type MatchRecord } from "../lib/api";
 import { bytes, clock, eventLine, isLol, kda, kindLabel, when } from "../lib/format";
 import { gameDef } from "../lib/games";
 import { ChampIcon } from "./Library";
-import { Button, KindIcon, Segmented, Spinner } from "../components/ui";
+import { Button, KindIcon, Spinner } from "../components/ui";
 import { Timeline } from "../components/Timeline";
 import { RouteMap } from "../components/RouteMap";
 import { isEn, label, plural, t, title } from "../lib/i18n";
@@ -104,10 +104,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
   const [active, setActive] = useState<string | null>(null);
   const [pos, setPos] = useState(0);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [opts, setOpts] = useState<ExportOptions>({ aspect: "source", height: 1080, audio: "mix", sizeMb: 0 });
   const [range, setRange] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
-  const [exporting, setExporting] = useState<string | null>(null);
-  const [exported, setExported] = useState<string | null>(null);
   // clips just sent to the edit page, and how many it has now
   const [added, setAdded] = useState<{ n: number; total: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -228,32 +225,6 @@ export default function MatchView(props: { id: string; back: () => void; libVers
     const b = edge === "b" ? Math.min(hi, Math.max(h.end + dt, h.start + 1)) : h.end;
     trim(h, a, b);
     seekGlobal(edge === "a" ? a : Math.max(a, b - 2), false, h);
-  };
-
-  const doExport = async (what: "highlight" | "montage" | "range") => {
-    if (!m) return;
-    setExported(null);
-    setErr(null);
-    try {
-      let path: string;
-      if (what === "highlight" && activeH) {
-        setExporting(t(`正在导出「${activeH.title}」`, `Exporting "${title(activeH.title)}"`));
-        path = await api.exportClip(m.id, activeH.start, activeH.end, title(activeH.title), opts);
-      } else if (what === "montage") {
-        setExporting(t(`正在导出 ${picked.size} 段高光合集`, `Exporting a montage of ${picked.size} ${plural(picked.size, "highlight", "highlights")}`));
-        path = await api.exportMontage(m.id, m.highlights.filter((h) => picked.has(h.id)).map((h) => h.id), opts);
-      } else {
-        const a = Math.min(range.a ?? 0, range.b ?? 0);
-        const b = Math.max(range.a ?? 0, range.b ?? 0);
-        setExporting(t("正在导出选定区间", "Exporting the selected range"));
-        path = await api.exportClip(m.id, a, b, t("片段", "Clip"), opts);
-      }
-      setExported(path);
-    } catch (e) {
-      setErr(errText(e));
-    } finally {
-      setExporting(null);
-    }
   };
 
   const sendToEdit = async (what: "picked" | "range") => {
@@ -489,96 +460,26 @@ export default function MatchView(props: { id: string; back: () => void; libVers
               </div>
             )}
             <div className="export-row">
-              <Segmented
-                value={opts.aspect}
-                onChange={(a) => setOpts({ ...opts, aspect: a, height: a === "9:16" ? 1080 : opts.height })}
-                options={[
-                  { value: "source", label: t("原比例", "Original") },
-                  { value: "16:9", label: "16:9" },
-                  { value: "9:16", label: t("竖屏", "Vertical (9:16)") },
-                ]}
-              />
-              <Segmented
-                value={opts.height}
-                onChange={(h) => setOpts({ ...opts, height: h })}
-                options={[
-                  { value: 0, label: t("原始", "Source") },
-                  { value: 1080, label: "1080p" },
-                  { value: 720, label: "720p" },
-                ]}
-              />
-              <Segmented
-                value={opts.sizeMb > 0 ? "mix" : opts.audio}
-                onChange={(a) => setOpts({ ...opts, audio: a })}
-                options={[
-                  { value: "mix", label: t("混音", "Mixed audio") },
-                  { value: "all", label: t("分轨", "Separate tracks"), disabled: opts.sizeMb > 0 },
-                ]}
-              />
-              <Segmented
-                value={opts.sizeMb}
-                onChange={(n) => setOpts({ ...opts, sizeMb: n })}
-                options={[
-                  { value: 0, label: t("不限大小", "Any size") },
-                  { value: 10, label: "10MB" },
-                  { value: 25, label: "25MB" },
-                  { value: 50, label: "50MB" },
-                ]}
-              />
-              <span className="grow" />
-              <Button kind="primary" small onClick={() => doExport("highlight")} disabled={!activeH || !!exporting}>
-                <Download size={14} /> {t("导出这段", "Export clip")}
-              </Button>
-              <Button small onClick={() => doExport("montage")} disabled={picked.size === 0 || !!exporting}>
-                <Layers size={14} /> {t("合集", "Montage")} · {picked.size}
-              </Button>
-              <Button small onClick={() => sendToEdit("picked")} disabled={picked.size === 0} title={t("把勾选的高光放进「剪辑」，和别的对局一起剪", "Put the checked highlights in Edit, to cut them together with other matches")}>
+              <Button kind="primary" small onClick={() => sendToEdit("picked")} disabled={picked.size === 0}>
                 <Clapperboard size={14} /> {t("加入剪辑", "Add to edit")} · {picked.size}
               </Button>
+              <span className="muted small">{t("勾选右边的高光，放进「剪辑」里排序、加效果、导出。", "Check highlights on the right, then order, add effects and export them in Edit.")}</span>
+              {!clipsOnly && (
+                <>
+                  <span className="grow" />
+                  <span className="muted small">{t("自选区间", "Custom range")}</span>
+                  <Button small kind="ghost" onClick={() => setRange({ ...range, a: pos })}>
+                    {t("起点", "Start")} {range.a != null ? clock(range.a) : "–"}
+                  </Button>
+                  <Button small kind="ghost" onClick={() => setRange({ ...range, b: pos })}>
+                    {t("终点", "End")} {range.b != null ? clock(range.b) : "–"}
+                  </Button>
+                  <Button small kind="ghost" onClick={() => sendToEdit("range")} disabled={!hasRange}>
+                    <Clapperboard size={14} /> {t("加入剪辑", "Add to edit")}
+                  </Button>
+                </>
+              )}
             </div>
-            {opts.sizeMb > 0 && (
-              <p className="muted small">
-                {opts.sizeMb === 10
-                  ? t("10MB 是 Discord 免费用户的上限。", "10MB is Discord's limit for free users. ")
-                  : opts.sizeMb === 25
-                    ? t("25MB 适合大多数聊天软件，画质好一些。", "25MB works in most chat apps, with better quality. ")
-                    : t("50MB 适合 Discord Nitro Basic。", "50MB fits Discord Nitro Basic. ")}
-                {t(
-                  "会自动降低分辨率和帧率来压到这个大小以内，片段越长越模糊，建议 30 秒以内。",
-                  "Resolution and frame rate are lowered to fit; longer clips get blurrier, so keep it under 30 seconds.",
-                )}
-              </p>
-            )}
-            {!clipsOnly && (
-              <div className="export-row">
-                <span className="muted small">{t("自选区间", "Custom range")}</span>
-                <Button small kind="ghost" onClick={() => setRange({ ...range, a: pos })}>
-                  {t("起点", "Start")} {range.a != null ? clock(range.a) : "–"}
-                </Button>
-                <Button small kind="ghost" onClick={() => setRange({ ...range, b: pos })}>
-                  {t("终点", "End")} {range.b != null ? clock(range.b) : "–"}
-                </Button>
-                <Button small kind="ghost" onClick={() => doExport("range")} disabled={!hasRange || !!exporting}>
-                  <Scissors size={14} /> {t("导出区间", "Export range")}
-                </Button>
-                <Button small kind="ghost" onClick={() => sendToEdit("range")} disabled={!hasRange}>
-                  <Clapperboard size={14} /> {t("区间加入剪辑", "Add range to edit")}
-                </Button>
-              </div>
-            )}
-            {exporting && (
-              <p className="muted small loading-row">
-                <Spinner /> {exporting}…
-              </p>
-            )}
-            {exported && (
-              <p className="ok-text small">
-                {t("已导出", "Exported")} <span className="mono">{exported.split(/[\\/]/).pop()}</span>
-                <button type="button" className="link" onClick={() => api.reveal(exported)}>
-                  {t("在文件夹中显示", "Show in folder")}
-                </button>
-              </p>
-            )}
             {added && (
               <p className="ok-text small">
                 {t(`已加入 ${added.n} 段，剪辑里现在一共 ${added.total} 段`, `Added ${added.n} ${plural(added.n, "clip", "clips")}; the edit now has ${added.total}`)}
@@ -597,11 +498,11 @@ export default function MatchView(props: { id: string; back: () => void; libVers
           <div className="side-head">
             {t("高光", "Highlights")} · {m.highlights.length}
             <span className="grow" />
-            <span className="faint small">{t("勾选的进合集", "Checked ones go in the montage")}</span>
+            <span className="faint small">{t("勾选的可以加入剪辑", "Checked ones can go to Edit")}</span>
           </div>
           {m.highlights.length === 0 && (
             <p className="muted small">{m.video
-                ? t("这局没有符合规则的高光，可以在左边自选区间导出。", "No highlights matched your rules. You can export a custom range on the left.")
+                ? t("这局没有符合规则的高光，可以在左边选一段区间加入剪辑。", "No highlights matched your rules. You can add a custom range to Edit on the left.")
                 : t("没有高光，也没有保留整局录像，这条记录可以删掉。", "No highlights and no full recording. This entry can be deleted.")}</p>
           )}
           <ul className="hl-list">
@@ -637,7 +538,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
                         else n.delete(h.id);
                         setPicked(n);
                       }}
-                      title={t("加入合集", "Add to montage")}
+                      title={t("加入剪辑时带上这段", "Include when adding to Edit")}
                     />
                   </div>
                 </li>

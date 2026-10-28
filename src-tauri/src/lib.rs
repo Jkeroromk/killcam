@@ -1361,6 +1361,22 @@ struct RouteView {
     route: route::Route,
     /// the map image (None while offline the first time)
     image: Option<String>,
+    /// the sharp one, once downloaded (map_hd)
+    hd: Option<String>,
+}
+
+/// Download the sharp version of a map once (about 100 MB); one at a time.
+#[tauri::command]
+async fn map_hd(app: AppHandle, st: State<'_, St>, map: String) -> Result<String, String> {
+    static BUSY: Mutex<()> = Mutex::new(());
+    let maps = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("maps");
+    let st = st.inner().clone();
+    blocking(move || {
+        let _one = BUSY.lock().unwrap_or_else(|e| e.into_inner());
+        let ff = st.ffmpeg()?;
+        route::map_hd(&maps, &ff, &map).map(|p| p.to_string_lossy().to_string())
+    })
+    .await
 }
 
 /// Where the player went and fought in a PUBG match.
@@ -1404,7 +1420,8 @@ async fn match_route(app: AppHandle, st: State<'_, St>, id: String) -> Result<Ro
             }
         };
         let image = route::map_image(&maps, &r.map_name).map(|p| p.to_string_lossy().to_string());
-        Ok(RouteView { route: r, image })
+        let hd = route::map_hd_cached(&maps, &r.map_name).map(|p| p.to_string_lossy().to_string());
+        Ok(RouteView { route: r, image, hd })
     })
     .await
 }
@@ -1874,6 +1891,27 @@ async fn export_edit(app: AppHandle, st: State<'_, St>, clips: Vec<edit::EditCli
     .await;
     st.editing.store(false, Ordering::SeqCst);
     r
+}
+
+/// Frame rates of the edit's video files (0 when unreadable).
+#[tauri::command]
+async fn video_fps(st: State<'_, St>, paths: Vec<String>) -> Result<Vec<f64>, String> {
+    let st = st.inner().clone();
+    blocking(move || {
+        let ff = st.ffmpeg()?;
+        Ok(paths
+            .iter()
+            .map(|p| {
+                let p = Path::new(p);
+                if p.exists() {
+                    edit::probe(&ff, p).fps
+                } else {
+                    0.0
+                }
+            })
+            .collect())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -2404,6 +2442,8 @@ pub fn run() {
             edit_set,
             export_edit,
             cancel_edit,
+            video_fps,
+            map_hd,
             reveal,
             export_diagnostics,
             open_url,
