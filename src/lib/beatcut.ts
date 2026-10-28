@@ -47,9 +47,11 @@ interface Fight {
 
 const MOMENTS = new Set(["kill", "knock", "win", "objective", "manual"]);
 /** seconds before a fight's first moment */
-const LEAD = 3;
+export const LEAD = 2.2;
 /** after its last */
-const TAIL = 2;
+export const TAIL = 1.5;
+/** moments further apart than this are cut apart, the wait in between dropped */
+export const GAP = 4.5;
 
 function score(e: GameEvent): number {
   let s = e.kind === "kill" ? 3 : e.kind === "knock" ? 1.2 : e.kind === "win" ? 4 : e.kind === "objective" ? 2 : 0.8;
@@ -75,7 +77,7 @@ export function fights(items: EditItem[]): Fight[] {
     const groups: GameEvent[][] = [];
     for (const e of evs) {
       const g = groups[groups.length - 1];
-      if (g && e.t - g[g.length - 1].t <= 8) g.push(e);
+      if (g && e.t - g[g.length - 1].t <= GAP) g.push(e);
       else groups.push([e]);
     }
     for (const g of groups) {

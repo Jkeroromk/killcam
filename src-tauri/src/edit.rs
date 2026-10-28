@@ -22,6 +22,8 @@ const SLOW: f64 = 0.5;
 const SLOW_BEFORE: f64 = 1.0;
 /// …to this long after
 const SLOW_AFTER: f64 = 0.6;
+/// how long the sound of one clip overlaps the next (s)
+const XFADE: f64 = 0.1;
 /// a caption shows from just before its moment for this long
 const CAPTION_S: f64 = 3.0;
 
@@ -224,14 +226,21 @@ pub fn clip_graph(
     fps_out: f64,
     interpolate: bool,
     (tin, tout): (&str, &str),
+    (xin, ext): (f64, f64),
 ) -> String {
     let mut g = String::new();
+    // the input runs `ext` past the clip for the sound's overlap into the next one; the picture stops at `dur`
+    let head = if ext > 0.0 {
+        format!("[0:v]trim=end={},setpts=PTS-STARTPTS,", num(dur))
+    } else {
+        "[0:v]".to_string()
+    };
     // the frame: crop to fill (16:9 / vertical) or letterbox (original)
     if fill {
-        g.push_str(&format!("[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1"));
+        g.push_str(&format!("{head}scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1"));
     } else {
         g.push_str(&format!(
-            "[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1"
+            "{head}scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1"
         ));
     }
     if let Some(font) = font {
@@ -260,10 +269,19 @@ pub fn clip_graph(
     if has_audio {
         g.push_str("[0:a:0]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo");
     } else {
-        g.push_str(&format!("anullsrc=r=48000:cl=stereo,atrim=0:{},aformat=sample_fmts=fltp", num(dur)));
+        g.push_str(&format!("anullsrc=r=48000:cl=stereo,atrim=0:{},aformat=sample_fmts=fltp", num(dur + ext)));
     }
-    g.push_str(&transition_audio(tin, tout, dur));
-    g.push_str("[ab];");
+    g.push_str(&transition_audio(tin, tout, dur, xin, ext));
+    if ext > 0.0 {
+        // the overlap: the sound after the cut, faded out, laid under the next clip's start
+        g.push_str(&format!(
+            "[ab0];[ab0]asplit=2[ab1][atl];[ab1]atrim=end={d},asetpts=PTS-STARTPTS[ab];[atl]atrim=start={d}:end={e},asetpts=PTS-STARTPTS[tail];",
+            d = num(dur),
+            e = num(dur + ext)
+        ));
+    } else {
+        g.push_str("[ab];");
+    }
     let segs = segments(dur, slow);
     if segs.len() == 1 {
         g.push_str("[vb]null[vc];[ab]anull[ac];");
@@ -305,7 +323,11 @@ pub fn clip_graph(
     } else {
         g.push_str(&format!("[vc]fps={fps_out},format=yuv420p[vo];"));
     }
-    g.push_str("[ac]anull[ao]");
+    if ext > 0.0 {
+        g.push_str("[ac][tail]concat=n=2:v=0:a=1[ao]");
+    } else {
+        g.push_str("[ac]anull[ao]");
+    }
     g
 }
 
@@ -341,12 +363,22 @@ pub fn transition_video(tin: &str, tout: &str, dur: f64) -> String {
     f
 }
 
-/// The sound at the cuts: a few ms of fade so hard cuts don't click, longer
-/// into and out of black.
-pub fn transition_audio(tin: &str, tout: &str, dur: f64) -> String {
-    let li = (if tin == "black" { 0.25f64 } else { 0.02 }).min(dur / 3.0);
-    let lo = (if tout == "black" { 0.25f64 } else { 0.02 }).min(dur / 3.0);
-    format!(",afade=t=in:st=0:d={},afade=t=out:st={}:d={}", num(li), num(dur - lo), num(lo))
+/// The sound at the cuts. Into a clip it fades in over `xin` while the clip
+/// before fades out over the same time (its `ext` past the cut): the two
+/// overlap, so a cut never drops to silence. Into and out of black it fades
+/// all the way.
+pub fn transition_audio(tin: &str, tout: &str, dur: f64, xin: f64, ext: f64) -> String {
+    let li = (if tin == "black" { 0.25f64 } else { xin.max(0.01) }).min(dur / 3.0);
+    let out = if tout == "black" {
+        let lo = 0.25f64.min(dur / 3.0);
+        format!("afade=t=out:st={}:d={}", num(dur - lo), num(lo))
+    } else if ext > 0.0 {
+        format!("afade=t=out:st={}:d={}", num(dur), num(ext))
+    } else {
+        let lo = 0.02f64.min(dur / 3.0);
+        format!("afade=t=out:st={}:d={}", num(dur - lo), num(lo))
+    };
+    format!(",afade=t=in:st=0:d={},{out}", num(li))
 }
 
 /// The music's level over time: steps back (fades out over 0.4 s) for each
@@ -550,6 +582,13 @@ pub fn export(
                 fs::write(tmp.join(format!("cap{i}_{j}.txt")), text.trim()).map_err(|e| e.to_string())?;
             }
             let slow = rel(&c.slow, c.start);
+            // the sound runs on a little under the next clip (not into or out of black)
+            let next = plan.get(i + 1).map(|p| p.3);
+            let ext = match next {
+                Some(nx) if c.trans_out != "black" && nx.trans_in != "black" => XFADE,
+                _ => 0.0,
+            };
+            let xin = if i > 0 { XFADE } else { 0.02 };
             let graph = clip_graph(
                 i,
                 dur,
@@ -562,6 +601,7 @@ pub fn export(
                 fps_out,
                 interpolate && p.fps < 119.0,
                 (c.trans_in.as_str(), c.trans_out.as_str()),
+                (xin, ext),
             );
             let mut args: Vec<String> = vec![
                 "-hide_banner".into(),
@@ -571,7 +611,7 @@ pub fn export(
                 "-ss".into(),
                 num(*a),
                 "-t".into(),
-                num(dur),
+                num(dur + ext),
                 "-i".into(),
                 src.to_string_lossy().to_string(),
                 // inline: -filter_complex_script is gone from ffmpeg 8, and its replacement isn't in 6
@@ -579,8 +619,7 @@ pub fn export(
                 graph,
                 "-map".into(),
                 "[vo]".into(),
-                "-map".into(),
-                "[ao]".into(),
+                "-an".into(),
             ];
             match budget {
                 Some(bd) => args.extend([
@@ -602,15 +641,18 @@ pub fn export(
                 format!("{fps_out}"),
                 "-g".to_string(),
                 format!("{}", (fps_out * 2.0) as u32),
-                "-c:a".to_string(),
-                "aac".to_string(),
-                "-b:a".to_string(),
-                budget.map(|b| format!("{}k", b.audio_kbps)).unwrap_or_else(|| "192k".into()),
-                "-ar".to_string(),
-                "48000".to_string(),
                 "-movflags".to_string(),
                 "+faststart".to_string(),
                 part_name(i),
+                // the sound uncompressed: laid out sample-exact at the end, no
+                // encoder padding at every cut
+                "-map".to_string(),
+                "[ao]".to_string(),
+                "-c:a".to_string(),
+                "pcm_s16le".to_string(),
+                "-ar".to_string(),
+                "48000".to_string(),
+                sound_name(i),
             ]);
             jobs.push((args, out_len(dur, &slow)));
         }
@@ -675,6 +717,7 @@ pub fn export(
             return Err(e);
         }
         let parts: Vec<String> = (0..n).map(part_name).collect();
+        let lens: Vec<f64> = jobs.iter().map(|j| j.1).collect();
         progress(Progress {
             fraction: 0.99,
             part: 0,
@@ -688,58 +731,76 @@ pub fn export(
         }
         fs::write(tmp.join("list.txt"), list).map_err(|e| e.to_string())?;
         let music = o.music.as_ref().filter(|m| !m.path.is_empty() && Path::new(&m.path).exists());
-        let joined = if music.is_some() { tmp.join("joined.mp4") } else { out.clone() };
+        let joined = tmp.join("joined.mp4");
         let args: Vec<String> = [
             "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy",
-            "-movflags", "+faststart",
         ]
         .iter()
         .map(|s| s.to_string())
         .chain([joined.to_string_lossy().to_string()])
         .collect();
         run_progress(ff, &args, &tmp, stop, &mut |_| {})?;
-        if let Some(m) = music {
-            // the music under the game sound; the video is copied as it is
-            let fade = 1.5f64.min(total / 4.0);
-            let graph = format!(
-                "[0:a]volume=volume='{}':eval=frame[g];\
-                 [1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,\
-                 volume=volume='{}':eval=frame,afade=t=out:st={}:d={}[m];\
-                 [g][m]amix=inputs=2:normalize=0:duration=first,alimiter=limit=0.95[ao]",
-                game_expr(m.game.clamp(0.0, 1.0), &m.pulls),
-                pull_expr(m.volume.clamp(0.0, 1.5), &m.pulls, 0.08),
-                num(total - fade),
-                num(fade),
-            );
-            let args: Vec<String> = vec![
-                "-hide_banner".into(),
-                "-loglevel".into(),
-                "error".into(),
-                "-y".into(),
-                "-i".into(),
-                joined.to_string_lossy().to_string(),
-                "-ss".into(),
-                num(m.start),
-                "-i".into(),
-                m.path.clone(),
-                "-filter_complex".into(),
-                graph,
-                "-map".into(),
-                "0:v".into(),
-                "-map".into(),
-                "[ao]".into(),
-                "-c:v".into(),
-                "copy".into(),
-                "-c:a".into(),
-                "aac".into(),
-                "-b:a".into(),
-                budget.map(|b| format!("{}k", b.audio_kbps)).unwrap_or_else(|| "192k".into()),
-                "-movflags".into(),
-                "+faststart".into(),
-                out.to_string_lossy().to_string(),
-            ];
-            run_progress(ff, &args, &tmp, stop, &mut |_| {})?;
+
+        // the sound: every clip's piece put at its place (each runs a little
+        // into the next, faded, so the cuts overlap), the music under it
+        let mut args: Vec<String> = ["-hide_banner", "-loglevel", "error", "-y", "-i"].iter().map(|s| s.to_string()).collect();
+        args.push(joined.to_string_lossy().to_string());
+        for i in 0..n {
+            args.extend(["-i".to_string(), sound_name(i)]);
         }
+        if let Some(m) = music {
+            args.extend(["-ss".to_string(), num(m.start), "-i".to_string(), m.path.clone()]);
+        }
+        let mut g = String::new();
+        let mut at = 0.0f64;
+        for (i, len) in lens.iter().enumerate() {
+            g.push_str(&format!("[{}:a]adelay=delays={}:all=1[s{i}];", i + 1, (at * 1000.0).round() as i64));
+            at += len;
+        }
+        for i in 0..n {
+            g.push_str(&format!("[s{i}]"));
+        }
+        if n > 1 {
+            g.push_str(&format!("amix=inputs={n}:normalize=0:duration=longest,"));
+        } else {
+            g.push_str("anull,");
+        }
+        g.push_str(&format!("atrim=0:{}", num(total)));
+        match music {
+            Some(m) => {
+                let fade = 1.5f64.min(total / 4.0);
+                g.push_str(&format!(
+                    ",volume=volume='{}':eval=frame[g];\
+                     [{}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,\
+                     volume=volume='{}':eval=frame,afade=t=out:st={}:d={}[m];\
+                     [g][m]amix=inputs=2:normalize=0:duration=first,alimiter=limit=0.95[ao]",
+                    game_expr(m.game.clamp(0.0, 1.0), &m.pulls),
+                    n + 1,
+                    pull_expr(m.volume.clamp(0.0, 1.5), &m.pulls, 0.08),
+                    num(total - fade),
+                    num(fade),
+                ));
+            }
+            None => g.push_str(",alimiter=limit=0.98[ao]"),
+        }
+        args.extend([
+            "-filter_complex".to_string(),
+            g,
+            "-map".to_string(),
+            "0:v".to_string(),
+            "-map".to_string(),
+            "[ao]".to_string(),
+            "-c:v".to_string(),
+            "copy".to_string(),
+            "-c:a".to_string(),
+            "aac".to_string(),
+            "-b:a".to_string(),
+            budget.map(|b| format!("{}k", b.audio_kbps)).unwrap_or_else(|| "192k".into()),
+            "-movflags".to_string(),
+            "+faststart".to_string(),
+            out.to_string_lossy().to_string(),
+        ]);
+        run_progress(ff, &args, &tmp, stop, &mut |_| {})?;
         Ok(out)
     })();
     let _ = fs::remove_dir_all(&tmp);
@@ -748,6 +809,10 @@ pub fn export(
 
 fn part_name(i: usize) -> String {
     format!("part_{i:03}.mp4")
+}
+
+fn sound_name(i: usize) -> String {
+    format!("part_{i:03}.wav")
 }
 
 /// Match times as seconds into the clip.

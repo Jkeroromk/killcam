@@ -220,3 +220,34 @@ export function requests(doc: EditDoc): { clips: EditClipReq[]; music: MusicMix 
   const music = doc.song ? { path: doc.song.path, start: doc.musicOffset, volume: doc.musicVol, game: doc.gameVol, pulls: doc.pulls } : null;
   return { clips, music };
 }
+
+const MOMENT_KINDS = new Set(["kill", "knock", "win", "objective", "manual"]);
+
+/** Cut the waiting out: each clip down to its moments (a little before the
+ *  first, a little after the last), split where moments are far apart.
+ *  Clips with no moments stay as they are. */
+export function tighten(tl: TClip[], items: EditItem[], lead = 2.2, tail = 1.5, gap = 4.5): TClip[] {
+  const byKey = new Map(items.map((i) => [i.key, i]));
+  const out: TClip[] = [];
+  for (const c of tl) {
+    const it = byKey.get(c.item);
+    const ms = it ? it.events.filter((e) => MOMENT_KINDS.has(e.kind) && !e.credited && e.t >= c.start && e.t <= c.end).map((e) => e.t).sort((a, b) => a - b) : [];
+    if (!it || ms.length === 0) {
+      out.push(c);
+      continue;
+    }
+    const groups: number[][] = [];
+    for (const t of ms) {
+      const g = groups[groups.length - 1];
+      if (g && t - g[g.length - 1] <= gap) g.push(t);
+      else groups.push([t]);
+    }
+    groups.forEach((g, i) => {
+      const start = Math.max(c.start, g[0] - lead);
+      const end = Math.min(c.end, g[g.length - 1] + tail);
+      if (end - start < 0.5) return;
+      out.push({ key: i === 0 ? c.key : newKey(), item: c.item, start, end, trans: i === 0 ? c.trans : "" });
+    });
+  }
+  return out;
+}

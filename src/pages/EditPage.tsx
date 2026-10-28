@@ -3,12 +3,12 @@
 // video track and a music track underneath.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clapperboard, Download, Magnet, Minus, Music, Pause, Play, Plus, Redo2, Scissors, Trash2, Undo2, Wand2, X } from "lucide-react";
+import { Clapperboard, Download, Magnet, Minus, Music, Pause, Play, Plus, Redo2, Scissors, Trash2, Undo2, Wand2, X, Zap } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api, errText, fileUrl, on, type EditOptions, type EditProgress } from "../lib/api";
 import { clock, when } from "../lib/format";
 import { label, plural, t, title } from "../lib/i18n";
-import { addToEdit, itemFrom, layout, loadEdit, newKey, repeats, requests, saveEdit, tclipAfter, totalLen, type EditDoc, type EditItem, type TClip, type Trans } from "../lib/edit";
+import { addToEdit, itemFrom, layout, loadEdit, newKey, repeats, requests, saveEdit, tclipAfter, tighten, totalLen, type EditDoc, type EditItem, type TClip, type Trans } from "../lib/edit";
 import { autoCut } from "../lib/beatcut";
 import { Button, KindIcon, Range, Segmented, Spinner, Toggle } from "../components/ui";
 
@@ -892,6 +892,17 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
           onSnap={(v) => update({ ...doc, snap: v })}
           onAuto={runAuto}
           confirmClear={confirm === "timeline"}
+          onTighten={() => {
+            const d = docRef.current;
+            if (!d) return;
+            const next = tighten(tl, d.items);
+            if (totalLen(next) < totalLen(tl) - 0.05) {
+              stop();
+              edit({ timeline: next, pulls: [] });
+              setSel(null);
+              setT(0);
+            }
+          }}
           onAskClear={() => setConfirm("timeline")}
           onClear={() => {
             stop();
@@ -937,6 +948,7 @@ function TimelinePanel(props: {
   onSnap: (v: boolean) => void;
   onAuto: () => void;
   confirmClear: boolean;
+  onTighten: () => void;
   onAskClear: () => void;
   onClear: () => void;
 }) {
@@ -1137,6 +1149,9 @@ function TimelinePanel(props: {
         <button type="button" className={"iconbtn sm" + (doc.snap ? " is-on" : "")} onClick={() => props.onSnap(!doc.snap)} title={doc.snap ? t("吸附：开（贴到节拍和片段边缘）", "Snapping on (beats and clip edges)") : t("吸附：关", "Snapping off")}>
           <Magnet size={15} />
         </button>
+        <Button small onClick={props.onTighten} disabled={tl.length === 0} title={t("每段只留击杀前约 2 秒到最后一个击杀后约 1.5 秒，击杀间隔超过 4.5 秒的地方剪开，去掉中间的等待", "Keeps each clip from about 2 s before its first kill to 1.5 s after its last, and cuts out waits of more than 4.5 s between kills")}>
+          <Zap size={14} /> {t("去掉空闲", "Cut the waiting")}
+        </Button>
         {song && (
           <Button small onClick={props.onAuto}>
             <Wand2 size={14} /> {t("一键卡点", "Auto-cut")}
