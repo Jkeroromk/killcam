@@ -717,7 +717,16 @@ pub fn export(
             return Err(e);
         }
         let parts: Vec<String> = (0..n).map(part_name).collect();
-        let lens: Vec<f64> = jobs.iter().map(|j| j.1).collect();
+        // the parts as they came out: a clip can ask for more than its file
+        // has, and the sound must line up with the picture actually there
+        let lens: Vec<f64> = (0..n)
+            .map(|i| {
+                ffmpeg::probe_duration(ff, &tmp.join(part_name(i)))
+                    .filter(|d| *d > 0.1)
+                    .unwrap_or(jobs[i].1)
+            })
+            .collect();
+        let total: f64 = lens.iter().sum();
         progress(Progress {
             fraction: 0.99,
             part: 0,

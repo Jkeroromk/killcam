@@ -29,7 +29,11 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
   const [sel, setSel] = useState<string | null>(null);
   const [tab, setTab] = useState<"clip" | "music" | "export">("music");
   const [missing, setMissing] = useState<Set<string>>(new Set());
-  const [T, setT] = useState(0);
+  const [T, setTState] = useState(0);
+  const setT = (x: number) => {
+    tRef.current = x;
+    setTState(x);
+  };
   const [playing, setPlaying] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [progress, setProgress] = useState<EditProgress | null>(null);
@@ -54,6 +58,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
   const pending = useRef<{ local: number; play: boolean } | null>(null);
   const docRef = useRef<EditDoc | null>(null);
   docRef.current = doc;
+  const tRef = useRef(0);
 
   useEffect(() => {
     loadEdit().then((d) => {
@@ -148,6 +153,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
       const it = byKey.get(l.c.item)!;
       const local = Math.max(0, l.c.start + (time - l.at) - it.fileStart);
       setT(time);
+      tRef.current = time;
       const v = video.current;
       if (v && v.dataset.file === it.file && v.readyState >= 1) {
         v.currentTime = local;
@@ -181,30 +187,39 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
   };
 
   // the playhead follows the video, and the next clip starts when one ends
-  const tRef = useRef(T);
-  tRef.current = T;
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
+    let moved = performance.now();
     const tick = () => {
       const v = video.current;
       const i = at(Math.min(tRef.current, total - 0.001));
       const l = lay[i];
-      if (v && l && !v.paused && !v.seeking) {
-        const it = byKey.get(l.c.item)!;
-        if (it.fileStart + v.currentTime >= l.c.end - 0.03) {
+      const it = l ? byKey.get(l.c.item)! : null;
+      // the next clip's video is still loading: wait for it
+      if (v && l && it && v.dataset.file === it.file && !v.seeking && pending.current == null) {
+        const pos = it.fileStart + v.currentTime;
+        // the clip's end, or its video file's (a clip can reach a little past what was kept)
+        const atEnd = pos >= l.c.end - 0.03 || v.ended || (v.duration > 0 && v.currentTime >= v.duration - 0.04);
+        if (atEnd) {
           if (i + 1 < lay.length) {
             seek(lay[i + 1].at, true);
+            moved = performance.now();
           } else {
             stop();
             setT(total);
             return;
           }
-        } else {
-          const now = l.at + (it.fileStart + v.currentTime - l.c.start);
+        } else if (!v.paused) {
+          const now = l.at + (pos - l.c.start);
           tRef.current = now;
           setT(now);
           levels(now);
+          moved = performance.now();
+        } else if (performance.now() - moved > 1200 && v.readyState >= 2) {
+          // stopped by itself (a stall, a refused play): carry on
+          v.play().catch(() => {});
+          moved = performance.now();
         }
       }
       raf = requestAnimationFrame(tick);
@@ -561,10 +576,14 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                 ref={video}
                 data-file={curItem.file}
                 src={fileUrl(curItem.file)}
+                onError={() => {
+                  // unreadable: skip to the next clip rather than stall
+                  if (playing && curIdx + 1 < lay.length) seek(lay[curIdx + 1].at, true);
+                }}
                 onLoadedMetadata={(e) => {
                   const p = pending.current;
                   if (p) {
-                    e.currentTarget.currentTime = p.local;
+                    e.currentTarget.currentTime = Math.min(p.local, Math.max(0, e.currentTarget.duration - 0.05));
                     if (p.play) e.currentTarget.play().catch(() => {});
                     pending.current = null;
                   } else if (cur) {
