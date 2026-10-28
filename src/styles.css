@@ -3290,3 +3290,171 @@ button.st-best:hover {
   gap: 14px;
   flex-wrap: wrap;
 }
+
+/* ---------- PUBG route map (match page) ---------- */
+.route-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.route-wait {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 0;
+}
+.route-body {
+  display: grid;
+  grid-template-columns: minmax(0, 620px) minmax(260px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .route-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.route-map {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+}
+.route-map svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.rm-nomap {
+  fill: var(--panel);
+}
+.route-nomap {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+}
+.rm-path {
+  fill: none;
+  stroke: #fff;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+}
+.rm-landing path {
+  fill: #fff;
+  stroke: #000;
+  stroke-width: 2;
+}
+.rm-mark {
+  cursor: pointer;
+  stroke: #000;
+  stroke-width: 2.5;
+  transition: transform 0.1s;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.rm-mark.is-on {
+  transform: scale(1.5);
+}
+circle.rm-mark[data-kind="kill"] {
+  fill: #fff;
+}
+circle.rm-mark[data-kind="knock"] {
+  fill: rgba(255, 255, 255, 0.25);
+  stroke: #fff;
+  stroke-width: 3;
+}
+rect.rm-mark[data-kind="knocked"] {
+  fill: #9a9a9a;
+  stroke: #fff;
+}
+g.rm-mark[data-kind="death"] path {
+  stroke: var(--bad);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+g.rm-mark[data-kind="death"] .rm-hit {
+  fill: rgba(0, 0, 0, 0.55);
+  stroke: none;
+}
+.rm-now {
+  fill: var(--rec);
+  stroke: #fff;
+  stroke-width: calc(2px * var(--k, 1));
+}
+.route-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 620px;
+  overflow: auto;
+}
+.route-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.route-item.is-landing {
+  cursor: default;
+}
+button.route-item:hover,
+.route-item.is-on {
+  background: var(--hover);
+}
+.route-what {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.route-other {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.route-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+.route-dot[data-kind="kill"] {
+  background: #fff;
+}
+.route-dot[data-kind="knock"] {
+  background: transparent;
+}
+.route-dot[data-kind="knocked"] {
+  border-radius: 2px;
+  background: #9a9a9a;
+}
+.route-dot[data-kind="death"] {
+  border-color: var(--bad);
+  background: var(--bad);
+}
+.route-dot[data-kind="landing"] {
+  border-radius: 0;
+  border: 0;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 12px solid #fff;
+}

@@ -11,6 +11,7 @@ mod lol;
 mod mini;
 mod pubg;
 mod recorder;
+mod route;
 mod settings;
 mod sound;
 
@@ -1347,6 +1348,60 @@ async fn list_monitors(
     .await
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RouteView {
+    route: route::Route,
+    /// the map image (None while offline the first time)
+    image: Option<String>,
+}
+
+/// Where the player went and fought in a PUBG match.
+#[tauri::command]
+async fn match_route(app: AppHandle, st: State<'_, St>, id: String) -> Result<RouteView, String> {
+    let st = st.inner().clone();
+    let maps = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("maps");
+    blocking(move || {
+        let lib = st.lib()?;
+        let rec = lib.get(&id).ok_or_else(|| i18n::tr("找不到这场录像", "Recording not found"))?;
+        let mid = rec
+            .pubg_match_id
+            .clone()
+            .ok_or_else(|| i18n::tr("这一局没有 PUBG 官方数据", "This match has no PUBG data"))?;
+        let r = match route::load_cached(&lib.routes_dir(), &mid) {
+            Some(r) => r,
+            None => {
+                let p = lk(&st.settings).pubg.clone();
+                if !p.configured() {
+                    return Err(i18n::tr("需要先绑定 PUBG 账号", "Link your PUBG account first"));
+                }
+                let me = p
+                    .account_id
+                    .clone()
+                    .ok_or_else(|| i18n::tr("还没有读到你的 PUBG 账号，稍后再试", "Your PUBG account isn't known yet; try again later"))?;
+                let api = pubg::Api::new(&p.api_key, &p.shard);
+                let info = api.match_info(&mid).map_err(|e| {
+                    i18n::tr(
+                        format!("读取对局失败（PUBG 只保留最近 14 天的对局）：{e}"),
+                        format!("Couldn't read the match (PUBG keeps matches for 14 days): {e}"),
+                    )
+                })?;
+                let url = info
+                    .telemetry_url
+                    .clone()
+                    .ok_or_else(|| i18n::tr("这一局没有遥测数据", "This match has no telemetry"))?;
+                let tele = api.telemetry(&url)?;
+                let r = route::from_telemetry(&tele, &me, &info.map_name)?;
+                route::save_cached(&lib.routes_dir(), &mid, &r);
+                r
+            }
+        };
+        let image = route::map_image(&maps, &r.map_name).map(|p| p.to_string_lossy().to_string());
+        Ok(RouteView { route: r, image })
+    })
+    .await
+}
+
 /// A champion's square portrait, cached locally (None while offline).
 #[tauri::command]
 async fn champion_icon(app: AppHandle, key: String) -> Result<Option<String>, String> {
@@ -2284,6 +2339,7 @@ pub fn run() {
             delete_matches,
             compress_info,
             compress_now,
+            match_route,
             export_clip,
             export_montage,
             reveal,

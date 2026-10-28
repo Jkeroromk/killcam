@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronRight, Download, FolderOpen, Play, Star, Trash2, Scissors, Layers, RotateCcw } from "lucide-react";
 import { api, errText, fileUrl, highlightBounds, joinPath, type ExportOptions, type Highlight, type LolStats, type MatchRecord } from "../lib/api";
-import { bytes, clock, eventLine, kda, kindLabel, when } from "../lib/format";
+import { bytes, clock, eventLine, isLol, kda, kindLabel, when } from "../lib/format";
 import { gameDef } from "../lib/games";
 import { ChampIcon } from "./Library";
 import { Button, KindIcon, Segmented, Spinner } from "../components/ui";
 import { Timeline } from "../components/Timeline";
+import { RouteMap } from "../components/RouteMap";
 import { isEn, label, plural, t, title } from "../lib/i18n";
 
 /** a stored detail ("双杀 · 团灭") in the current language; "抢" stays as eventLine checks it */
@@ -645,6 +646,8 @@ export default function MatchView(props: { id: string; back: () => void; libVers
             </ul>
           )}
         </aside>
+
+        {!isLol(m) && m.pubgMatchId && <RouteMap m={m} pos={pos} seek={(g) => seekGlobal(g, true)} />}
       </div>
     </div>
   );

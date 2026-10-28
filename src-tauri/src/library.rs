@@ -259,6 +259,11 @@ impl Lib {
 
     /// Still images live outside the match folder, so that folder only holds
     /// the videos (and match.json).
+    /// cached map routes, by PUBG match id (see route.rs)
+    pub fn routes_dir(&self) -> PathBuf {
+        self.root.join("_cache").join("routes")
+    }
+
     pub fn thumbs_dir(&self, id: &str) -> PathBuf {
         self.root.join("_cache").join("thumbs").join(id)
     }
@@ -1386,6 +1391,11 @@ pub fn process_sessions(
                         .cloned();
                     let won = mine.as_ref().map(|p| p.win_place == 1).unwrap_or(false);
                     let sum = pubg::summarize(&tele, &me, won);
+                    // the route for the map view, while the telemetry is here (PUBG
+                    // keeps a match for 14 days only)
+                    if let Ok(r) = crate::route::from_telemetry(&tele, &me, &info.map_name) {
+                        crate::route::save_cached(&lib.routes_dir(), mid, &r);
+                    }
                     let w0 = sum.match_start_ms.unwrap_or(info.created_at_ms) - 10_000;
                     // the end of the player's game: their last elimination, unless they
                     // played on after it (recalled back in, even won); without either,

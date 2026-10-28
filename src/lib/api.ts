@@ -48,6 +48,27 @@ export interface Settings {
   compressAfterDays: number;
 }
 
+/** a spot on the PUBG map: x / y from 0 to 1 */
+export interface RouteSpot {
+  ms: number;
+  x: number;
+  y: number;
+}
+
+export interface RouteMark {
+  kind: "knock" | "kill" | "knocked" | "death";
+  at: RouteSpot;
+  other: string | null;
+  weapon: string | null;
+  distanceM: number | null;
+}
+
+export interface RouteView {
+  route: { mapName: string; landing: RouteSpot | null; path: RouteSpot[]; marks: RouteMark[] };
+  /** local map image, null when it couldn't be downloaded */
+  image: string | null;
+}
+
 export interface CompressInfo {
   /** null = not checked yet (it is, a couple of minutes after launch) */
   supported: boolean | null;
@@ -392,6 +413,7 @@ export const api = {
   storageInfo: () => invoke<StorageInfo>("storage_info"),
   compressInfo: () => invoke<CompressInfo>("compress_info"),
   compressNow: () => invoke<void>("compress_now"),
+  matchRoute: (id: string) => invoke<RouteView>("match_route", { id }),
   checkFfmpeg: (path: string | null) => invoke<FfmpegInfo | null>("check_ffmpeg", { path }),
   defaultLibraryDir: () => invoke<string>("default_library_dir"),
 };
