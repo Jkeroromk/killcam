@@ -115,12 +115,16 @@ export function itemFrom(m: MatchRecord, h: Highlight | { start: number; end: nu
   };
 }
 
-/** Add clips to the end of the edit; returns how many it has now. */
-export async function addToEdit(items: EditItem[]): Promise<number> {
+/** Add clips to the end of the edit, skipping ones already in it. */
+export async function addToEdit(items: EditItem[]): Promise<{ added: number; total: number }> {
   const doc = await loadEdit();
-  doc.items = [...doc.items, ...items];
-  await saveEdit(doc);
-  return doc.items.length;
+  const same = (a: EditItem, b: EditItem) => a.matchId === b.matchId && Math.abs(a.start - b.start) < 0.5 && Math.abs(a.end - b.end) < 0.5;
+  const fresh = items.filter((x) => !doc.items.some((y) => same(x, y)));
+  if (fresh.length > 0) {
+    doc.items = [...doc.items, ...fresh];
+    await saveEdit(doc);
+  }
+  return { added: fresh.length, total: doc.items.length };
 }
 
 const inClip = (it: EditItem, e: GameEvent) => e.t >= it.start && e.t <= it.end;

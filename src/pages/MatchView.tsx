@@ -106,7 +106,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [range, setRange] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
   // clips just sent to the edit page, and how many it has now
-  const [added, setAdded] = useState<{ n: number; total: number } | null>(null);
+  const [added, setAdded] = useState<{ n: number; total: number; dup: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showEvents, setShowEvents] = useState(false);
   const [showBoard, setShowBoard] = useState(true);
@@ -119,7 +119,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
       .getMatch(props.id)
       .then((r) => {
         setM(r);
-        setPicked(new Set(r.highlights.map((h) => h.id)));
+        setPicked(new Set());
         if (r.highlights.length) setActive(r.highlights[0].id);
         // older records: make the missing highlight stills in the background
         if (r.highlights.some((h) => !h.thumb)) {
@@ -140,7 +140,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
       .then((r) => {
         if (r.pendingApi) return;
         setM(r);
-        setPicked(new Set(r.highlights.map((h) => h.id)));
+        setPicked(new Set());
         setActive(r.highlights[0]?.id ?? null);
       })
       .catch(() => {});
@@ -232,13 +232,16 @@ export default function MatchView(props: { id: string; back: () => void; libVers
     setErr(null);
     setAdded(null);
     try {
+      // the checked highlights, or the one being played when none is checked
+      const hs = picked.size > 0 ? m.highlights.filter((h) => picked.has(h.id)) : activeH ? [activeH] : [];
       const list =
         what === "picked"
-          ? m.highlights.filter((h) => picked.has(h.id)).map((h) => itemFrom(m, h))
+          ? hs.map((h) => itemFrom(m, h))
           : [itemFrom(m, { start: Math.min(range.a ?? 0, range.b ?? 0), end: Math.max(range.a ?? 0, range.b ?? 0), title: t("片段", "Clip") })];
       if (list.length === 0) return;
-      const total = await addToEdit(list);
-      setAdded({ n: list.length, total });
+      const r = await addToEdit(list);
+      setAdded({ n: r.added, total: r.total, dup: list.length - r.added });
+      if (what === "picked") setPicked(new Set());
     } catch (e) {
       setErr(errText(e));
     }
@@ -460,10 +463,14 @@ export default function MatchView(props: { id: string; back: () => void; libVers
               </div>
             )}
             <div className="export-row">
-              <Button kind="primary" small onClick={() => sendToEdit("picked")} disabled={picked.size === 0}>
-                <Clapperboard size={14} /> {t("加入剪辑", "Add to edit")} · {picked.size}
+              <Button kind="primary" small onClick={() => sendToEdit("picked")} disabled={picked.size === 0 && !activeH}>
+                <Clapperboard size={14} /> {picked.size > 0 ? `${t("加入剪辑", "Add to edit")} · ${picked.size}` : t("这段加入剪辑", "Add this clip to edit")}
               </Button>
-              <span className="muted small">{t("勾选右边的高光，放进「剪辑」里排序、加效果、导出。", "Check highlights on the right, then order, add effects and export them in Edit.")}</span>
+              <span className="muted small">
+                {picked.size > 0
+                  ? t("加进「剪辑」里排序、加效果、导出。", "Order, add effects and export them in Edit.")
+                  : t("想一次加几段，就勾选右边的高光。", "To add several at once, check them on the right.")}
+              </span>
               {!clipsOnly && (
                 <>
                   <span className="grow" />
@@ -482,7 +489,12 @@ export default function MatchView(props: { id: string; back: () => void; libVers
             </div>
             {added && (
               <p className="ok-text small">
-                {t(`已加入 ${added.n} 段，剪辑里现在一共 ${added.total} 段`, `Added ${added.n} ${plural(added.n, "clip", "clips")}; the edit now has ${added.total}`)}
+                {added.n > 0
+                  ? t(`已加入 ${added.n} 段，剪辑里现在一共 ${added.total} 段`, `Added ${added.n} ${plural(added.n, "clip", "clips")}; the edit now has ${added.total}`)
+                  : added.dup === 1
+                    ? t("这段已经在剪辑里了", "This clip is already in the edit")
+                    : t("这些已经都在剪辑里了", "These are already in the edit")}
+                {added.n > 0 && added.dup > 0 && t(`（${added.dup} 段已经在里面，没有重复加）`, ` (${added.dup} already there, not added twice)`)}
                 {props.openEdit && (
                   <button type="button" className="link" onClick={props.openEdit}>
                     {t("去剪辑", "Go to Edit")}
@@ -498,7 +510,7 @@ export default function MatchView(props: { id: string; back: () => void; libVers
           <div className="side-head">
             {t("高光", "Highlights")} · {m.highlights.length}
             <span className="grow" />
-            <span className="faint small">{t("勾选的可以加入剪辑", "Checked ones can go to Edit")}</span>
+            <span className="faint small">{t("勾选几段可以一起加入剪辑", "Check several to add them to Edit together")}</span>
           </div>
           {m.highlights.length === 0 && (
             <p className="muted small">{m.video
