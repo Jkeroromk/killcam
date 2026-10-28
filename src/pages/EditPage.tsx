@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Clapperboard, Download, Play, Square, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, Clapperboard, Download, Play, Square, Trash2, Wand2, X } from "lucide-react";
 import { api, errText, fileUrl, on, type EditOptions, type EditProgress } from "../lib/api";
 import { clock, when } from "../lib/format";
 import { label, plural, t, title } from "../lib/i18n";
-import { SLOW, captionText, loadEdit, outLen, request, saveEdit, segments, slowTimes, type EditDoc, type EditItem, type SlowMode } from "../lib/edit";
+import { SLOW, addToEdit, captionText, itemFrom, loadEdit, outLen, request, saveEdit, segments, slowTimes, type EditDoc, type EditItem, type SlowMode } from "../lib/edit";
 import { Button, KindIcon, Segmented, Spinner, Toggle } from "../components/ui";
+import { plan as makePlan } from "../lib/beatcut";
+import { BeatPlayer, BeatSide, beatMusic, beatRequests } from "./BeatEdit";
 
 /** The selected clip's range on a strip of its footage: drag the edges to trim. */
 function TrimBar(props: {
@@ -78,6 +80,8 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
   // frame rate of each clip's video file
   const [fps, setFps] = useState<Record<string, number>>({});
   const [playingAll, setPlayingAll] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [picking, setPicking] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
   const pending = useRef<{ local: number; play: boolean } | null>(null);
   const playAll = useRef(false);
@@ -111,6 +115,47 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileKey]);
+  const music = doc?.mode === "music";
+  const planned = useMemo(
+    () => (doc && music && doc.song ? makePlan(items.filter((i) => !missing.has(i.matchId)), doc.song.info, doc.beat) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, doc?.song, doc?.beat, music, missing],
+  );
+
+  /** Fill the edit with the highlights of the latest matches (one game). */
+  const autoPick = async () => {
+    setPicking(true);
+    setErr(null);
+    try {
+      const list = (await api.listMatches()).filter((m) => m.highlights.length > 0).sort((a, b) => b.createdAtMs - a.createdAtMs);
+      const game = list[0]?.game;
+      const out: EditItem[] = [];
+      for (const m of list.filter((x) => x.game === game)) {
+        for (const h of m.highlights) {
+          if (!h.kinds.some((k) => k === "kill" || k === "knock" || k === "win" || k === "objective")) continue;
+          try {
+            out.push(itemFrom(m, h));
+          } catch {
+            /* no footage */
+          }
+        }
+        if (out.length >= 30) break;
+      }
+      if (out.length === 0) {
+        setErr(t("录像库里还没有带击杀的高光。", "There are no highlights with kills in the library yet."));
+        return;
+      }
+      await addToEdit(out);
+      const d = await loadEdit();
+      setDoc(d);
+      setSel(d.items[0]?.key ?? null);
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setPicking(false);
+    }
+  };
+
   const idx = items.findIndex((i) => i.key === sel);
   const it = idx >= 0 ? items[idx] : null;
 
@@ -197,18 +242,23 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
 
   const doExport = async (only?: EditItem) => {
     if (!doc || doc.items.length === 0) return;
+    if (!only && doc.mode === "music" && !planned) return;
     const list = only ? [only] : doc.items;
     setErr(null);
     setExported(null);
-    setProgress({ fraction: 0, part: 1, parts: list.length });
+    setProgress({ fraction: 0, part: 1, parts: !only && doc.mode === "music" && planned ? planned.shots.length : list.length });
     video.current?.pause();
     stopAll();
     const un = on<EditProgress>("edit-progress", setProgress);
     try {
-      const path = await api.exportEdit(
-        list.map((i) => request(i, doc)),
-        { ...doc.opts, fps120: doc.opts.fps120 && canInterp && lowFps > 0 },
-      );
+      const fps120 = doc.opts.fps120 && canInterp && lowFps > 0;
+      const path =
+        !only && doc.mode === "music" && planned
+          ? await api.exportEdit(beatRequests(planned), { ...doc.opts, fps120, music: beatMusic(planned, doc) })
+          : await api.exportEdit(
+              list.map((i) => request(i, doc)),
+              { ...doc.opts, fps120 },
+            );
       setExported(path);
     } catch (e) {
       setErr(errText(e));
@@ -241,13 +291,25 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     <div className="page page-wide edit-page">
       <header className="page-head">
         <h1>{t("剪辑", "Edit")}</h1>
-        {items.length > 0 && (
+        <Segmented
+          value={doc.mode}
+          onChange={(m) => update({ ...doc, mode: m })}
+          options={[
+            { value: "music", label: t("卡点成片", "Cut to music") },
+            { value: "manual", label: t("手动拼接", "Manual") },
+          ]}
+        />
+        {items.length > 0 && !music && (
           <span className="count">
             {t(`${items.length} 段 · 成片 ${clock(total)}`, `${items.length} ${plural(items.length, "clip", "clips")} · ${clock(total)} total`)}
             {total - raw > 0.5 && <span className="faint">{t(`（含慢动作 +${Math.round(total - raw)} 秒）`, ` (slow motion +${Math.round(total - raw)}s)`)}</span>}
           </span>
         )}
+        {music && items.length > 0 && <span className="count">{t(`素材 ${items.length} 段`, `${items.length} ${plural(items.length, "clip", "clips")} to pick from`)}</span>}
         <span className="grow" />
+        <Button small kind="ghost" onClick={autoPick} disabled={picking || busy} title={t("把最近几局里带击杀的高光都加进来", "Add the highlights with kills from your latest matches")}>
+          {picking ? <Spinner /> : <Wand2 size={14} />} {t("从最近对局挑素材", "Pick from recent matches")}
+        </Button>
         {items.length > 0 &&
           (confirmClear ? (
             <>
@@ -286,42 +348,58 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
           <p className="muted small">
             {t("打开录像库里的一局，勾选高光后点「加入剪辑」。", "Open a match in the library, check the highlights you want and press \"Add to edit\".")}
           </p>
-          <Button kind="primary" small onClick={props.openLibrary}>
-            {t("去录像库", "Go to the library")}
-          </Button>
+          <div className="export-row" style={{ justifyContent: "center" }}>
+            <Button kind="primary" small onClick={autoPick} disabled={picking}>
+              {picking ? <Spinner /> : <Wand2 size={14} />} {t("从最近对局挑素材", "Pick from recent matches")}
+            </Button>
+            <Button small onClick={props.openLibrary}>
+              {t("去录像库自己挑", "Choose in the library")}
+            </Button>
+          </div>
+          {err && <p className="warn-text small">{err}</p>}
         </div>
       ) : (
         <>
           <div className="ed-grid">
             <div className="player">
-              <div className="player-frame ed-frame">
-                {it && !missing.has(it.matchId) ? (
-                  <>
-                    <video
-                      key={it.file}
-                      ref={video}
-                      data-file={it.file}
-                      src={fileUrl(it.file)}
-                      controls
-                      onLoadedMetadata={(e) => {
-                        const p = pending.current;
-                        if (p) {
-                          e.currentTarget.currentTime = p.local;
-                          if (p.play) e.currentTarget.play().catch(() => {});
-                          pending.current = null;
-                        }
-                      }}
-                      onTimeUpdate={(e) => onTime(e.currentTarget)}
-                      onPause={(e) => {
-                        if (!e.currentTarget.seeking && e.currentTarget.playbackRate !== 1) e.currentTarget.playbackRate = 1;
-                      }}
-                    />
-                    {o.aspect === "9:16" && <div className="ed-crop" aria-hidden />}
-                  </>
-                ) : (
-                  <div className="player-empty">{it ? t("这段所在的录像已经被删掉了", "This clip's recording has been deleted") : t("选一段", "Pick a clip")}</div>
-                )}
-              </div>
+              {music ? (
+                <BeatPlayer plan={planned} doc={doc} missing={missing} analyzing={analyzing} />
+              ) : (
+                <div className="player-frame ed-frame">
+                  {it && !missing.has(it.matchId) ? (
+                    <>
+                      <video
+                        key={it.file}
+                        ref={video}
+                        data-file={it.file}
+                        src={fileUrl(it.file)}
+                        controls
+                        onLoadedMetadata={(e) => {
+                          const p = pending.current;
+                          if (p) {
+                            e.currentTarget.currentTime = p.local;
+                            if (p.play) e.currentTarget.play().catch(() => {});
+                            pending.current = null;
+                          }
+                        }}
+                        onTimeUpdate={(e) => onTime(e.currentTarget)}
+                        onPause={(e) => {
+                          if (!e.currentTarget.seeking && e.currentTarget.playbackRate !== 1) e.currentTarget.playbackRate = 1;
+                        }}
+                      />
+                      {o.aspect === "9:16" && <div className="ed-crop" aria-hidden />}
+                    </>
+                  ) : (
+                    <div className="player-empty">{it ? t("这段所在的录像已经被删掉了", "This clip's recording has been deleted") : t("选一段", "Pick a clip")}</div>
+                  )}
+                </div>
+              )}
+              {music && (
+                <div className="bc-pool-head small">
+                  <b>{t(`素材 · ${items.length} 段`, `Clips · ${items.length}`)}</b>
+                  <span className="muted">{t("会从这些里自动挑出最精彩的部分，不用排顺序。", "The best parts are picked from these automatically; no need to order them.")}</span>
+                </div>
+              )}
 
               <ol className="ed-strip" onDragOver={(e) => e.preventDefault()} title={t("拖动卡片可以调整顺序", "Drag the cards to reorder")}>
                 {items.map((x, i) => (
@@ -358,12 +436,17 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                       <span className="ed-card-title">{title(x.title)}</span>
                       <span className="ed-card-sub">{missing.has(x.matchId) ? t("录像已删除", "Recording deleted") : `${label(x.mapLabel)} · ${when(x.createdAtMs)}`}</span>
                     </button>
+                    {music && (
+                      <button type="button" className="ed-card-x" title={t("从素材里移除", "Remove")} onClick={() => remove(x.key)} disabled={busy}>
+                        <X size={13} />
+                      </button>
+                    )}
                   </li>
                 ))}
                 {dropAt === items.length && drag !== null && drag !== items.length - 1 && <li className="ed-drop-end" aria-hidden />}
               </ol>
 
-              {it && (
+              {it && !music && (
                 <div className="export ed-clip">
                   <div className="export-row">
                     <span className="trim-title">
@@ -448,6 +531,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
             </div>
 
             <aside className="ed-side">
+              {music && <BeatSide doc={doc} update={update} analyzing={analyzing} setAnalyzing={setAnalyzing} onError={setErr} />}
               <section className="ed-box">
                 <h3>{t("画面", "Picture")}</h3>
                 <Segmented
@@ -482,7 +566,8 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
               </section>
 
               <section className="ed-box">
-                <h3>{t("效果", "Effects")}</h3>
+                <h3>{music ? t("帧率", "Frame rate") : t("效果", "Effects")}</h3>
+                {!music && (
                 <div className="ed-fx">
                   <span className="ed-fx-label">{t("慢动作", "Slow motion")}</span>
                   <Segmented
@@ -500,6 +585,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                       : t("爆头、100 米以上的击杀、多杀和抢龙，前后约 1.5 秒放慢到一半速度。", "Headshots, kills from 100 m+, multikills and steals: about 1.5 s around them plays at half speed.")}
                   </p>
                 </div>
+                )}
                 <div className="ed-fx">
                   {canInterp ? (
                     <>
@@ -515,7 +601,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                     </>
                   ) : (
                     <>
-                      <span className="ed-fx-label">{t("帧率", "Frame rate")}</span>
+                      {!music && <span className="ed-fx-label">{t("帧率", "Frame rate")}</span>}
                       <p className="muted small">
                         {t("这些片段录的时候就是 120 帧，导出也是 120 帧，不需要补帧；慢动作也有 60 帧，依然流畅。", "These clips were recorded at 120 fps and export at 120 fps, so there's nothing to interpolate. Slow motion still plays at 60 fps.")}
                       </p>
@@ -544,7 +630,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                     </div>
                   </>
                 ) : (
-                  <Button kind="primary" onClick={() => doExport()} disabled={nMissing > 0}>
+                  <Button kind="primary" onClick={() => doExport()} disabled={(nMissing > 0 && !music) || (music && !planned)}>
                     <Download size={15} /> {t("导出视频", "Export video")}
                   </Button>
                 )}

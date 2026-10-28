@@ -10,6 +10,7 @@ mod icons;
 mod library;
 mod lol;
 mod mini;
+mod music;
 mod pubg;
 mod recorder;
 mod route;
@@ -1893,6 +1894,17 @@ async fn export_edit(app: AppHandle, st: State<'_, St>, clips: Vec<edit::EditCli
     r
 }
 
+/// Beats, drum hits and the drop of a song picked for the edit.
+#[tauri::command]
+async fn analyze_music(st: State<'_, St>, path: String) -> Result<music::MusicInfo, String> {
+    let st = st.inner().clone();
+    blocking(move || {
+        let ff = st.ffmpeg()?;
+        music::analyze_file(&ff, Path::new(&path))
+    })
+    .await
+}
+
 /// Frame rates of the edit's video files (0 when unreadable).
 #[tauri::command]
 async fn video_fps(st: State<'_, St>, paths: Vec<String>) -> Result<Vec<f64>, String> {
@@ -2443,6 +2455,7 @@ pub fn run() {
             export_edit,
             cancel_edit,
             video_fps,
+            analyze_music,
             map_hd,
             reveal,
             export_diagnostics,

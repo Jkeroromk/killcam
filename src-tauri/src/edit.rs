@@ -44,6 +44,25 @@ pub struct EditClip {
     pub captions: Vec<Caption>,
     /// match times to play slowed (empty unless slow motion is on)
     pub slow: Vec<f64>,
+    /// how the clip comes in and goes out: "" (hard cut) | whip | flash | black
+    pub trans_in: String,
+    pub trans_out: String,
+}
+
+/// Background music under the whole video.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MusicMix {
+    pub path: String,
+    /// where in the song the video starts (s)
+    pub start: f64,
+    /// music level, 0..1
+    pub volume: f64,
+    /// game sound level under the music, 0..1
+    pub game: f64,
+    /// stretches of the video (output time) where the music steps back and
+    /// the game sound comes up: the big fight
+    pub pulls: Vec<(f64, f64)>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -57,6 +76,7 @@ pub struct EditOptions {
     pub size_mb: u32,
     /// interpolate to 120 fps
     pub fps120: bool,
+    pub music: Option<MusicMix>,
 }
 
 impl Default for EditOptions {
@@ -66,6 +86,7 @@ impl Default for EditOptions {
             height: 1080,
             size_mb: 0,
             fps120: false,
+            music: None,
         }
     }
 }
@@ -202,6 +223,7 @@ pub fn clip_graph(
     has_audio: bool,
     fps_out: f64,
     interpolate: bool,
+    (tin, tout): (&str, &str),
 ) -> String {
     let mut g = String::new();
     // the frame: crop to fill (16:9 / vertical) or letterbox (original)
@@ -233,12 +255,15 @@ pub fn clip_graph(
             ));
         }
     }
+    g.push_str(&transition_video(tin, tout, dur));
     g.push_str("[vb];");
     if has_audio {
-        g.push_str("[0:a:0]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[ab];");
+        g.push_str("[0:a:0]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo");
     } else {
-        g.push_str(&format!("anullsrc=r=48000:cl=stereo,atrim=0:{},aformat=sample_fmts=fltp[ab];", num(dur)));
+        g.push_str(&format!("anullsrc=r=48000:cl=stereo,atrim=0:{},aformat=sample_fmts=fltp", num(dur)));
     }
+    g.push_str(&transition_audio(tin, tout, dur));
+    g.push_str("[ab];");
     let segs = segments(dur, slow);
     if segs.len() == 1 {
         g.push_str("[vb]null[vc];[ab]anull[ac];");
@@ -282,6 +307,77 @@ pub fn clip_graph(
     }
     g.push_str("[ac]anull[ao]");
     g
+}
+
+/// How long each transition takes on its side of the cut (s).
+fn trans_len(kind: &str) -> f64 {
+    match kind {
+        "whip" => 0.12,
+        "flash" => 0.14,
+        "black" => 0.25,
+        _ => 0.0,
+    }
+}
+
+/// Filters (each starting with a comma) for a clip's way in and out, in
+/// seconds of the cut clip (before any slow motion).
+pub fn transition_video(tin: &str, tout: &str, dur: f64) -> String {
+    let mut f = String::new();
+    let li = trans_len(tin).min(dur / 3.0);
+    let lo = trans_len(tout).min(dur / 3.0);
+    match tin {
+        // a sideways smear, like the camera was flicked into the shot
+        "whip" => f.push_str(&format!(",avgblur=sizeX=60:sizeY=1:enable='lt(t,{})'", num(li))),
+        "flash" => f.push_str(&format!(",fade=t=in:st=0:d={}:color=white", num(li))),
+        "black" => f.push_str(&format!(",fade=t=in:st=0:d={}", num(li))),
+        _ => {}
+    }
+    match tout {
+        "whip" => f.push_str(&format!(",avgblur=sizeX=60:sizeY=1:enable='gt(t,{})'", num(dur - lo))),
+        "flash" => f.push_str(&format!(",fade=t=out:st={}:d={}:color=white", num(dur - lo), num(lo))),
+        "black" => f.push_str(&format!(",fade=t=out:st={}:d={}", num(dur - lo), num(lo))),
+        _ => {}
+    }
+    f
+}
+
+/// The sound at the cuts: a few ms of fade so hard cuts don't click, longer
+/// into and out of black.
+pub fn transition_audio(tin: &str, tout: &str, dur: f64) -> String {
+    let li = (if tin == "black" { 0.25f64 } else { 0.02 }).min(dur / 3.0);
+    let lo = (if tout == "black" { 0.25f64 } else { 0.02 }).min(dur / 3.0);
+    format!(",afade=t=in:st=0:d={},afade=t=out:st={}:d={}", num(li), num(dur - lo), num(lo))
+}
+
+/// The music's level over time: steps back (fades out over 0.4 s) for each
+/// pull, slams back in when it ends. `floor` is how much is left meanwhile.
+pub fn pull_expr(base: f64, pulls: &[(f64, f64)], floor: f64) -> String {
+    if pulls.is_empty() {
+        return format!("{base:.3}");
+    }
+    let w: Vec<String> = pulls
+        .iter()
+        .map(|(a, b)| {
+            let a0 = (a - 0.4).max(0.0);
+            format!("if(between(t,{a0:.3},{b:.3}),min(1,(t-{a0:.3})/0.4),0)")
+        })
+        .collect();
+    format!("{base:.3}*(1-{:.3}*min(1,{}))", 1.0 - floor, w.join("+"))
+}
+
+/// The game sound's level: `base` under the music, full while it's pulled.
+pub fn game_expr(base: f64, pulls: &[(f64, f64)]) -> String {
+    if pulls.is_empty() {
+        return format!("{base:.3}");
+    }
+    let w: Vec<String> = pulls
+        .iter()
+        .map(|(a, b)| {
+            let a0 = (a - 0.4).max(0.0);
+            format!("if(between(t,{a0:.3},{b:.3}),min(1,(t-{a0:.3})/0.4),0)")
+        })
+        .collect();
+    format!("{base:.3}+{:.3}*min(1,{})", 1.0 - base, w.join("+"))
 }
 
 /// Run ffmpeg, reporting how many seconds of output are done. `stop` ends it.
@@ -465,6 +561,7 @@ pub fn export(
                 p.audio,
                 fps_out,
                 interpolate && p.fps < 119.0,
+                (c.trans_in.as_str(), c.trans_out.as_str()),
             );
             let mut args: Vec<String> = vec![
                 "-hide_banner".into(),
@@ -590,15 +687,59 @@ pub fn export(
             list.push_str(&format!("file '{p}'\n"));
         }
         fs::write(tmp.join("list.txt"), list).map_err(|e| e.to_string())?;
+        let music = o.music.as_ref().filter(|m| !m.path.is_empty() && Path::new(&m.path).exists());
+        let joined = if music.is_some() { tmp.join("joined.mp4") } else { out.clone() };
         let args: Vec<String> = [
             "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy",
             "-movflags", "+faststart",
         ]
         .iter()
         .map(|s| s.to_string())
-        .chain([out.to_string_lossy().to_string()])
+        .chain([joined.to_string_lossy().to_string()])
         .collect();
         run_progress(ff, &args, &tmp, stop, &mut |_| {})?;
+        if let Some(m) = music {
+            // the music under the game sound; the video is copied as it is
+            let fade = 1.5f64.min(total / 4.0);
+            let graph = format!(
+                "[0:a]volume=volume='{}':eval=frame[g];\
+                 [1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,\
+                 volume=volume='{}':eval=frame,afade=t=out:st={}:d={}[m];\
+                 [g][m]amix=inputs=2:normalize=0:duration=first,alimiter=limit=0.95[ao]",
+                game_expr(m.game.clamp(0.0, 1.0), &m.pulls),
+                pull_expr(m.volume.clamp(0.0, 1.5), &m.pulls, 0.08),
+                num(total - fade),
+                num(fade),
+            );
+            let args: Vec<String> = vec![
+                "-hide_banner".into(),
+                "-loglevel".into(),
+                "error".into(),
+                "-y".into(),
+                "-i".into(),
+                joined.to_string_lossy().to_string(),
+                "-ss".into(),
+                num(m.start),
+                "-i".into(),
+                m.path.clone(),
+                "-filter_complex".into(),
+                graph,
+                "-map".into(),
+                "0:v".into(),
+                "-map".into(),
+                "[ao]".into(),
+                "-c:v".into(),
+                "copy".into(),
+                "-c:a".into(),
+                "aac".into(),
+                "-b:a".into(),
+                budget.map(|b| format!("{}k", b.audio_kbps)).unwrap_or_else(|| "192k".into()),
+                "-movflags".into(),
+                "+faststart".into(),
+                out.to_string_lossy().to_string(),
+            ];
+            run_progress(ff, &args, &tmp, stop, &mut |_| {})?;
+        }
         Ok(out)
     })();
     let _ = fs::remove_dir_all(&tmp);

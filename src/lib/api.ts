@@ -379,6 +379,17 @@ export interface EditClipReq {
   captions: EditCaption[];
   /** match times played slowed */
   slow: number[];
+  /** "" (hard cut) | whip | flash | black */
+  transIn?: string;
+  transOut?: string;
+}
+
+export interface MusicMix {
+  path: string;
+  start: number;
+  volume: number;
+  game: number;
+  pulls: [number, number][];
 }
 
 export interface EditOptions {
@@ -386,6 +397,7 @@ export interface EditOptions {
   height: number;
   sizeMb: number;
   fps120: boolean;
+  music?: MusicMix | null;
 }
 
 export interface EditProgress {
@@ -444,6 +456,7 @@ export const api = {
   exportEdit: (clips: EditClipReq[], options: EditOptions) => invoke<string>("export_edit", { clips, options }),
   cancelEdit: () => invoke<void>("cancel_edit"),
   videoFps: (paths: string[]) => invoke<number[]>("video_fps", { paths }),
+  analyzeMusic: (path: string) => invoke<import("./beatcut").MusicInfo>("analyze_music", { path }),
   reveal: (path: string) => invoke<void>("reveal", { path }),
   exportDiagnostics: (path: string) => invoke<void>("export_diagnostics", { path }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),

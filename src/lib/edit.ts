@@ -4,6 +4,7 @@
 
 import { api, highlightBounds, joinPath, type EditCaption, type EditClipReq, type EditOptions, type EventKind, type GameEvent, type Highlight, type MatchRecord } from "./api";
 import { eventLine } from "./format";
+import type { PlanOpts, Song } from "./beatcut";
 import { t } from "./i18n";
 
 export type SlowMode = "off" | "big" | "all";
@@ -36,6 +37,13 @@ export interface EditDoc {
   opts: EditOptions;
   captions: boolean;
   slow: SlowMode;
+  /** clips one after another, or cut to a song */
+  mode: "manual" | "music";
+  song: Song | null;
+  beat: PlanOpts;
+  /** music and game sound levels, 0..1 */
+  musicVol: number;
+  gameVol: number;
 }
 
 export const DEFAULT_DOC: EditDoc = {
@@ -44,6 +52,11 @@ export const DEFAULT_DOC: EditDoc = {
   // PUBG shows its own kill feed; the export can still draw captions (edit.rs) but the page sends none
   captions: false,
   slow: "off",
+  mode: "music",
+  song: null,
+  beat: { length: 60, trans: "mix", pull: true },
+  musicVol: 0.9,
+  gameVol: 0.45,
 };
 
 /** how far a clip can be stretched past where it was cut, in a full recording */
@@ -63,6 +76,7 @@ export async function loadEdit(): Promise<EditDoc> {
       ...DEFAULT_DOC,
       ...raw,
       opts: { ...DEFAULT_DOC.opts, ...(raw?.opts ?? {}) },
+      beat: { ...DEFAULT_DOC.beat, ...(raw?.beat ?? {}) },
       items: Array.isArray(raw?.items) ? raw.items : [],
     };
   } catch {
