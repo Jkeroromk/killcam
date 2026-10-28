@@ -150,7 +150,7 @@ fn dir_size(p: &Path) -> u64 {
     total
 }
 
-fn sanitize(s: &str) -> String {
+pub(crate) fn sanitize(s: &str) -> String {
     s.chars()
         .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
         .collect::<String>()
@@ -158,7 +158,7 @@ fn sanitize(s: &str) -> String {
         .to_string()
 }
 
-fn local_stamp(ms: i64, fmt: &str) -> String {
+pub(crate) fn local_stamp(ms: i64, fmt: &str) -> String {
     chrono::DateTime::from_timestamp_millis(ms)
         .map(|d| d.with_timezone(&chrono::Local).format(fmt).to_string())
         .unwrap_or_else(|| "unknown".into())
@@ -1929,16 +1929,16 @@ pub struct ExportOptions {
 
 /// Bitrates that fit `dur` seconds into the size limit.
 #[derive(Debug, Clone, Copy)]
-struct Budget {
-    video_kbps: u32,
-    audio_kbps: u32,
+pub(crate) struct Budget {
+    pub video_kbps: u32,
+    pub audio_kbps: u32,
     /// highest output height that still looks fine at this bitrate
-    max_height: u32,
+    pub max_height: u32,
     /// halve the frame rate when bits are scarce
-    fps30: bool,
+    pub fps30: bool,
 }
 
-fn budget_for(size_mb: u32, dur: f64, margin: f64) -> Result<Budget, String> {
+pub(crate) fn budget_for(size_mb: u32, dur: f64, margin: f64) -> Result<Budget, String> {
     let dur = dur.max(1.0);
     let total = size_mb as f64 * 8000.0 * margin / dur;
     let audio = if total < 800.0 { 64 } else { 96 };
@@ -2156,7 +2156,7 @@ pub fn trim_highlight(
     Ok(())
 }
 
-fn source_for(rec: &MatchRecord, start: f64, end: f64) -> Option<(PathBuf, f64, f64)> {
+pub(crate) fn source_for(rec: &MatchRecord, start: f64, end: f64) -> Option<(PathBuf, f64, f64)> {
     let dir = PathBuf::from(&rec.dir);
     if let Some(v) = &rec.video {
         return Some((dir.join(v), start, end));

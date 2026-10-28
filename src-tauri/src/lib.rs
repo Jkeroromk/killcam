@@ -1,6 +1,7 @@
 mod audio;
 mod compress;
 mod detector;
+mod edit;
 mod ffmpeg;
 mod game;
 mod gamelog;
@@ -89,6 +90,9 @@ pub struct AppState {
     compressing: Mutex<Option<String>>,
     /// the GPU's AV1 encoder: None = not probed yet, Some(None) = there is none
     av1: Mutex<Option<Option<String>>>,
+    /// an edit export is running; set to stop it
+    editing: AtomicBool,
+    edit_stop: AtomicBool,
     ffmpeg_path: Mutex<Option<PathBuf>>,
     hotkeys: Mutex<Vec<(Shortcut, &'static str)>>,
     perf_running: AtomicBool,
@@ -880,7 +884,10 @@ fn spawn_game_watcher(app: AppHandle, st: St) {
 
 /// Busy with a game or recording: compression waits (and stops if it started).
 fn compress_blocked(st: &AppState) -> bool {
-    lk(&st.game_pid).is_some() || lk(&st.recording).is_some() || lk(&st.processing).is_some()
+    lk(&st.game_pid).is_some()
+        || lk(&st.recording).is_some()
+        || lk(&st.processing).is_some()
+        || st.editing.load(Ordering::SeqCst)
 }
 
 /// Re-encodes old recordings to AV1, one at a time, only while no game runs.
@@ -1825,6 +1832,55 @@ async fn export_montage(
     .await
 }
 
+/// The edit page's clip list, as the page last saved it (JSON).
+#[tauri::command]
+fn edit_get(st: State<'_, St>) -> String {
+    std::fs::read_to_string(st.config_dir.join("edit.json")).unwrap_or_else(|_| "[]".into())
+}
+
+#[tauri::command]
+fn edit_set(st: State<'_, St>, data: String) -> Result<(), String> {
+    let _ = std::fs::create_dir_all(&st.config_dir);
+    let p = st.config_dir.join("edit.json");
+    let tmp = st.config_dir.join("edit.json.tmp");
+    std::fs::write(&tmp, data).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &p).map_err(|e| e.to_string())
+}
+
+/// The edit page's clips as one video; progress comes as "edit-progress".
+#[tauri::command]
+async fn export_edit(app: AppHandle, st: State<'_, St>, clips: Vec<edit::EditClip>, options: edit::EditOptions) -> Result<String, String> {
+    let st = st.inner().clone();
+    if st.editing.swap(true, Ordering::SeqCst) {
+        return Err(i18n::tr("已经在导出了", "An export is already running"));
+    }
+    st.edit_stop.store(false, Ordering::SeqCst);
+    let st2 = st.clone();
+    let r = blocking(move || {
+        let lib = st2.lib()?;
+        let ff = st2.ffmpeg()?;
+        let enc = lk(&st2.settings).video.encoder.clone();
+        let stop = || st2.edit_stop.load(Ordering::SeqCst);
+        let mut last = std::time::Instant::now() - Duration::from_secs(1);
+        let p = edit::export(&lib, &ff, &enc, &clips, &options, &stop, &mut |p| {
+            // a few updates a second is plenty
+            if last.elapsed() >= Duration::from_millis(250) || p.part == 0 {
+                last = std::time::Instant::now();
+                let _ = app.emit("edit-progress", p);
+            }
+        })?;
+        Ok(p.to_string_lossy().to_string())
+    })
+    .await;
+    st.editing.store(false, Ordering::SeqCst);
+    r
+}
+
+#[tauri::command]
+fn cancel_edit(st: State<'_, St>) {
+    st.edit_stop.store(true, Ordering::SeqCst);
+}
+
 /// Everything useful for figuring out a problem on someone else's computer,
 /// in one text file: versions, hardware, encoder test, settings (without the
 /// API key), recent errors and the last recording logs.
@@ -2213,6 +2269,8 @@ pub fn run() {
                 compress_tx: Mutex::new(None),
                 compressing: Mutex::new(None),
                 av1: Mutex::new(None),
+                editing: AtomicBool::new(false),
+                edit_stop: AtomicBool::new(false),
                 ffmpeg_path: Mutex::new(None),
                 hotkeys: Mutex::new(Vec::new()),
                 perf_running: AtomicBool::new(false),
@@ -2342,6 +2400,10 @@ pub fn run() {
             match_route,
             export_clip,
             export_montage,
+            edit_get,
+            edit_set,
+            export_edit,
+            cancel_edit,
             reveal,
             export_diagnostics,
             open_url,

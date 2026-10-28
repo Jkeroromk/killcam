@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ChevronDown, ChevronRight, Download, FolderOpen, Play, Star, Trash2, Scissors, Layers, RotateCcw } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Clapperboard, Download, FolderOpen, Play, Star, Trash2, Scissors, Layers, RotateCcw } from "lucide-react";
 import { api, errText, fileUrl, highlightBounds, joinPath, type ExportOptions, type Highlight, type LolStats, type MatchRecord } from "../lib/api";
 import { bytes, clock, eventLine, isLol, kda, kindLabel, when } from "../lib/format";
 import { gameDef } from "../lib/games";
@@ -8,6 +8,7 @@ import { Button, KindIcon, Segmented, Spinner } from "../components/ui";
 import { Timeline } from "../components/Timeline";
 import { RouteMap } from "../components/RouteMap";
 import { isEn, label, plural, t, title } from "../lib/i18n";
+import { addToEdit, itemFrom } from "../lib/edit";
 
 /** a stored detail ("双杀 · 团灭") in the current language; "抢" stays as eventLine checks it */
 const detailLabel = (d: string) => d.split(" · ").map(label).join(" · ");
@@ -97,7 +98,7 @@ function Scoreboard(props: { l: LolStats }) {
   );
 }
 
-export default function MatchView(props: { id: string; back: () => void; libVersion?: number }) {
+export default function MatchView(props: { id: string; back: () => void; libVersion?: number; openEdit?: () => void }) {
   const [m, setM] = useState<MatchRecord | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState<string | null>(null);
@@ -107,6 +108,8 @@ export default function MatchView(props: { id: string; back: () => void; libVers
   const [range, setRange] = useState<{ a: number | null; b: number | null }>({ a: null, b: null });
   const [exporting, setExporting] = useState<string | null>(null);
   const [exported, setExported] = useState<string | null>(null);
+  // clips just sent to the edit page, and how many it has now
+  const [added, setAdded] = useState<{ n: number; total: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showEvents, setShowEvents] = useState(false);
   const [showBoard, setShowBoard] = useState(true);
@@ -250,6 +253,23 @@ export default function MatchView(props: { id: string; back: () => void; libVers
       setErr(errText(e));
     } finally {
       setExporting(null);
+    }
+  };
+
+  const sendToEdit = async (what: "picked" | "range") => {
+    if (!m) return;
+    setErr(null);
+    setAdded(null);
+    try {
+      const list =
+        what === "picked"
+          ? m.highlights.filter((h) => picked.has(h.id)).map((h) => itemFrom(m, h))
+          : [itemFrom(m, { start: Math.min(range.a ?? 0, range.b ?? 0), end: Math.max(range.a ?? 0, range.b ?? 0), title: t("片段", "Clip") })];
+      if (list.length === 0) return;
+      const total = await addToEdit(list);
+      setAdded({ n: list.length, total });
+    } catch (e) {
+      setErr(errText(e));
     }
   };
 
@@ -512,6 +532,9 @@ export default function MatchView(props: { id: string; back: () => void; libVers
               <Button small onClick={() => doExport("montage")} disabled={picked.size === 0 || !!exporting}>
                 <Layers size={14} /> {t("合集", "Montage")} · {picked.size}
               </Button>
+              <Button small onClick={() => sendToEdit("picked")} disabled={picked.size === 0} title={t("把勾选的高光放进「剪辑」，和别的对局一起剪", "Put the checked highlights in Edit, to cut them together with other matches")}>
+                <Clapperboard size={14} /> {t("加入剪辑", "Add to edit")} · {picked.size}
+              </Button>
             </div>
             {opts.sizeMb > 0 && (
               <p className="muted small">
@@ -538,6 +561,9 @@ export default function MatchView(props: { id: string; back: () => void; libVers
                 <Button small kind="ghost" onClick={() => doExport("range")} disabled={!hasRange || !!exporting}>
                   <Scissors size={14} /> {t("导出区间", "Export range")}
                 </Button>
+                <Button small kind="ghost" onClick={() => sendToEdit("range")} disabled={!hasRange}>
+                  <Clapperboard size={14} /> {t("区间加入剪辑", "Add range to edit")}
+                </Button>
               </div>
             )}
             {exporting && (
@@ -551,6 +577,16 @@ export default function MatchView(props: { id: string; back: () => void; libVers
                 <button type="button" className="link" onClick={() => api.reveal(exported)}>
                   {t("在文件夹中显示", "Show in folder")}
                 </button>
+              </p>
+            )}
+            {added && (
+              <p className="ok-text small">
+                {t(`已加入 ${added.n} 段，剪辑里现在一共 ${added.total} 段`, `Added ${added.n} ${plural(added.n, "clip", "clips")}; the edit now has ${added.total}`)}
+                {props.openEdit && (
+                  <button type="button" className="link" onClick={props.openEdit}>
+                    {t("去剪辑", "Go to Edit")}
+                  </button>
+                )}
               </p>
             )}
             {err && <p className="warn-text">{err}</p>}

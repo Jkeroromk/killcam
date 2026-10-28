@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BarChart3, Crosshair, Film, Settings2 } from "lucide-react";
+import { BarChart3, Clapperboard, Crosshair, Film, Settings2 } from "lucide-react";
 import { api, on, type GameId, type Settings, type Status } from "./lib/api";
 import { clock, gameName } from "./lib/format";
 import Onboarding from "./onboarding/Onboarding";
@@ -8,18 +8,28 @@ import Library from "./pages/Library";
 import MatchView from "./pages/MatchView";
 import SettingsPage from "./pages/SettingsPage";
 import StatsPage from "./pages/StatsPage";
+import EditPage from "./pages/EditPage";
+import { loadEdit } from "./lib/edit";
 import { Spinner } from "./components/ui";
 import { UpdateCard } from "./components/UpdateCard";
 import { AccountButton } from "./components/AccountButton";
 import { label, resolveLang, setLang, t } from "./lib/i18n";
 
-type Page = { name: "home" } | { name: "library" } | { name: "match"; id: string } | { name: "stats" } | { name: "settings" };
+type Page = { name: "home" } | { name: "library" } | { name: "match"; id: string } | { name: "stats" } | { name: "edit" } | { name: "settings" };
 
 export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [page, setPage] = useState<Page>({ name: "home" });
   const [libVersion, setLibVersion] = useState(0);
+  // clips waiting on the edit page (the badge on its nav button)
+  const [editCount, setEditCount] = useState(0);
+  useEffect(() => {
+    loadEdit().then((d) => setEditCount(d.items.length));
+    const f = (e: Event) => setEditCount((e as CustomEvent<number>).detail);
+    window.addEventListener("kc-edit", f);
+    return () => window.removeEventListener("kc-edit", f);
+  }, []);
   // the game the library, stats and settings show; follows the game being played
   const [game, setGameState] = useState<GameId>(() => {
     try {
@@ -71,7 +81,7 @@ export default function App() {
     return <Onboarding key={uiLang} initial={settings} onDone={(s) => setSettings(s)} onLanguage={(language) => setSettings({ ...settings, language })} />;
   }
 
-  const nav = (name: "home" | "library" | "stats" | "settings") => setPage({ name } as Page);
+  const nav = (name: "home" | "library" | "stats" | "edit" | "settings") => setPage({ name } as Page);
   const current = page.name === "match" ? "library" : page.name;
 
   return (
@@ -90,6 +100,10 @@ export default function App() {
           </button>
           <button type="button" className={current === "stats" ? "is-on" : ""} onClick={() => nav("stats")}>
             <BarChart3 size={18} /> {t("数据", "Stats")}
+          </button>
+          <button type="button" className={current === "edit" ? "is-on" : ""} onClick={() => nav("edit")}>
+            <Clapperboard size={18} /> {t("剪辑", "Edit")}
+            {editCount > 0 && <span className="nav-badge">{editCount}</span>}
           </button>
           <button type="button" className={current === "settings" ? "is-on" : ""} onClick={() => nav("settings")}>
             <Settings2 size={18} /> {t("设置", "Settings")}
@@ -125,7 +139,8 @@ export default function App() {
           }} />
         )}
         {page.name === "library" && <Library game={game} setGame={setGame} libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
-        {page.name === "match" && <MatchView id={page.id} back={() => nav("library")} libVersion={libVersion} />}
+        {page.name === "match" && <MatchView id={page.id} back={() => nav("library")} libVersion={libVersion} openEdit={() => nav("edit")} />}
+        {page.name === "edit" && <EditPage openLibrary={() => nav("library")} openMatch={(id) => setPage({ name: "match", id })} />}
         {page.name === "stats" && <StatsPage game={game} setGame={setGame} libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
         {page.name === "settings" && <SettingsPage game={game} settings={settings} onSaved={setSettings} status={status} />}
       </main>

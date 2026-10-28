@@ -363,6 +363,36 @@ export interface ExportOptions {
   sizeMb: number;
 }
 
+export interface EditCaption {
+  /** match time */
+  t: number;
+  text: string;
+}
+
+/** One clip as the export gets it. */
+export interface EditClipReq {
+  matchId: string;
+  start: number;
+  end: number;
+  captions: EditCaption[];
+  /** match times played slowed */
+  slow: number[];
+}
+
+export interface EditOptions {
+  aspect: string;
+  height: number;
+  sizeMb: number;
+  fps120: boolean;
+}
+
+export interface EditProgress {
+  fraction: number;
+  /** clip being encoded, 0 while joining */
+  part: number;
+  parts: number;
+}
+
 export interface StorageInfo {
   libraryDir: string;
   usedBytes: number;
@@ -407,6 +437,10 @@ export const api = {
     invoke<string>("export_clip", { id, start, end, title, options }),
   exportMontage: (id: string, highlightIds: string[], options: ExportOptions) =>
     invoke<string>("export_montage", { id, highlightIds, options }),
+  editGet: () => invoke<string>("edit_get"),
+  editSet: (data: string) => invoke<void>("edit_set", { data }),
+  exportEdit: (clips: EditClipReq[], options: EditOptions) => invoke<string>("export_edit", { clips, options }),
+  cancelEdit: () => invoke<void>("cancel_edit"),
   reveal: (path: string) => invoke<void>("reveal", { path }),
   exportDiagnostics: (path: string) => invoke<void>("export_diagnostics", { path }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),

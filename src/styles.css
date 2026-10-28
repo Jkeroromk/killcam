@@ -3458,3 +3458,331 @@ button.route-item:hover,
   border-right: 7px solid transparent;
   border-bottom: 12px solid #fff;
 }
+
+/* ---------- edit page ---------- */
+
+.nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 11px;
+  font-family: var(--mono);
+  display: inline-grid;
+  place-items: center;
+}
+.rail-nav button.is-on .nav-badge {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+.ed-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.ed-empty p {
+  margin: 0;
+}
+.ed-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 22px;
+  align-items: start;
+}
+.ed-frame {
+  position: relative;
+}
+.ed-frame video {
+  max-height: 62vh;
+}
+.ed-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 72%;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.ed-caption span {
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-weight: 700;
+  font-size: clamp(12px, 1.6vw, 20px);
+  padding: 4px 10px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+/* the parts a vertical export crops away */
+.ed-crop {
+  position: absolute;
+  inset: 0 0 48px 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.62) 0,
+    rgba(0, 0, 0, 0.62) calc(50% - 15.82%),
+    transparent calc(50% - 15.82%),
+    transparent calc(50% + 15.82%),
+    rgba(0, 0, 0, 0.62) calc(50% + 15.82%)
+  );
+}
+.ed-clip .trim-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+}
+.ed-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  font-family: var(--mono);
+  font-weight: 600;
+  align-self: center;
+}
+.iconbtn.sm {
+  width: 28px;
+  height: 28px;
+}
+.iconbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: none;
+}
+.ed-trim {
+  position: relative;
+  height: 46px;
+  background: var(--raised);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+.ed-trim-sel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--hl-band);
+  border-top: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+}
+.ed-trim-slow {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.28) 0 3px, transparent 3px 7px);
+}
+.ed-trim-cap {
+  position: absolute;
+  bottom: 2px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.7);
+}
+.ed-trim-ev {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  display: inline-grid;
+}
+.ed-trim-head {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--rec);
+  pointer-events: none;
+}
+.ed-trim-h {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 12px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--accent);
+  cursor: ew-resize;
+  padding: 0;
+}
+.ed-trim-h::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 30%;
+  bottom: 30%;
+  width: 2px;
+  background: var(--accent-ink);
+  opacity: 0.5;
+}
+.ed-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ed-box {
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ed-box h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.ed-box p {
+  margin: 0;
+  line-height: 1.5;
+}
+.ed-box > .btn {
+  justify-content: center;
+}
+.ed-fx {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+.ed-fx + .ed-fx {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 12px;
+}
+.ed-fx-label {
+  font-size: 13px;
+}
+.ed-prog {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--raised);
+  overflow: hidden;
+}
+.ed-prog-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s;
+}
+.ed-strip {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0 8px;
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+}
+.ed-strip > li {
+  flex: 0 0 150px;
+  position: relative;
+}
+.ed-strip > li.is-drag {
+  opacity: 0.4;
+}
+.ed-strip > li.is-drop::before,
+.ed-drop-end::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.ed-drop-end {
+  flex: 0 0 6px !important;
+}
+.ed-card {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  color: var(--text);
+  text-align: left;
+  cursor: grab;
+}
+.ed-card:hover {
+  border-color: var(--line);
+}
+.ed-card.is-on {
+  border-color: var(--accent-line);
+  background: var(--raised);
+}
+.ed-card.is-missing {
+  opacity: 0.55;
+}
+.ed-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: #000;
+  display: block;
+}
+.ed-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ed-thumb .ed-num {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  background: rgba(0, 0, 0, 0.7);
+  border-color: transparent;
+}
+.ed-thumb .dur {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  font-size: 11px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.7);
+  font-family: var(--mono);
+}
+.ed-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 2px;
+}
+.ed-card-sub {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 2px 2px;
+}
+@media (max-width: 1100px) {
+  .ed-grid {
+    grid-template-columns: 1fr;
+  }
+}
