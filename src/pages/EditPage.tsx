@@ -1,16 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Clapperboard, Download, Play, Square, Trash2, X } from "lucide-react";
 import { api, errText, fileUrl, on, type EditOptions, type EditProgress } from "../lib/api";
 import { clock, when } from "../lib/format";
 import { label, plural, t, title } from "../lib/i18n";
-import { CAPTION_S, SLOW, captionEvents, captionText, loadEdit, outLen, request, saveEdit, segments, slowTimes, type EditDoc, type EditItem, type SlowMode } from "../lib/edit";
+import { SLOW, captionText, loadEdit, outLen, request, saveEdit, segments, slowTimes, type EditDoc, type EditItem, type SlowMode } from "../lib/edit";
 import { Button, KindIcon, Segmented, Spinner, Toggle } from "../components/ui";
 
 /** The selected clip's range on a strip of its footage: drag the edges to trim. */
 function TrimBar(props: {
   it: EditItem;
   slow: SlowMode;
-  captions: boolean;
   pos: number | null;
   onDrag: (start: number, end: number, edge: "a" | "b") => void;
   onCommit: () => void;
@@ -57,10 +56,6 @@ function TrimBar(props: {
           <span key={e.id} className="ed-trim-ev" style={{ left: pct(e.t) }} title={captionText(e)}>
             <KindIcon kind={e.kind} small game={it.game} />
           </span>
-        ))}
-      {props.captions &&
-        captionEvents(it).map((e) => (
-          <div key={"c" + e.id} className="ed-trim-cap" style={{ left: pct(e.t - 0.2), width: `calc(${pct(Math.min(it.end, e.t - 0.2 + CAPTION_S))} - ${pct(e.t - 0.2)})` }} />
         ))}
       {props.pos != null && props.pos >= it.lo && props.pos <= it.hi && <div className="ed-trim-head" style={{ left: pct(props.pos) }} />}
       <button type="button" className="ed-trim-h is-a" style={{ left: pct(it.start) }} onPointerDown={grab("a")} aria-label={t("开头", "Start")} />
@@ -176,11 +171,6 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     }
   };
 
-  const caption = useMemo(() => {
-    if (!it || !doc?.captions || pos == null) return null;
-    const e = captionEvents(it).find((e) => pos >= e.t - 0.2 && pos <= Math.min(it.end, e.t - 0.2 + CAPTION_S));
-    return e ? captionText(e) : null;
-  }, [it, doc?.captions, pos]);
 
   const move = (from: number, to: number) => {
     if (!doc || from === to || to < 0 || to > doc.items.length) return;
@@ -326,11 +316,6 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                         if (!e.currentTarget.seeking && e.currentTarget.playbackRate !== 1) e.currentTarget.playbackRate = 1;
                       }}
                     />
-                    {caption && (
-                      <div className={"ed-caption" + (o.aspect === "9:16" ? " is-vertical" : "")}>
-                        <span>{caption}</span>
-                      </div>
-                    )}
                     {o.aspect === "9:16" && <div className="ed-crop" aria-hidden />}
                   </>
                 ) : (
@@ -406,7 +391,6 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                   <TrimBar
                     it={it}
                     slow={doc.slow}
-                    captions={doc.captions}
                     pos={pos}
                     onDrag={(a, b, edge) => {
                       setItem(it.key, { start: Math.max(it.lo, a), end: Math.min(it.hi, b) }, false);
@@ -499,10 +483,6 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
 
               <section className="ed-box">
                 <h3>{t("效果", "Effects")}</h3>
-                <div className="ed-fx">
-                  <Toggle checked={doc.captions} onChange={(v) => update({ ...doc, captions: v })} label={t("击杀信息", "Kill captions")} />
-                  <p className="muted small">{t("击倒、击杀时在画面下方显示对手、武器、距离和是否爆头。", "Shows the opponent, weapon, distance and headshots at the bottom of the picture on each knock and kill.")}</p>
-                </div>
                 <div className="ed-fx">
                   <span className="ed-fx-label">{t("慢动作", "Slow motion")}</span>
                   <Segmented

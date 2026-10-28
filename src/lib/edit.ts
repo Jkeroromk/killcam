@@ -41,7 +41,8 @@ export interface EditDoc {
 export const DEFAULT_DOC: EditDoc = {
   items: [],
   opts: { aspect: "source", height: 1080, sizeMb: 0, fps120: false },
-  captions: true,
+  // PUBG shows its own kill feed; the export can still draw captions (edit.rs) but the page sends none
+  captions: false,
   slow: "off",
 };
 
@@ -193,6 +194,6 @@ export function outLen(it: EditItem, mode: SlowMode): number {
 
 /** The export request for a clip. */
 export function request(it: EditItem, doc: EditDoc): EditClipReq {
-  const captions: EditCaption[] = doc.captions ? captionEvents(it).map((e) => ({ t: e.t, text: captionText(e) })) : [];
-  return { matchId: it.matchId, start: it.start, end: it.end, captions, slow: slowTimes(it, doc.slow) };
+  // no captions: PUBG already shows its own kill feed
+  return { matchId: it.matchId, start: it.start, end: it.end, captions: [], slow: slowTimes(it, doc.slow) };
 }
