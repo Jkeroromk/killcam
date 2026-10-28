@@ -1,13 +1,11 @@
-// The 剪辑 (edit) page's clip list: highlights picked from any matches, kept
-// in the app's config folder so it survives restarts. Each clip carries what
-// the page needs to show and preview it without loading its match again.
+// The 剪辑 (edit) page's project: the clips picked from any matches (the
+// media bin), the timeline made of them, and the song under it. Kept in the
+// app's config folder so it survives restarts. Each clip carries what the
+// page needs to show and play it without loading its match again.
 
-import { api, highlightBounds, joinPath, type EditCaption, type EditClipReq, type EditOptions, type EventKind, type GameEvent, type Highlight, type MatchRecord } from "./api";
-import { eventLine } from "./format";
-import type { PlanOpts, Song } from "./beatcut";
+import { api, highlightBounds, joinPath, type EditClipReq, type EditOptions, type EventKind, type GameEvent, type Highlight, type MatchRecord, type MusicMix } from "./api";
+import type { MusicInfo } from "./beatcut";
 import { t } from "./i18n";
-
-export type SlowMode = "off" | "big" | "all";
 
 export interface EditItem {
   key: string;
@@ -32,53 +30,109 @@ export interface EditItem {
   events: GameEvent[];
 }
 
+export type Trans = "" | "flash" | "black";
+
+/** A piece of a bin clip on the timeline. */
+export interface TClip {
+  key: string;
+  item: string;
+  /** match time */
+  start: number;
+  end: number;
+  /** how it comes in from the clip before */
+  trans: Trans;
+}
+
+export interface Song {
+  path: string;
+  name: string;
+  info: MusicInfo;
+}
+
 export interface EditDoc {
+  /** the media bin */
   items: EditItem[];
+  timeline: TClip[];
   opts: EditOptions;
-  captions: boolean;
-  slow: SlowMode;
-  /** clips one after another, or cut to a song */
-  mode: "manual" | "music";
   song: Song | null;
-  beat: PlanOpts;
-  /** music and game sound levels, 0..1 */
+  /** where in the song the video starts (s) */
+  musicOffset: number;
   musicVol: number;
   gameVol: number;
+  /** stretches (video time) where the music steps back to the game sound */
+  pulls: [number, number][];
+  /** edges stick to the beat */
+  snap: boolean;
+  /** auto cut: target length (0 = the song), transition between matches, pull the music for the big fight */
+  auto: { length: number; trans: Trans; pull: boolean };
 }
 
 export const DEFAULT_DOC: EditDoc = {
   items: [],
+  timeline: [],
   opts: { aspect: "source", height: 1080, sizeMb: 0, fps120: false },
-  // PUBG shows its own kill feed; the export can still draw captions (edit.rs) but the page sends none
-  captions: false,
-  slow: "off",
-  mode: "music",
   song: null,
-  beat: { length: 60, trans: "mix", pull: true },
+  musicOffset: 0,
   musicVol: 0.9,
   gameVol: 0.45,
+  pulls: [],
+  snap: true,
+  auto: { length: 60, trans: "", pull: true },
 };
 
 /** how far a clip can be stretched past where it was cut, in a full recording */
 const MARGIN_S = 30;
-// keep in step with src-tauri/src/edit.rs
-export const SLOW = 0.5;
-const SLOW_BEFORE = 1.0;
-const SLOW_AFTER = 0.6;
-export const CAPTION_S = 3.0;
+
+let seq = 0;
+export const newKey = () => `${Date.now().toString(36)}${(seq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+export const tclip = (it: EditItem): TClip => ({ key: newKey(), item: it.key, start: it.start, end: it.end, trans: "" });
+
+/** A bin clip as the next timeline clip after `prev`: when both are the same
+ *  match and overlap, it starts where `prev` ends, so nothing plays twice. */
+export function tclipAfter(it: EditItem, prev: TClip | undefined, items: EditItem[]): TClip {
+  const c = tclip(it);
+  const p = prev ? items.find((i) => i.key === prev.item) : undefined;
+  if (p && p.matchId === it.matchId && c.start < prev!.end && c.end > prev!.start && c.end - prev!.end >= 0.8) c.start = prev!.end;
+  return c;
+}
+
+/** Timeline clips that show footage another clip also shows. */
+export function repeats(tl: TClip[], items: EditItem[]): Set<string> {
+  const m = new Map(items.map((i) => [i.key, i.matchId]));
+  const out = new Set<string>();
+  for (let i = 0; i < tl.length; i++)
+    for (let j = i + 1; j < tl.length; j++) {
+      const a = tl[i];
+      const b = tl[j];
+      if (m.get(a.item) === m.get(b.item) && Math.min(a.end, b.end) - Math.max(a.start, b.start) > 0.3) {
+        out.add(a.key);
+        out.add(b.key);
+      }
+    }
+  return out;
+}
 
 export async function loadEdit(): Promise<EditDoc> {
   try {
     const raw = JSON.parse(await api.editGet());
     // the first versions stored only the list
-    if (Array.isArray(raw)) return { ...DEFAULT_DOC, items: raw };
-    return {
-      ...DEFAULT_DOC,
-      ...raw,
-      opts: { ...DEFAULT_DOC.opts, ...(raw?.opts ?? {}) },
-      beat: { ...DEFAULT_DOC.beat, ...(raw?.beat ?? {}) },
-      items: Array.isArray(raw?.items) ? raw.items : [],
-    };
+    const items: EditItem[] = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : [];
+    const doc: EditDoc = Array.isArray(raw)
+      ? { ...DEFAULT_DOC, items }
+      : {
+          ...DEFAULT_DOC,
+          ...raw,
+          items,
+          opts: { ...DEFAULT_DOC.opts, ...(raw?.opts ?? {}) },
+          auto: { ...DEFAULT_DOC.auto, ...(raw?.auto ?? {}) },
+          pulls: Array.isArray(raw?.pulls) ? raw.pulls : [],
+        };
+    const keys = new Set(items.map((i) => i.key));
+    // before the timeline existed the bin was the video, in order
+    if (!Array.isArray(raw?.timeline)) doc.timeline = items.map(tclip);
+    doc.timeline = doc.timeline.filter((c) => keys.has(c.item));
+    return doc;
   } catch {
     return { ...DEFAULT_DOC };
   }
@@ -89,10 +143,7 @@ export async function saveEdit(doc: EditDoc): Promise<void> {
   window.dispatchEvent(new CustomEvent("kc-edit", { detail: doc.items.length }));
 }
 
-let seq = 0;
-const newKey = () => `${Date.now().toString(36)}${(seq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-
-/** A highlight (or a custom range of a full recording) as an edit clip. */
+/** A highlight (or a custom range of a full recording) as a bin clip. */
 export function itemFrom(m: MatchRecord, h: Highlight | { start: number; end: number; title: string }): EditItem {
   const hl = "id" in h ? h : null;
   let file: string;
@@ -130,84 +181,42 @@ export function itemFrom(m: MatchRecord, h: Highlight | { start: number; end: nu
   };
 }
 
-/** Add clips to the end of the edit, skipping ones already in it. */
+/** Add clips to the bin and the end of the timeline, skipping ones already in. */
 export async function addToEdit(items: EditItem[]): Promise<{ added: number; total: number }> {
   const doc = await loadEdit();
   const same = (a: EditItem, b: EditItem) => a.matchId === b.matchId && Math.abs(a.start - b.start) < 0.5 && Math.abs(a.end - b.end) < 0.5;
   const fresh = items.filter((x) => !doc.items.some((y) => same(x, y)));
   if (fresh.length > 0) {
     doc.items = [...doc.items, ...fresh];
+    const all = [...doc.items];
+    for (const it of fresh) doc.timeline = [...doc.timeline, tclipAfter(it, doc.timeline[doc.timeline.length - 1], all)];
     await saveEdit(doc);
   }
   return { added: fresh.length, total: doc.items.length };
 }
 
-const inClip = (it: EditItem, e: GameEvent) => e.t >= it.start && e.t <= it.end;
-
-/** Moments that get a caption: your knocks and kills (League: kills, objectives). */
-export function captionEvents(it: EditItem): GameEvent[] {
-  return it.events.filter((e) => inClip(it, e) && !e.credited && (e.kind === "kill" || e.kind === "knock" || (it.game === "lol" && e.kind === "objective")));
-}
-
-export function captionText(e: GameEvent): string {
-  const head = e.kind === "kill" ? t("击杀", "Kill") : e.kind === "knock" ? t("击倒", "Knock") : "";
-  const line = eventLine(e);
-  return head ? (line ? `${head}  ${line.replace(/，/g, " · ").replace(/, /g, " · ")}` : head) : line;
-}
-
-const MULTI = /双杀|三杀|四杀|五杀|团灭/;
-
-/** Is this one worth slowing down: headshots and long shots, multikills and steals. */
-function big(e: GameEvent): boolean {
-  if (e.headshot) return true;
-  if ((e.distanceM ?? 0) >= 100) return true;
-  const d = e.detail ?? "";
-  return MULTI.test(d) || d.includes("抢");
-}
-
-export function slowEvents(it: EditItem, mode: SlowMode): GameEvent[] {
-  if (mode === "off") return [];
-  return it.events.filter((e) => inClip(it, e) && !e.credited && (e.kind === "kill" || (e.kind === "objective" && (e.detail ?? "").includes("抢"))) && (mode === "all" || big(e)));
-}
-
-/** The clip's pieces in seconds into it: [from, to, slowed]. Same as the export. */
-export function segments(dur: number, slow: number[]): [number, number, boolean][] {
-  const wins = slow
-    .map((t): [number, number] => [Math.max(0, t - SLOW_BEFORE), Math.min(dur, t + SLOW_AFTER)])
-    .filter(([a, b]) => b - a > 0.2)
-    .sort((a, b) => a[0] - b[0]);
-  const merged: [number, number][] = [];
-  for (const w of wins) {
-    const l = merged[merged.length - 1];
-    if (l && w[0] <= l[1] + 0.3) l[1] = Math.max(l[1], w[1]);
-    else merged.push([w[0], w[1]]);
-  }
-  const out: [number, number, boolean][] = [];
+/** Where each timeline clip sits in the video. */
+export function layout(tl: TClip[]): { c: TClip; at: number; len: number }[] {
   let at = 0;
-  for (const [a, b] of merged) {
-    if (a - at > 0.05) out.push([at, a, false]);
-    out.push([a, b, true]);
-    at = b;
-  }
-  if (dur - at > 0.05 || out.length === 0) out.push([at, dur, false]);
-  return out;
+  return tl.map((c) => {
+    const len = Math.max(0, c.end - c.start);
+    const r = { c, at, len };
+    at += len;
+    return r;
+  });
 }
 
-export function slowTimes(it: EditItem, mode: SlowMode): number[] {
-  return slowEvents(it, mode).map((e) => e.t);
-}
+export const totalLen = (tl: TClip[]) => tl.reduce((n, c) => n + Math.max(0, c.end - c.start), 0);
 
-/** Length of a clip in the finished video. */
-export function outLen(it: EditItem, mode: SlowMode): number {
-  const dur = it.end - it.start;
-  return segments(
-    dur,
-    slowTimes(it, mode).map((x) => x - it.start),
-  ).reduce((n, [a, b, s]) => n + (s ? (b - a) / SLOW : b - a), 0);
-}
-
-/** The export request for a clip. */
-export function request(it: EditItem, doc: EditDoc): EditClipReq {
-  // no captions: PUBG already shows its own kill feed
-  return { matchId: it.matchId, start: it.start, end: it.end, captions: [], slow: slowTimes(it, doc.slow) };
+/** The export request: the timeline's clips with their cuts, and the song. */
+export function requests(doc: EditDoc): { clips: EditClipReq[]; music: MusicMix | null } {
+  const byKey = new Map(doc.items.map((i) => [i.key, i]));
+  const tl = doc.timeline.filter((c) => byKey.has(c.item));
+  const clips = tl.map((c, i) => {
+    const next = tl[i + 1];
+    const out = next?.trans === "black" ? "black" : i === tl.length - 1 && doc.song ? "black" : "";
+    return { matchId: byKey.get(c.item)!.matchId, start: c.start, end: c.end, captions: [], slow: [], transIn: i === 0 ? "" : c.trans, transOut: out };
+  });
+  const music = doc.song ? { path: doc.song.path, start: doc.musicOffset, volume: doc.musicVol, game: doc.gameVol, pulls: doc.pulls } : null;
+  return { clips, music };
 }

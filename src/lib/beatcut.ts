@@ -1,13 +1,15 @@
-// 卡点成片: the clips in the edit cut to a song.
+// 一键卡点: the bin's clips laid on the timeline to fit a song.
 //
 // What the montages people like have in common (measured on a few popular
-// PUBG ones): a fast opening that cuts on the drum hits, then whole fights
-// left uncut, the best one starting where the song kicks in, the music
-// stepping back for the big fight and slamming back in, hard cuts almost
-// everywhere and a transition only when the match changes.
+// PUBG ones): whole fights left uncut, the best one starting where the song
+// kicks in, the music stepping back for the big fight and slamming back in,
+// and hard cuts almost everywhere.
+//
+// Every moment is used once: clips of the same match that overlap are
+// merged into one fight, so nothing plays twice.
 
 import type { GameEvent } from "./api";
-import type { EditItem } from "./edit";
+import { newKey, type EditItem, type TClip, type Trans } from "./edit";
 
 export interface MusicInfo {
   duration: number;
@@ -20,49 +22,17 @@ export interface MusicInfo {
   drop: number;
 }
 
-export interface Song {
-  path: string;
-  name: string;
-  info: MusicInfo;
-}
-
-/** hard cuts only, or which transition when the match changes */
-export type TransStyle = "cut" | "whip" | "flash" | "black" | "mix";
-
-export interface PlanOpts {
-  /** seconds; 0 = the whole song */
+export interface AutoOpts {
+  /** seconds; 0 = the rest of the song */
   length: number;
-  trans: TransStyle;
-  /** music steps back for the big fight */
+  trans: Trans;
   pull: boolean;
 }
 
-export interface Shot {
-  key: string;
-  item: EditItem;
-  /** match time */
-  start: number;
-  end: number;
-  /** where it sits in the video */
-  outStart: number;
-  role: "hook" | "main";
-  /** the moment put on a beat (match time), if any */
-  sync: number | null;
-  transIn: string;
-  transOut: string;
-}
-
-export interface Plan {
-  shots: Shot[];
-  /** where in the song the video starts */
-  musicStart: number;
-  length: number;
-  /** output time the song kicks in */
-  drop: number;
+export interface AutoCut {
+  timeline: TClip[];
+  musicOffset: number;
   pulls: [number, number][];
-  /** beats in output time, for drawing */
-  beats: number[];
-  downbeats: number[];
 }
 
 interface Fight {
@@ -75,9 +45,13 @@ interface Fight {
   win: boolean;
 }
 
-const KILLISH = new Set(["kill", "knock", "win", "objective", "manual"]);
+const MOMENTS = new Set(["kill", "knock", "win", "objective", "manual"]);
+/** seconds before a fight's first moment */
+const LEAD = 3;
+/** after its last */
+const TAIL = 2;
 
-function killScore(e: GameEvent): number {
+function score(e: GameEvent): number {
   let s = e.kind === "kill" ? 3 : e.kind === "knock" ? 1.2 : e.kind === "win" ? 4 : e.kind === "objective" ? 2 : 0.8;
   if (e.headshot) s += 1.5;
   if ((e.distanceM ?? 0) >= 100) s += 1.5;
@@ -88,26 +62,32 @@ function killScore(e: GameEvent): number {
   return s;
 }
 
-/** Each clip's fights: its moments grouped when they're under 8 s apart. */
+/** The bin's fights: each match's moments (once, whatever clips they're in)
+ *  grouped when under 8 s apart, with the clip that has the most footage of it. */
 export function fights(items: EditItem[]): Fight[] {
+  const byMatch = new Map<string, EditItem[]>();
+  for (const it of items) byMatch.set(it.matchId, [...(byMatch.get(it.matchId) ?? []), it]);
   const out: Fight[] = [];
-  for (const it of items) {
-    const evs = it.events.filter((e) => KILLISH.has(e.kind) && !e.credited && e.t >= it.lo && e.t <= it.hi).sort((a, b) => a.t - b.t);
-    let cur: GameEvent[] = [];
-    const flush = () => {
-      if (cur.length === 0) return;
-      const kills = cur.filter((e) => e.kind === "kill");
-      const sc = cur.reduce((n, e) => n + killScore(e), 0) + Math.max(0, kills.length - 1) * 2;
-      out.push({ item: it, events: cur, kills, first: cur[0].t, last: cur[cur.length - 1].t, score: sc, win: cur.some((e) => e.kind === "win") });
-      cur = [];
-    };
+  for (const its of byMatch.values()) {
+    const seen = new Map<string, GameEvent>();
+    for (const it of its) for (const e of it.events) if (MOMENTS.has(e.kind) && !e.credited && e.t >= it.lo && e.t <= it.hi) seen.set(e.id, e);
+    const evs = [...seen.values()].sort((a, b) => a.t - b.t);
+    const groups: GameEvent[][] = [];
     for (const e of evs) {
-      if (cur.length && e.t - cur[cur.length - 1].t > 8) flush();
-      cur.push(e);
+      const g = groups[groups.length - 1];
+      if (g && e.t - g[g.length - 1].t <= 8) g.push(e);
+      else groups.push([e]);
     }
-    flush();
-    // a clip with no moments in it still counts, quietly
-    if (evs.length === 0) out.push({ item: it, events: [], kills: [], first: (it.start + it.end) / 2, last: (it.start + it.end) / 2, score: 0.3, win: false });
+    for (const g of groups) {
+      const first = g[0].t;
+      const last = g[g.length - 1].t;
+      // the clip covering most of [first - LEAD, last + TAIL]
+      const cover = (it: EditItem) => Math.min(it.hi, last + TAIL) - Math.max(it.lo, first - LEAD);
+      const item = [...its].sort((a, b) => cover(b) - cover(a))[0];
+      if (cover(item) <= 0) continue;
+      const kills = g.filter((e) => e.kind === "kill");
+      out.push({ item, events: g, kills, first, last, score: g.reduce((n, e) => n + score(e), 0) + Math.max(0, kills.length - 1) * 2, win: g.some((e) => e.kind === "win") });
+    }
   }
   return out;
 }
@@ -115,194 +95,124 @@ export function fights(items: EditItem[]): Fight[] {
 const snapUp = (t: number, grid: number[]) => grid.find((g) => g >= t - 0.02) ?? t;
 const snapNear = (t: number, grid: number[]) => grid.reduce((b, g) => (Math.abs(g - t) < Math.abs(b - t) ? g : b), grid[0] ?? t);
 
-let seq = 0;
-const key = () => `s${(seq++).toString(36)}`;
-
-/** The edit's clips arranged on the song. */
-export function plan(items: EditItem[], song: MusicInfo, o: PlanOpts): Plan | null {
-  if (items.length === 0 || song.beats.length < 8) return null;
+/** Lay the fights on the song: the best one's first kill on the drop, the
+ *  others in the order they happened (a chicken dinner last), every fight's
+ *  first kill on a beat, cuts on beats, the end on a bar. */
+export function autoCut(items: EditItem[], song: MusicInfo, o: AutoOpts): AutoCut | null {
+  const all = fights(items);
+  if (all.length === 0 || song.beats.length < 8) return null;
   const beat = song.beat;
-  const songLen = song.duration;
-  const all = fights(items).sort((a, b) => b.score - a.score);
-  if (all.length === 0) return null;
-  const best = all[0];
+  const best = [...all].sort((a, b) => b.score - a.score)[0];
+  const chrono = (a: Fight, b: Fight) => (a.win !== b.win ? (a.win ? 1 : -1) : a.item.createdAtMs - b.item.createdAtMs || a.first - b.first);
+  const before = all.filter((f) => f !== best && !f.win && chrono(f, best) < 0).sort(chrono);
+  const after = all.filter((f) => f !== best && (f.win || chrono(f, best) > 0)).sort(chrono);
+  const take = (f: Fight) => Math.min(f.item.hi, f.last + TAIL) - Math.max(f.item.lo, f.first - LEAD);
+  const maxLen = o.length > 0 ? o.length : song.duration;
 
-  // where in the song: a short opening (8-16 beats) before the drop, the
-  // song's own intro skipped; how long: as asked, or to the song's end
-  const hookLen = Math.min(Math.max((o.length || 60) * 0.2, 8 * beat), 16 * beat);
-  const want = song.drop - hookLen;
-  let musicStart = song.downbeats.filter((d) => d <= want).pop() ?? song.downbeats[0] ?? 0;
-  let length = o.length > 0 ? Math.min(o.length, songLen - musicStart) : songLen - musicStart;
-  if (o.length > 0 && musicStart + o.length > songLen) {
-    musicStart = Math.max(0, song.downbeats.filter((d) => d <= songLen - o.length).pop() ?? 0);
-    length = Math.min(o.length, songLen - musicStart);
+  // how much comes before the drop: a few earlier fights, at most a third
+  const pre: Fight[] = [];
+  let preLen = 0;
+  for (const f of [...before].reverse()) {
+    if (preLen + take(f) > Math.min(song.drop, maxLen / 3)) break;
+    pre.unshift(f);
+    preLen += take(f);
   }
-  const beats = song.beats.map((b) => b - musicStart).filter((b) => b >= -0.001 && b <= length + 0.001);
-  const downs = song.downbeats.map((b) => b - musicStart).filter((b) => b >= -0.001 && b <= length + 0.001);
-  // end on a bar
-  const lastDown = downs.filter((d) => d <= length).pop();
-  if (lastDown && length - lastDown < 4 * beat) length = Math.max(lastDown, Math.min(length, 8));
-  const drop = Math.max(0, song.drop - musicStart);
+  const bestKill = (best.kills[0] ?? best.events[0]).t;
+  const bestLead = Math.min(LEAD, bestKill - best.item.lo);
+  // the song starts on a bar, early enough for all that
+  const want = song.drop - preLen - bestLead;
+  const musicOffset = Math.max(0, song.downbeats.filter((d) => d <= want).pop() ?? 0);
+  const length = Math.min(maxLen, song.duration - musicOffset);
+  const beats = song.beats.map((b) => b - musicOffset).filter((b) => b >= -0.01 && b <= length + 0.01);
+  const downs = song.downbeats.map((b) => b - musicOffset).filter((b) => b >= -0.01 && b <= length + 0.01);
+  const drop = song.drop - musicOffset;
 
-  const shots: Shot[] = [];
-  // the best fight: its first kill on the drop, a few beats of lead-in before it
-  const bestKill = (best.kills[0] ?? best.events[0])?.t ?? best.first;
-  const leadBeats = Math.max(2, Math.ceil(2.5 / beat));
-  let leadIn = leadBeats * beat;
-  // not before the footage starts
-  leadIn = Math.min(leadIn, Math.max(beat, Math.floor((bestKill - best.item.lo) / beat) * beat));
-  const dropShotStart = Math.max(0, drop - leadIn);
-
-  // which fights the main part has room for (roughly)
-  const maxTake = Math.max(8, Math.min(20, length * 0.3));
-  const take = (f: Fight) => Math.min(maxTake, f.last - f.first + 4.5);
-  const rest = all.filter((f) => f !== best).sort((a, b) => (a.win !== b.win ? (a.win ? 1 : -1) : a.item.createdAtMs - b.item.createdAtMs || a.first - b.first));
-  const inMain = new Set<Fight>([best]);
-  let room = length - drop - take(best);
-  for (const f of [...rest].sort((a, b) => b.score - a.score)) {
-    if (room <= 2) break;
-    inMain.add(f);
-    room -= take(f);
-  }
-
-  // the opening: quick cuts on the beat, one kill each, before the drop shot;
-  // from the fights that won't get their own take first, so little repeats
-  const hookEnd = dropShotStart;
-  const hookMoments: { item: EditItem; e: GameEvent; s: number }[] = [];
-  for (const f of all) {
-    f.events.forEach((e, i) => {
-      if (e.kind === "win") return;
-      // a fight that plays later keeps its opening kill for then
-      if (inMain.has(f) && i === 0) return;
-      hookMoments.push({ item: f.item, e, s: killScore(e) + (inMain.has(f) ? 0 : 3) });
-    });
-  }
-  hookMoments.sort((a, b) => b.s - a.s);
-  const hookBeats = beats.filter((b) => b < hookEnd - 0.05);
-  // two beats a shot (one when the song is slow)
-  const per = beat >= 0.55 ? 1 : 2;
-  const slots = Math.floor(hookBeats.length / per);
-  const used = new Set<string>();
-  const picks: typeof hookMoments = [];
-  for (const m of hookMoments) {
-    if (picks.length >= slots) break;
-    const id = `${m.item.key}:${Math.round(m.e.t)}`;
-    if (used.has(id)) continue;
-    used.add(id);
-    picks.push(m);
-  }
-  if (picks.length > 0) {
-    // the beats left over go to the first shot, so the video starts at 0
-    const lens = picks.map(() => per);
-    lens[0] += hookBeats.length - per * picks.length;
-    let at = 0;
-    picks.forEach((m, i) => {
-      const n = lens[i];
-      const dur = (i === picks.length - 1 ? hookEnd - at : n * beat);
-      // the kill on the shot's last-but-one beat: a beat of aftermath
-      const killAt = Math.max(0, dur - beat);
-      let start = m.e.t - killAt;
-      let end = start + dur;
-      if (start < m.item.lo) {
-        end += m.item.lo - start;
-        start = m.item.lo;
-      }
-      if (end > m.item.hi) {
-        start = Math.max(m.item.lo, start - (end - m.item.hi));
-        end = m.item.hi;
-      }
-      shots.push({ key: key(), item: m.item, start, end, outStart: at, role: "hook", sync: m.e.t, transIn: "", transOut: "" });
-      at += end - start;
-    });
-  } else if (hookEnd > 0.3) {
-    // nothing to tease with: the drop shot just starts earlier
-  }
-
-  // the fights, whole: the best one on the drop, the rest in the order they
-  // happened, a chicken dinner last
-  const order = [best, ...rest.filter((f) => inMain.has(f))];
-  let cursor = shots.length ? shots[shots.length - 1].outStart + (shots[shots.length - 1].end - shots[shots.length - 1].start) : 0;
-  for (const f of order) {
-    if (cursor >= length - beat) break;
-    const k = (f.kills[0] ?? f.events[0])?.t ?? f.first;
-    let start: number;
-    let syncOut: number;
-    if (f === best) {
-      // lead-in grows to fill to the drop if the opening came up short
-      start = k - (drop - cursor);
-      syncOut = drop;
-    } else {
-      // the first kill on the first beat at least 2.5 s in
-      const want = cursor + 2.5;
-      syncOut = snapUp(want, beats);
-      start = k - (syncOut - cursor);
-    }
-    if (start < f.item.lo) {
-      // not enough lead-in: move the cut later instead
-      const short = f.item.lo - start;
-      start = f.item.lo;
-      const p = shots[shots.length - 1];
-      if (p) {
-        // the shot before plays a little longer (as far as its footage goes)
-        const grow = Math.min(short, p.item.hi - p.end);
-        p.end += grow;
-        cursor += grow;
+  const tl: TClip[] = [];
+  let cursor = 0;
+  const used = new Map<string, [number, number][]>();
+  const free = (f: Fight, a: number, b: number): [number, number] => {
+    // never the same footage twice
+    for (const [x, y] of used.get(f.item.matchId) ?? []) {
+      if (a < y && b > x) {
+        if (a >= x) a = y;
+        else b = Math.min(b, x);
       }
     }
-    let end = Math.min(f.item.hi, Math.max(f.last + 2, k + 2), start + maxTake);
-    // end on a beat
-    const outEnd = snapNear(cursor + (end - start), beats.filter((b) => b > cursor + 1));
-    end = Math.min(f.item.hi, start + (outEnd - cursor));
-    if (cursor + (end - start) > length) end = start + (length - cursor);
-    if (end - start < 0.6) continue;
-    shots.push({ key: key(), item: f.item, start, end, outStart: cursor, role: "main", sync: k, transIn: "", transOut: "" });
+    return [a, b];
+  };
+  const put = (f: Fight, start: number, end: number, trans: Trans) => {
+    [start, end] = free(f, start, end);
+    if (end - start < 0.8) return false;
+    tl.push({ key: newKey(), item: f.item.key, start, end, trans });
+    used.set(f.item.matchId, [...(used.get(f.item.matchId) ?? []), [start, end]]);
     cursor += end - start;
-  }
-  if (shots.length === 0) return null;
-  // shorter than the song section: end there
-  length = Math.min(length, cursor);
+    return true;
+  };
+  const transFor = (f: Fight) => {
+    const prev = tl[tl.length - 1];
+    if (!prev) return "" as Trans;
+    const prevItem = items.find((i) => i.key === prev.item);
+    return prevItem && prevItem.matchId !== f.item.matchId ? o.trans : "";
+  };
 
-  // transitions: only where the match changes in the main part
-  const style = o.trans;
-  for (let i = 1; i < shots.length; i++) {
-    const a = shots[i - 1];
-    const b = shots[i];
-    let t = "";
-    if (b.role === "main" && a.role === "hook") t = style === "cut" ? "" : "flash";
-    else if (b.role === "main" && a.item.matchId !== b.item.matchId) {
-      t = style === "mix" ? (i === shots.length - 1 ? "black" : "whip") : style === "cut" ? "" : style;
-    }
-    if (t === "black") {
-      a.transOut = "black";
-      b.transIn = "black";
-    } else if (t === "whip") {
-      a.transOut = "whip";
-      b.transIn = "whip";
-    } else if (t === "flash") {
-      b.transIn = "flash";
+  // before the drop: the earlier fights, then the best one's lead-in so its
+  // first kill lands on the drop
+  pre.forEach((f, i) => {
+    let start = Math.max(f.item.lo, f.first - LEAD);
+    let end = Math.min(f.item.hi, f.last + TAIL);
+    if (i === 0) start = Math.max(f.item.lo, end - (drop - bestLead - (preLen - take(f))));
+    end = start + Math.max(0.8, snapNear(cursor + (end - start), beats) - cursor);
+    put(f, start, Math.min(end, f.item.hi), transFor(f));
+  });
+  {
+    const f = best;
+    // starts where the song is, kill on the drop
+    let start = bestKill - Math.max(0.5, drop - cursor);
+    if (start < f.item.lo) start = f.item.lo;
+    let end = Math.min(f.item.hi, f.last + TAIL, start + Math.max(10, length * 0.4));
+    end = start + Math.max(0.8, snapNear(cursor + (end - start), beats.filter((b) => b > cursor + 1)) - cursor);
+    put(f, start, Math.min(end, f.item.hi), transFor(f));
+  }
+  // after: each fight's first kill on the first beat at least LEAD in
+  for (const f of after) {
+    if (cursor >= length - 2 * beat) break;
+    const k = (f.kills[0] ?? f.events[0]).t;
+    const killOut = snapUp(cursor + LEAD, beats);
+    let start = Math.max(f.item.lo, k - (killOut - cursor));
+    let end = Math.min(f.item.hi, f.last + TAIL, start + Math.max(10, length * 0.3));
+    end = start + Math.max(0.8, snapNear(cursor + (end - start), beats.filter((b) => b > cursor + 1)) - cursor);
+    if (cursor + (end - start) > length) end = start + (length - cursor);
+    put(f, start, Math.min(end, f.item.hi), transFor(f));
+  }
+  if (tl.length === 0) return null;
+  // end on a bar when there's one close
+  const total = cursor;
+  const bar = downs.filter((d) => d <= total && total - d < 4 * beat).pop();
+  if (bar && bar > 4) {
+    let cut = total - bar;
+    for (let i = tl.length - 1; i >= 0 && cut > 0; i--) {
+      const c = tl[i];
+      const take = Math.min(cut, c.end - c.start - 0.8);
+      c.end -= take;
+      cut -= take;
     }
   }
-  shots[shots.length - 1].transOut = "black";
 
   // the big fight later on: music out, back in on its last kill
   const pulls: [number, number][] = [];
   if (o.pull) {
-    const cands = shots
-      .filter((s) => s.role === "main" && s.outStart > drop + 4)
-      .map((s) => {
-        const evs = s.item.events.filter((e) => KILLISH.has(e.kind) && e.kind !== "win" && !e.credited && e.t >= s.start && e.t <= s.end);
-        return { s, evs };
-      })
-      .filter((c) => c.evs.filter((e) => e.kind === "kill").length >= 2);
-    const pick = cands.sort((a, b) => b.evs.length - a.evs.length)[0];
-    if (pick) {
-      const out = (t: number) => pick.s.outStart + (t - pick.s.start);
-      const kills = pick.evs.filter((e) => e.kind === "kill");
-      const a = snapNear(out(pick.evs[0].t) - beat, beats);
-      const b = snapNear(out(kills[kills.length - 1].t), beats);
-      if (b - a >= 2) pulls.push([a, b]);
+    let at = 0;
+    let pick: { a: number; b: number; n: number } | null = null;
+    for (const c of tl) {
+      const it = items.find((i) => i.key === c.item)!;
+      const kills = it.events.filter((e) => e.kind === "kill" && !e.credited && e.t >= c.start && e.t <= c.end);
+      const firstMoment = it.events.filter((e) => MOMENTS.has(e.kind) && e.kind !== "win" && e.t >= c.start && e.t <= c.end)[0];
+      if (at > drop + 4 && kills.length >= 2 && firstMoment && (!pick || kills.length > pick.n)) {
+        pick = { a: snapNear(at + (firstMoment.t - c.start) - beat, beats), b: snapNear(at + (kills[kills.length - 1].t - c.start), beats), n: kills.length };
+      }
+      at += c.end - c.start;
     }
+    if (pick && pick.b - pick.a >= 2) pulls.push([pick.a, pick.b]);
   }
-
-  return { shots, musicStart, length, drop, pulls, beats, downbeats: downs };
+  return { timeline: tl, musicOffset, pulls };
 }
