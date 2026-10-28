@@ -217,6 +217,9 @@ export interface GameEvent {
   distanceM: number | null;
   headshot: boolean;
   source: string;
+  /** a kill credited to the player but finished by someone else (or after
+   *  their last death): counts, gets no clip of its own */
+  credited?: boolean;
   /** League of Legends: 双杀 / 一血 / 抢 ... */
   detail?: string | null;
 }

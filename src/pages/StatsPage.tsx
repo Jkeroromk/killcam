@@ -44,6 +44,89 @@ function tipStyle(frac: number): { left: string; transform?: string } {
   return { left };
 }
 
+/** Team deathmatch has official data too, but two teams and dozens of kills a
+ *  game would skew battle royale numbers: it is counted apart. */
+const isTdm = (m: MatchRecord) => m.gameMode === "团队死斗" || (m.stats != null && m.stats.teams > 0 && m.stats.teams <= 2);
+
+type WeaponRow = { name: string; kills: number; knocks: number; heads: number; dist: number; longest: number };
+type WeaponSort = "kills" | "knocks" | "heads" | "dist" | "longest";
+
+function WeaponTable(props: { rows: WeaponRow[] }) {
+  const [sort, setSort] = useState<WeaponSort>("kills");
+  const [all, setAll] = useState(false);
+  const val = (r: WeaponRow) =>
+    sort === "kills" ? r.kills : sort === "knocks" ? r.knocks : sort === "heads" ? (r.kills ? r.heads / r.kills : 0) : sort === "dist" ? (r.kills ? r.dist / r.kills : 0) : r.longest;
+  const rows = [...props.rows].sort((a, b) => val(b) - val(a) || b.kills - a.kills);
+  const shown = all ? rows : rows.slice(0, 8);
+  const maxK = Math.max(1, ...rows.map((r) => r.kills));
+  const head = (k: WeaponSort, text: string) => (
+    <th>
+      <button type="button" className={"st-sort" + (sort === k ? " is-on" : "")} onClick={() => setSort(k)}>
+        {text}
+      </button>
+    </th>
+  );
+  return (
+    <>
+      <table className="st-table st-weapons">
+        <thead>
+          <tr>
+            <th>{t("武器", "Weapon")}</th>
+            {head("kills", t("击杀", "Kills"))}
+            {head("knocks", t("击倒", "Knocks"))}
+            {head("heads", t("爆头率", "Headshots"))}
+            {head("dist", t("平均距离", "Avg dist."))}
+            {head("longest", t("最远", "Longest"))}
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((r) => (
+            <tr key={r.name}>
+              <td>
+                <span className="st-wname">{label(r.name)}</span>
+                <span className="st-wbar">
+                  <i style={{ width: `${(r.kills / maxK) * 100}%` }} />
+                </span>
+              </td>
+              <td>{r.kills}</td>
+              <td>{r.knocks}</td>
+              <td>{pct(r.heads, r.kills)}</td>
+              <td>{r.kills ? t(`${Math.round(r.dist / r.kills)} 米`, `${Math.round(r.dist / r.kills)} m`) : "–"}</td>
+              <td>{r.longest ? t(`${Math.round(r.longest)} 米`, `${Math.round(r.longest)} m`) : "–"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length > 8 && (
+        <button type="button" className="linkbtn st-more" onClick={() => setAll(!all)}>
+          {all ? t("收起", "Show less") : t(`显示全部 ${rows.length} 种`, `Show all ${rows.length}`)}
+        </button>
+      )}
+    </>
+  );
+}
+
+/** "name … count" list, the longest bar = the most */
+function CountList(props: { rows: [string, number][]; empty: string; isLabel?: boolean }) {
+  if (props.rows.length === 0) return <p className="muted small">{props.empty}</p>;
+  const max = Math.max(1, ...props.rows.map(([, n]) => n));
+  return (
+    <ul className="st-bars">
+      {props.rows.map(([name, n]) => (
+        <li key={name}>
+          <span className="st-bar-name" title={name}>
+            {props.isLabel ? label(name) : name}
+          </span>
+          <span className="st-bar-track">
+            <i style={{ width: `${(n / max) * 100}%` }} />
+          </span>
+          <b>{n}</b>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Tile(props: { label: string; value: string; sub?: string }) {
   return (
     <div className="st-tile">
@@ -261,9 +344,9 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
     if (!all) return null;
     // newest first from the backend
     const pubgAll = all.filter((m) => !isLol(m));
-    const official = pubgAll.filter((m) => m.stats && m.stats.place > 0);
+    const official = pubgAll.filter((m) => m.stats && m.stats.place > 0 && !isTdm(m));
     // quick records still waiting for PUBG's data are neither yet
-    const others = pubgAll.filter((m) => !(m.stats && m.stats.place > 0) && !m.pendingApi);
+    const others = pubgAll.filter((m) => !(m.stats && m.stats.place > 0 && !isTdm(m)) && !m.pendingApi);
     const pick = range ? official.slice(0, range) : official;
     const n = pick.length;
     const sum = (f: (m: MatchRecord) => number) => pick.reduce((a, m) => a + f(m), 0);
@@ -277,26 +360,53 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
     const longest = pick.reduce((b, m) => (m.stats!.longestKill > (b?.stats!.longestKill ?? 0) ? m : b), null as MatchRecord | null);
     const best = pick.reduce((b, m) => (!b || m.stats!.kills > b.stats!.kills || (m.stats!.kills === b.stats!.kills && m.stats!.damage > b.stats!.damage) ? m : b), null as MatchRecord | null);
 
-    // weapons from the official kill events
-    const wmap = new Map<string, { kills: number; dist: number; heads: number }>();
+    // weapons, opponents and distances from the official events
+    const wmap = new Map<string, WeaponRow>();
+    const weapon = (name: string) => {
+      let w = wmap.get(name);
+      if (!w) wmap.set(name, (w = { name, kills: 0, knocks: 0, heads: 0, dist: 0, longest: 0 }));
+      return w;
+    };
+    const killers = new Map<string, number>();
+    const victims = new Map<string, number>();
+    const causes = new Map<string, number>();
+    const bump = (m: Map<string, number>, k: string | null | undefined) => k && m.set(k, (m.get(k) ?? 0) + 1);
+    // 0-10 / 10-50 / 50-100 / 100-200 / 200+ m
+    const buckets = [0, 0, 0, 0, 0];
     for (const m of pick) {
       for (const e of m.events) {
-        if (e.kind !== "kill" || !e.weapon) continue;
-        const w = wmap.get(e.weapon) ?? { kills: 0, dist: 0, heads: 0 };
-        w.kills += 1;
-        w.dist += e.distanceM ?? 0;
-        w.heads += e.headshot ? 1 : 0;
-        wmap.set(e.weapon, w);
+        if (e.source !== "telemetry") continue;
+        if (e.kind === "kill") {
+          bump(victims, e.victim);
+          const dm = e.distanceM ?? 0;
+          buckets[dm < 10 ? 0 : dm < 50 ? 1 : dm < 100 ? 2 : dm < 200 ? 3 : 4] += 1;
+          if (e.weapon) {
+            const w = weapon(e.weapon);
+            w.kills += 1;
+            w.dist += dm;
+            w.heads += e.headshot ? 1 : 0;
+            w.longest = Math.max(w.longest, dm);
+          }
+        } else if (e.kind === "knock" && e.weapon) {
+          weapon(e.weapon).knocks += 1;
+        } else if (e.kind === "death") {
+          // a death's "victim" is who did it
+          bump(killers, e.victim);
+          bump(causes, e.weapon);
+        }
       }
     }
-    const weapons = [...wmap.entries()].sort((a, b) => b[1].kills - a[1].kills).slice(0, 6);
+    const weapons = [...wmap.values()].filter((w) => w.kills + w.knocks > 0);
+    const top = (m: Map<string, number>, n = 6) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
 
-    const mmap = new Map<string, { n: number; wins: number; kills: number; place: number }>();
+    const mmap = new Map<string, { n: number; wins: number; kills: number; place: number; top10: number; damage: number }>();
     for (const m of pick) {
-      const r = mmap.get(m.mapLabel) ?? { n: 0, wins: 0, kills: 0, place: 0 };
+      const r = mmap.get(m.mapLabel) ?? { n: 0, wins: 0, kills: 0, place: 0, top10: 0, damage: 0 };
       r.n += 1;
       r.wins += m.stats!.place === 1 ? 1 : 0;
+      r.top10 += m.stats!.place <= 10 ? 1 : 0;
       r.kills += m.stats!.kills;
+      r.damage += m.stats!.damage;
       r.place += m.stats!.place;
       mmap.set(m.mapLabel, r);
     }
@@ -317,6 +427,10 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
       longest,
       best,
       weapons,
+      killers: top(killers),
+      victims: top(victims),
+      causes: top(causes, 5),
+      buckets,
       maps,
       others: others.length,
       otherKills,
@@ -333,7 +447,8 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
   }
 
   const d = data;
-  const maxW = Math.max(1, ...d.weapons.map(([, w]) => w.kills));
+  const bucketMax = Math.max(1, ...d.buckets);
+  const bucketNames = ["< 10", "10–50", "50–100", "100–200", "200+"];
   const lolList = (all ?? []).filter(isLol);
   const shownGame = props.game;
 
@@ -419,29 +534,13 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
           <div className="st-row">
             <section className="st-card">
               <header>
-                <h2>{t("常用武器", "Top weapons")}</h2>
-                <span className="muted small">{t("按击杀数", "By kills")}</span>
+                <h2>{t("武器", "Weapons")}</h2>
+                <span className="muted small">{t("点表头换排序", "Click a heading to sort")}</span>
               </header>
               {d.weapons.length === 0 ? (
                 <p className="muted small">{t("这些对局里没有武器数据。", "No weapon data in these matches.")}</p>
               ) : (
-                <ul className="st-bars">
-                  {d.weapons.map(([name, w]) => (
-                    <li key={name}>
-                      <span className="st-bar-name">{label(name)}</span>
-                      <span className="st-bar-track">
-                        <i style={{ width: `${(w.kills / maxW) * 100}%` }} />
-                      </span>
-                      <b>{w.kills}</b>
-                      <span className="st-bar-sub">
-                        {t(
-                          `平均 ${Math.round(w.dist / w.kills)} 米${w.heads ? ` · ${w.heads} 爆头` : ""}`,
-                          `Avg ${Math.round(w.dist / w.kills)} m${w.heads ? ` · ${w.heads} ${plural(w.heads, "headshot", "headshots")}` : ""}`,
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <WeaponTable rows={d.weapons} />
               )}
             </section>
 
@@ -454,8 +553,10 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
                   <tr>
                     <th>{t("地图", "Map")}</th>
                     <th>{t("对局", "Games")}</th>
-                    <th>{t("吃鸡", "Wins")}</th>
+                    <th>{t("吃鸡率", "Win rate")}</th>
+                    <th>{t("前十率", "Top 10")}</th>
                     <th>{t("场均击杀", "Avg kills")}</th>
+                    <th>{t("场均伤害", "Avg dmg")}</th>
                     <th>{t("平均排名", "Avg place")}</th>
                   </tr>
                 </thead>
@@ -464,8 +565,13 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
                     <tr key={map}>
                       <td>{label(map)}</td>
                       <td>{r.n}</td>
-                      <td>{r.wins}</td>
+                      <td>
+                        {pct(r.wins, r.n)}
+                        {r.wins > 0 && <span className="muted small"> · {r.wins}</span>}
+                      </td>
+                      <td>{pct(r.top10, r.n)}</td>
                       <td>{avg(r.kills, r.n)}</td>
+                      <td>{avg(r.damage, r.n, 0)}</td>
                       <td>#{avg(r.place, r.n, 0)}</td>
                     </tr>
                   ))}
@@ -473,6 +579,55 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
               </table>
             </section>
           </div>
+
+          <div className="st-row st-row-3">
+            <section className="st-card">
+              <header>
+                <h2>{t("淘汰你最多的人", "Who eliminated you most")}</h2>
+              </header>
+              <CountList
+                rows={d.killers}
+                empty={t("这些对局里没有阵亡记录。", "No deaths in these matches.")}
+              />
+            </section>
+            <section className="st-card">
+              <header>
+                <h2>{t("你击杀最多的人", "Who you eliminated most")}</h2>
+              </header>
+              <CountList
+                rows={d.victims}
+                empty={t("这些对局里没有击杀。", "No kills in these matches.")}
+              />
+            </section>
+            <section className="st-card">
+              <header>
+                <h2>{t("你最常死于", "What killed you most")}</h2>
+              </header>
+              <CountList
+                rows={d.causes}
+                isLabel
+                empty={t("这些对局里没有阵亡记录。", "No deaths in these matches.")}
+              />
+            </section>
+          </div>
+
+          <section className="st-card">
+            <header>
+              <h2>{t("击杀距离", "Kill distance")}</h2>
+              <span className="muted small">{t("米", "meters")}</span>
+            </header>
+            <div className="st-dist">
+              {d.buckets.map((n, i) => (
+                <div key={i} className="st-dist-col">
+                  <b>{n}</b>
+                  <span className="st-dist-bar">
+                    <i style={{ height: `${(n / bucketMax) * 100}%` }} />
+                  </span>
+                  <span className="muted small">{bucketNames[i]}</span>
+                </div>
+              ))}
+            </div>
+          </section>
 
           <div className="st-row">
             {d.best && (
@@ -495,10 +650,10 @@ export default function StatsPage(props: { game: GameId; setGame: (g: GameId) =>
             )}
             {d.others > 0 && (
               <div className="st-card st-best">
-                <span className="muted small">{t("街机 / 自定义 / 训练（不计入上面的统计）", "Arcade / custom / training (not counted above)")}</span>
+                <span className="muted small">{t("团队死斗 / 街机 / 自定义 / 训练（不计入上面的统计）", "Team deathmatch / arcade / custom / training (not counted above)")}</span>
                 <b>{t(`${d.others} 次`, `${d.others} ${plural(d.others, "match", "matches")}`)}</b>
                 <span className="muted small">
-                  {t(`读屏识别到 ${d.otherKills} 次击杀`, `${d.otherKills} ${plural(d.otherKills, "kill", "kills")} from screen reading`)}
+                  {t(`共 ${d.otherKills} 次击杀`, `${d.otherKills} ${plural(d.otherKills, "kill", "kills")}`)}
                 </span>
               </div>
             )}
