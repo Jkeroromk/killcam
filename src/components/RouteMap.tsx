@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Maximize2, Minimize2, Minus, Plus } from "lucide-react";
 import { api, errText, fileUrl, type MatchRecord, type RouteMark, type RouteView } from "../lib/api";
 import { clock } from "../lib/format";
 import { label, t } from "../lib/i18n";
@@ -67,6 +67,9 @@ export function RouteMap(props: { m: MatchRecord; pos: number; seek: (t: number)
   const [view, setView] = useState<RouteView | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [whole, setWhole] = useState(false);
+  // where the user zoomed / dragged to (null: framed on the route, or the whole map)
+  const [cam, setCam] = useState<{ x: number; y: number; s: number } | null>(null);
+  const mapEl = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<number | null>(null);
   // the sharp map: downloaded once per map, the small one shows meanwhile
   const [hd, setHd] = useState<string | null>(null);
@@ -75,6 +78,7 @@ export function RouteMap(props: { m: MatchRecord; pos: number; seek: (t: number)
   useEffect(() => {
     let live = true;
     setView(null);
+    setCam(null);
     setErr(null);
     setHd(null);
     api
@@ -108,7 +112,7 @@ export function RouteMap(props: { m: MatchRecord; pos: number; seek: (t: number)
 
   const r = view?.route;
   // zoomed onto where the player was (all of the map when asked, or nothing to frame)
-  const box = useMemo(() => {
+  const fit = useMemo(() => {
     if (!r || whole) return { x: 0, y: 0, s: 1000 };
     const pts = [...r.path, ...r.marks.map((k) => k.at), ...(r.landing ? [r.landing] : [])];
     if (pts.length === 0) return { x: 0, y: 0, s: 1000 };
@@ -120,6 +124,60 @@ export function RouteMap(props: { m: MatchRecord; pos: number; seek: (t: number)
     const cy = (y0 + y1) / 2;
     return { x: Math.min(1000 - s, Math.max(0, cx - s / 2)), y: Math.min(1000 - s, Math.max(0, cy - s / 2)), s };
   }, [r, whole]);
+  const box = cam ?? fit;
+  const boxRef = useRef(box);
+  boxRef.current = box;
+  const clampBox = (x: number, y: number, s: number) => {
+    s = Math.min(1000, Math.max(40, s));
+    return { x: Math.min(1000 - s, Math.max(0, x)), y: Math.min(1000 - s, Math.max(0, y)), s };
+  };
+  /** zoom by `f` keeping the map point under (fx, fy) (0..1 of the view) in place */
+  const zoomAt = (f: number, fx = 0.5, fy = 0.5) => {
+    const b = boxRef.current;
+    const px = b.x + fx * b.s;
+    const py = b.y + fy * b.s;
+    const s = Math.min(1000, Math.max(40, b.s * f));
+    setCam(clampBox(px - fx * s, py - fy * s, s));
+  };
+  // wheel zoom (a native listener: React's is passive and can't stop the page scrolling)
+  const hasMap = !!view;
+  useEffect(() => {
+    const el = mapEl.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rc = el.getBoundingClientRect();
+      zoomAt(Math.pow(1.0018, e.deltaY), (e.clientX - rc.left) / rc.width, (e.clientY - rc.top) / rc.height);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMap]);
+  // drag to move around
+  const pan = (e: { clientX: number; clientY: number; button: number }) => {
+    if (e.button !== 0 || !mapEl.current) return;
+    const el = mapEl.current;
+    const b0 = boxRef.current;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let moved = false;
+    const mv = (ev: PointerEvent) => {
+      const dx = ev.clientX - x0;
+      const dy = ev.clientY - y0;
+      if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+      moved = true;
+      el.classList.add("is-panning");
+      const u = b0.s / el.clientWidth;
+      setCam(clampBox(b0.x - dx * u, b0.y - dy * u, b0.s));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", mv);
+      window.removeEventListener("pointerup", up);
+      el.classList.remove("is-panning");
+    };
+    window.addEventListener("pointermove", mv);
+    window.addEventListener("pointerup", up);
+  };
 
   const now = r ? whereAt(r, m.videoStartMs + props.pos * 1000) : null;
   const marks = r ? [...r.marks].sort((a, b) => a.at.ms - b.at.ms) : [];
@@ -133,9 +191,31 @@ export function RouteMap(props: { m: MatchRecord; pos: number; seek: (t: number)
         {t("路线和击杀", "Route and fights")}
         <span className="grow" />
         {r && (
-          <button type="button" className="icon-btn" onClick={() => setWhole(!whole)} title={whole ? t("放大到路线", "Zoom to the route") : t("看整张地图", "Whole map")}>
-            {whole ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          </button>
+          <>
+            <span className="faint small">{t("滚轮缩放，拖动移动", "Scroll to zoom, drag to move")}</span>
+            <button type="button" className="icon-btn" onClick={() => zoomAt(1 / 1.5)} title={t("放大", "Zoom in")} disabled={box.s <= 40}>
+              <Plus size={15} />
+            </button>
+            <button type="button" className="icon-btn" onClick={() => zoomAt(1.5)} title={t("缩小", "Zoom out")} disabled={box.s >= 1000}>
+              <Minus size={15} />
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => {
+                // back to the route when zoomed anywhere else, else the whole map
+                if (cam || whole) {
+                  setCam(null);
+                  setWhole(false);
+                } else {
+                  setWhole(true);
+                }
+              }}
+              title={cam || whole ? t("回到路线", "Back to the route") : t("看整张地图", "Whole map")}
+            >
+              {cam || whole ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+          </>
         )}
       </header>
       {err ? (
@@ -146,7 +226,7 @@ export function RouteMap(props: { m: MatchRecord; pos: number; seek: (t: number)
         </div>
       ) : (
         <div className="route-body">
-          <div className="route-map">
+          <div className="route-map" ref={mapEl} onPointerDown={pan}>
             <svg viewBox={`${box.x} ${box.y} ${box.s} ${box.s}`} preserveAspectRatio="xMidYMid meet" style={{ ["--k" as string]: k }}>
               {hd || view.image ? (
                 <image href={fileUrl(hd ?? view.image!)} x={0} y={0} width={1000} height={1000} />

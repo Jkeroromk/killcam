@@ -37,6 +37,15 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
   const [err, setErr] = useState<string | null>(null);
   const [busyMsg, setBusyMsg] = useState<string | null>(null);
   const [fps, setFps] = useState<Record<string, number>>({});
+  // bin clips ticked for removing several at once
+  const [binSel, setBinSel] = useState<Set<string>>(new Set());
+  // "clear" buttons ask once more
+  const [confirm, setConfirm] = useState<"bin" | "timeline" | null>(null);
+  useEffect(() => {
+    if (!confirm) return;
+    const id = setTimeout(() => setConfirm(null), 3000);
+    return () => clearTimeout(id);
+  }, [confirm]);
   const [, bump] = useState(0);
   const undo = useRef<Snap[]>([]);
   const redo = useRef<Snap[]>([]);
@@ -250,11 +259,15 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     edit({ timeline: list });
     setSel(c.key);
   };
-  const removeItem = (key: string) => {
+  const removeItems = (keys: string[]) => {
     const d = docRef.current;
-    if (!d) return;
-    edit({ items: d.items.filter((i) => i.key !== key), timeline: d.timeline.filter((c) => c.item !== key) });
+    if (!d || keys.length === 0) return;
+    const gone = new Set(keys);
+    edit({ items: d.items.filter((i) => !gone.has(i.key)), timeline: d.timeline.filter((c) => !gone.has(c.item)) });
+    setBinSel((cur) => new Set([...cur].filter((k) => !gone.has(k))));
+    if (sel && d.timeline.some((c) => c.key === sel && gone.has(c.item))) setSel(null);
   };
+  const removeItem = (key: string) => removeItems([key]);
 
   // keys: space, S, delete, undo / redo, arrows
   useEffect(() => {
@@ -268,7 +281,10 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
       } else if ((e.key === "s" || e.key === "S") && !e.ctrlKey && !e.metaKey) {
         split();
       } else if (e.key === "Delete" || e.key === "Backspace") {
-        if (sel) removeClip(sel);
+        if (binSel.size > 0) removeItems([...binSel]);
+        else if (sel) removeClip(sel);
+      } else if (e.key === "Escape") {
+        setBinSel(new Set());
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) back(redo, undo);
@@ -429,7 +445,32 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
             <button type="button" className="iconbtn sm" title={t("从最近对局挑素材", "Pick from recent matches")} onClick={autoPick} disabled={!!busyMsg}>
               <Wand2 size={15} />
             </button>
+            {items.length > 0 &&
+              (confirm === "bin" ? (
+                <button type="button" className="ed2-confirm" onClick={() => { removeItems(items.map((i) => i.key)); setConfirm(null); }}>
+                  {t("确认清空", "Clear all?")}
+                </button>
+              ) : (
+                <button type="button" className="iconbtn sm" title={t("清空全部素材（时间线上的也会去掉，可以撤销）", "Remove all media (and its clips on the timeline; undoable)")} onClick={() => setConfirm("bin")}>
+                  <Trash2 size={15} />
+                </button>
+              ))}
           </div>
+          {binSel.size > 0 && (
+            <div className="ed2-binbar small">
+              <span>{t(`已选 ${binSel.size} 段`, `${binSel.size} selected`)}</span>
+              <button type="button" className="link" onClick={() => setBinSel(new Set(items.map((i) => i.key)))}>
+                {t("全选", "All")}
+              </button>
+              <span className="grow" />
+              <button type="button" className="link" onClick={() => setBinSel(new Set())}>
+                {t("取消", "Cancel")}
+              </button>
+              <Button small kind="danger" onClick={() => removeItems([...binSel])}>
+                <Trash2 size={13} /> {t("删除", "Delete")}
+              </Button>
+            </div>
+          )}
           {items.length === 0 ? (
             <div className="ed2-bin-empty">
               <Clapperboard size={22} />
@@ -454,9 +495,35 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                       e.dataTransfer.setData("text/kc-item", it.key);
                       e.dataTransfer.effectAllowed = "copy";
                     }}
-                    className={(onTl ? "is-used " : "") + (gone ? "is-missing" : "")}
-                    title={t("拖到下面的时间线上", "Drag onto the timeline")}
+                    className={(onTl ? "is-used " : "") + (gone ? "is-missing " : "") + (binSel.has(it.key) ? "is-picked" : "")}
+                    title={t("拖到下面的时间线上；Ctrl / Shift 点击可以多选", "Drag onto the timeline; Ctrl / Shift click to select several")}
+                    onClick={(e) => {
+                      if (!(e.ctrlKey || e.metaKey || e.shiftKey) && binSel.size === 0) return;
+                      const n = new Set(binSel);
+                      if (e.shiftKey && binSel.size > 0) {
+                        // a range from the last ticked one
+                        const keys = items.map((x) => x.key);
+                        const last = keys.findIndex((k) => k === [...binSel].pop());
+                        const here = keys.indexOf(it.key);
+                        for (let j = Math.min(last, here); j <= Math.max(last, here); j++) n.add(keys[j]);
+                      } else if (n.has(it.key)) n.delete(it.key);
+                      else n.add(it.key);
+                      setBinSel(n);
+                    }}
                   >
+                    <input
+                      type="checkbox"
+                      className="ed2-bin-pick"
+                      checked={binSel.has(it.key)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => {
+                        const n = new Set(binSel);
+                        if (e.target.checked) n.add(it.key);
+                        else n.delete(it.key);
+                        setBinSel(n);
+                      }}
+                      title={t("选中，可以一次删掉几段", "Select, to delete several at once")}
+                    />
                     <span className="ed2-bin-thumb">
                       {it.thumb && <img src={fileUrl(it.thumb)} alt="" loading="lazy" draggable={false} />}
                       <span className="dur">{clock(it.end - it.start)}</span>
@@ -824,6 +891,15 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
           onRedo={() => back(redo, undo)}
           onSnap={(v) => update({ ...doc, snap: v })}
           onAuto={runAuto}
+          confirmClear={confirm === "timeline"}
+          onAskClear={() => setConfirm("timeline")}
+          onClear={() => {
+            stop();
+            edit({ timeline: [], pulls: [] });
+            setSel(null);
+            setT(0);
+            setConfirm(null);
+          }}
         />
       </div>
     </div>
@@ -860,6 +936,9 @@ function TimelinePanel(props: {
   onRedo: () => void;
   onSnap: (v: boolean) => void;
   onAuto: () => void;
+  confirmClear: boolean;
+  onAskClear: () => void;
+  onClear: () => void;
 }) {
   const { doc, tl, lay, total, byKey } = props;
   const song = doc.song;
@@ -1044,6 +1123,16 @@ function TimelinePanel(props: {
         <button type="button" className="iconbtn sm" onClick={props.onDelete} disabled={!props.sel} title={t("删除选中的片段（Delete）", "Delete the selected clip (Delete)")}>
           <Trash2 size={15} />
         </button>
+        {tl.length > 0 &&
+          (props.confirmClear ? (
+            <button type="button" className="ed2-confirm" onClick={props.onClear}>
+              {t("确认清空时间线", "Clear the timeline?")}
+            </button>
+          ) : (
+            <button type="button" className="ed2-textbtn small" onClick={props.onAskClear} title={t("去掉时间线上的所有片段，素材还在（可以撤销）", "Remove every clip from the timeline; the media stays (undoable)")}>
+              {t("清空", "Clear")}
+            </button>
+          ))}
         <span className="ed2-sep" />
         <button type="button" className={"iconbtn sm" + (doc.snap ? " is-on" : "")} onClick={() => props.onSnap(!doc.snap)} title={doc.snap ? t("吸附：开（贴到节拍和片段边缘）", "Snapping on (beats and clip edges)") : t("吸附：关", "Snapping off")}>
           <Magnet size={15} />

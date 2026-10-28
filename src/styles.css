@@ -3322,6 +3322,14 @@ button.st-best:hover {
   background: var(--panel);
   border: 1px solid var(--line-soft);
 }
+.route-map {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.route-map.is-panning {
+  cursor: grabbing;
+}
 .route-map svg {
   display: block;
   width: 100%;
@@ -4544,4 +4552,52 @@ button.route-item:hover,
   border-radius: 3px;
   background: var(--rec);
   color: #fff;
+}
+
+.ed2-bin-list li {
+  position: relative;
+}
+.ed2-bin-list li.is-picked {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.ed2-bin-pick {
+  position: absolute;
+  left: 9px;
+  top: 9px;
+  z-index: 2;
+  margin: 0;
+  opacity: 0;
+}
+.ed2-bin-list li:hover .ed2-bin-pick,
+.ed2-bin-pick:checked,
+.ed2-bin-list li.is-picked .ed2-bin-pick {
+  opacity: 1;
+}
+.ed2-binbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 8px 12px;
+}
+.ed2-confirm {
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--rec);
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.ed2-textbtn {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+}
+.ed2-textbtn:hover {
+  background: var(--raised);
+  color: var(--text);
 }
