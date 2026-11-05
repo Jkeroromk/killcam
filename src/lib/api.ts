@@ -456,6 +456,7 @@ export const api = {
   exportEdit: (clips: EditClipReq[], options: EditOptions) => invoke<string>("export_edit", { clips, options }),
   cancelEdit: () => invoke<void>("cancel_edit"),
   videoFps: (paths: string[]) => invoke<number[]>("video_fps", { paths }),
+  videoDurations: (paths: string[]) => invoke<number[]>("video_durations", { paths }),
   analyzeMusic: (path: string) => invoke<import("./beatcut").MusicInfo>("analyze_music", { path }),
   reveal: (path: string) => invoke<void>("reveal", { path }),
   exportDiagnostics: (path: string) => invoke<void>("export_diagnostics", { path }),

@@ -1926,6 +1926,27 @@ async fn video_fps(st: State<'_, St>, paths: Vec<String>) -> Result<Vec<f64>, St
     .await
 }
 
+/// Lengths in seconds of the edit's video files (0 when unreadable).
+#[tauri::command]
+async fn video_durations(st: State<'_, St>, paths: Vec<String>) -> Result<Vec<f64>, String> {
+    let st = st.inner().clone();
+    blocking(move || {
+        let ff = st.ffmpeg()?;
+        Ok(paths
+            .iter()
+            .map(|p| {
+                let p = Path::new(p);
+                if p.exists() {
+                    ffmpeg::probe_duration(&ff, p).unwrap_or(0.0)
+                } else {
+                    0.0
+                }
+            })
+            .collect())
+    })
+    .await
+}
+
 #[tauri::command]
 fn cancel_edit(st: State<'_, St>) {
     st.edit_stop.store(true, Ordering::SeqCst);
@@ -2455,6 +2476,7 @@ pub fn run() {
             export_edit,
             cancel_edit,
             video_fps,
+            video_durations,
             analyze_music,
             map_hd,
             reveal,

@@ -105,6 +105,48 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileKey]);
 
+  // clips can't reach past the end of their video file: a highlight's file
+  // can be a little shorter than the range it was cut for. Found once per
+  // file, then the bin and the timeline are trimmed to what's really there.
+  const binFiles = [...new Set(items.map((i) => i.file))].sort().join("|");
+  const checked = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const files = binFiles ? binFiles.split("|").filter((f) => !checked.current.has(f)) : [];
+    if (files.length === 0) return;
+    files.forEach((f) => checked.current.add(f));
+    api
+      .videoDurations(files)
+      .then((r) => {
+        const d = docRef.current;
+        if (!d) return;
+        const len = new Map(files.map((f, i) => [f, r[i]]));
+        const limit = (it: EditItem) => {
+          const l = len.get(it.file);
+          return l && l > 0 ? it.fileStart + l - 0.02 : Infinity;
+        };
+        let changed = false;
+        const items2 = d.items.map((it) => {
+          const lim = limit(it);
+          if (it.hi <= lim) return it;
+          changed = true;
+          return { ...it, hi: lim, end: Math.min(it.end, lim), start: Math.min(it.start, Math.max(it.lo, lim - 0.5)) };
+        });
+        const byK = new Map(items2.map((i) => [i.key, i]));
+        const tl2 = d.timeline
+          .map((c) => {
+            const it = byK.get(c.item);
+            if (!it || c.end <= it.hi) return c;
+            changed = true;
+            return { ...c, end: it.hi };
+          })
+          .filter((c) => c.end - c.start >= 0.3);
+        if (tl2.length !== d.timeline.length) changed = true;
+        if (changed) update({ ...d, items: items2, timeline: tl2 });
+      })
+      .catch(() => files.forEach((f) => checked.current.delete(f)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [binFiles]);
+
   // ---- changing the project ----------------------------------------------
 
   const update = (d: EditDoc, persist = true) => {
@@ -309,7 +351,10 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
           }
         } else {
           if (!v.paused) {
-            const now = l.at + (pos - l.c.start);
+            // never outside this clip: a player that is a little behind (or a
+            // file that starts later than its clip) must not send the
+            // playhead back into the clip before, which would flip back to it
+            const now = Math.min(l.at + l.len - 0.001, Math.max(l.at, l.at + (pos - l.c.start)));
             tRef.current = now;
             setT(now);
             levels(now);
