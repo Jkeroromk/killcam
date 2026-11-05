@@ -4126,10 +4126,43 @@ button.route-item:hover,
   cursor: pointer;
 }
 .ed2-screen video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
   display: block;
+  /* the back player stays laid out (so it keeps loading), just unseen */
+  opacity: 0;
+}
+.ed2-screen video.is-front {
+  opacity: 1;
+}
+.ed2-screen-empty {
+  position: relative;
+  z-index: 1;
+}
+.ed2-cutfx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+.ed2-cutfx.is-black {
+  background: #000;
+  animation: ed2-cutfx 0.3s ease-out;
+}
+.ed2-cutfx.is-flash {
+  background: #fff;
+  animation: ed2-cutfx 0.16s ease-out;
+}
+@keyframes ed2-cutfx {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }
 .ed2-screen-empty {
   padding: 24px;

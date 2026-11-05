@@ -53,9 +53,20 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
   const [, bump] = useState(0);
   const undo = useRef<Snap[]>([]);
   const redo = useRef<Snap[]>([]);
-  const video = useRef<HTMLVideoElement>(null);
+  // two players: one shows the clip, the other loads the next one, so a cut
+  // is a swap and never waits for a video to open
+  const deckA = useRef<HTMLVideoElement>(null);
+  const deckB = useRef<HTMLVideoElement>(null);
+  const frontRef = useRef(0);
+  const [front, setFront] = useState(0);
+  const fv = () => (frontRef.current === 0 ? deckA : deckB).current;
+  const bv = () => (frontRef.current === 0 ? deckB : deckA).current;
+  // a cut waiting for the back player to be ready
+  const pendingSwap = useRef<{ tag: string; play: boolean; trans: string } | null>(null);
+  const playingRef = useRef(false);
+  // restarts the flash / black overlay at a cut
+  const [cutFx, setCutFx] = useState<{ n: number; kind: string }>({ n: 0, kind: "" });
   const audio = useRef<HTMLAudioElement>(null);
-  const pending = useRef<{ local: number; play: boolean } | null>(null);
   const docRef = useRef<EditDoc | null>(null);
   docRef.current = doc;
   const tRef = useRef(0);
@@ -140,8 +151,59 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     const d = docRef.current;
     if (!d) return;
     const p = d.pulls.some(([a, b]) => time >= a - 0.4 && time < b);
-    if (video.current) video.current.volume = p || !d.song ? 1 : Math.max(0, Math.min(1, d.gameVol));
+    const v = fv();
+    if (v) v.volume = p || !d.song ? 1 : Math.max(0, Math.min(1, d.gameVol));
     if (audio.current) audio.current.volume = Math.max(0, Math.min(1, p ? d.musicVol * 0.08 : d.musicVol));
+  };
+
+  /** which clip (and where it starts) a player has been set up for */
+  const tagOf = (c: TClip) => `${c.key}@${c.start.toFixed(3)}`;
+  const isReady = (v: HTMLVideoElement | null, tag: string) => !!v && v.dataset.tag === tag && !v.seeking && v.readyState >= 2;
+
+  /** put a player on a file at `local` seconds (loading the file if it isn't the one it has) */
+  const cue = (v: HTMLVideoElement, file: string, local: number, tag: string) => {
+    v.dataset.tag = tag;
+    const go = () => {
+      if (v.dataset.tag !== tag) return;
+      const end = Number.isFinite(v.duration) && v.duration > 0 ? v.duration - 0.05 : local;
+      v.currentTime = Math.max(0, Math.min(local, end));
+    };
+    if (v.dataset.file !== file) {
+      v.dataset.file = file;
+      const once = () => {
+        v.removeEventListener("loadedmetadata", once);
+        go();
+      };
+      v.addEventListener("loadedmetadata", once);
+      v.src = fileUrl(file);
+      v.load();
+    } else if (v.readyState >= 1) {
+      go();
+    } else {
+      const once = () => {
+        v.removeEventListener("loadedmetadata", once);
+        go();
+      };
+      v.addEventListener("loadedmetadata", once);
+    }
+  };
+
+  /** the back player becomes the one shown */
+  const swap = (play: boolean, trans: string) => {
+    const old = fv();
+    frontRef.current = 1 - frontRef.current;
+    setFront(frontRef.current);
+    const now = fv();
+    if (now) {
+      now.muted = false;
+      if (play) now.play().catch(() => {});
+    }
+    if (old) {
+      old.pause();
+      old.muted = true;
+    }
+    if (trans === "flash" || trans === "black") setCutFx((x) => ({ n: x.n + 1, kind: trans }));
+    levels(tRef.current);
   };
 
   const seek = useCallback(
@@ -152,15 +214,21 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
       const l = lay[i];
       const it = byKey.get(l.c.item)!;
       const local = Math.max(0, l.c.start + (time - l.at) - it.fileStart);
+      const tag = tagOf(l.c);
       setT(time);
-      tRef.current = time;
-      const v = video.current;
-      if (v && v.dataset.file === it.file && v.readyState >= 1) {
-        v.currentTime = local;
-        if (play) v.play().catch(() => {});
-        else v.pause();
-      } else {
-        pending.current = { local, play };
+      const f = fv();
+      const b = bv();
+      pendingSwap.current = null;
+      if (f && f.dataset.file === it.file && f.readyState >= 1) {
+        f.dataset.tag = tag;
+        f.currentTime = local;
+        if (play) f.play().catch(() => {});
+        else f.pause();
+      } else if (b) {
+        // the other player opens it; the picture stays until it's ready
+        f?.pause();
+        cue(b, it.file, local, tag);
+        pendingSwap.current = { tag, play, trans: "" };
       }
       const a = audio.current;
       if (a && docRef.current?.song) {
@@ -177,49 +245,90 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
 
   const stop = () => {
     setPlaying(false);
-    video.current?.pause();
+    playingRef.current = false;
+    deckA.current?.pause();
+    deckB.current?.pause();
     audio.current?.pause();
   };
   const play = () => {
     if (lay.length === 0) return;
     setPlaying(true);
+    playingRef.current = true;
     seek(T >= total - 0.05 ? 0 : T, true);
   };
 
-  // the playhead follows the video, and the next clip starts when one ends
+  // show the clip under the playhead when the timeline changes
   useEffect(() => {
-    if (!playing) return;
+    if (lay.length === 0) return;
+    const l = lay[at(Math.min(tRef.current, total - 0.001))];
+    if (fv()?.dataset.tag !== tagOf(l.c) && !playingRef.current) seek(tRef.current, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lay]);
+
+  // one loop: finishes cuts waiting on the back player, moves the playhead,
+  // loads the next clip in the back, and cuts to it the moment a clip ends
+  useEffect(() => {
     let raf = 0;
     let moved = performance.now();
     const tick = () => {
-      const v = video.current;
+      const ps = pendingSwap.current;
+      if (ps && isReady(bv(), ps.tag)) {
+        pendingSwap.current = null;
+        swap(ps.play && playingRef.current, ps.trans);
+        moved = performance.now();
+      }
+      const v = fv();
       const i = at(Math.min(tRef.current, total - 0.001));
       const l = lay[i];
-      const it = l ? byKey.get(l.c.item)! : null;
-      // the next clip's video is still loading: wait for it
-      if (v && l && it && v.dataset.file === it.file && !v.seeking && pending.current == null) {
+      if (playingRef.current && !pendingSwap.current && v && l && v.dataset.tag === tagOf(l.c) && !v.seeking) {
+        const it = byKey.get(l.c.item)!;
         const pos = it.fileStart + v.currentTime;
+        const next = lay[i + 1];
         // the clip's end, or its video file's (a clip can reach a little past what was kept)
-        const atEnd = pos >= l.c.end - 0.03 || v.ended || (v.duration > 0 && v.currentTime >= v.duration - 0.04);
+        const atEnd = pos >= l.c.end - 0.02 || v.ended || (v.duration > 0 && v.currentTime >= v.duration - 0.04) || v.dataset.err === "1";
         if (atEnd) {
-          if (i + 1 < lay.length) {
-            seek(lay[i + 1].at, true);
+          if (next) {
+            const nt = tagOf(next.c);
+            tRef.current = next.at;
+            setT(next.at);
+            const b = bv();
+            if (isReady(b, nt)) {
+              swap(true, next.c.trans);
+            } else if (b) {
+              if (b.dataset.tag !== nt) cue(b, byKey.get(next.c.item)!.file, Math.max(0, next.c.start - byKey.get(next.c.item)!.fileStart), nt);
+              pendingSwap.current = { tag: nt, play: true, trans: next.c.trans };
+            }
+            // the music keeps going; only re-sync when it has drifted
+            const a = audio.current;
+            const d = docRef.current;
+            if (a && d?.song && Math.abs(a.currentTime - (d.musicOffset + next.at)) > 0.15) a.currentTime = d.musicOffset + next.at;
             moved = performance.now();
           } else {
             stop();
             setT(total);
-            return;
           }
-        } else if (!v.paused) {
-          const now = l.at + (pos - l.c.start);
-          tRef.current = now;
-          setT(now);
-          levels(now);
-          moved = performance.now();
-        } else if (performance.now() - moved > 1200 && v.readyState >= 2) {
-          // stopped by itself (a stall, a refused play): carry on
-          v.play().catch(() => {});
-          moved = performance.now();
+        } else {
+          if (!v.paused) {
+            const now = l.at + (pos - l.c.start);
+            tRef.current = now;
+            setT(now);
+            levels(now);
+            moved = performance.now();
+          } else if (performance.now() - moved > 1200 && v.readyState >= 2) {
+            // stopped by itself (a stall, a refused play): carry on
+            v.play().catch(() => {});
+            moved = performance.now();
+          }
+          // the next clip waits in the back player
+          if (next) {
+            const nt = tagOf(next.c);
+            const b = bv();
+            if (b && b.dataset.tag !== nt) {
+              const nit = byKey.get(next.c.item)!;
+              b.muted = true;
+              cue(b, nit.file, Math.max(0, next.c.start - nit.fileStart), nt);
+            }
+          }
         }
       }
       raf = requestAnimationFrame(tick);
@@ -227,7 +336,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, lay]);
+  }, [lay, byKey, total]);
 
   // ---- timeline operations ----------------------------------------------
 
@@ -570,29 +679,23 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
         {/* monitor */}
         <section className="ed2-monitor">
           <div className="ed2-screen" onClick={() => (playing ? stop() : play())}>
-            {curItem && !missing.has(curItem.matchId) ? (
+            {[deckA, deckB].map((r, k) => (
               <video
-                key={curItem.file}
-                ref={video}
-                data-file={curItem.file}
-                src={fileUrl(curItem.file)}
-                onError={() => {
-                  // unreadable: skip to the next clip rather than stall
-                  if (playing && curIdx + 1 < lay.length) seek(lay[curIdx + 1].at, true);
-                }}
-                onLoadedMetadata={(e) => {
-                  const p = pending.current;
-                  if (p) {
-                    e.currentTarget.currentTime = Math.min(p.local, Math.max(0, e.currentTarget.duration - 0.05));
-                    if (p.play) e.currentTarget.play().catch(() => {});
-                    pending.current = null;
-                  } else if (cur) {
-                    e.currentTarget.currentTime = Math.max(0, cur.c.start + (T - cur.at) - curItem.fileStart);
-                  }
-                  levels(T);
+                key={k}
+                ref={r}
+                className={"ed2-deck" + (front === k ? " is-front" : "")}
+                preload="auto"
+                playsInline
+                muted={front !== k}
+                onLoadStart={(e) => (e.currentTarget.dataset.err = "")}
+                onError={(e) => {
+                  // unreadable: the loop moves on to the next clip
+                  e.currentTarget.dataset.err = "1";
                 }}
               />
-            ) : (
+            ))}
+            {cutFx.n > 0 && <div key={cutFx.n} className={"ed2-cutfx is-" + cutFx.kind} aria-hidden />}
+            {(!curItem || missing.has(curItem.matchId)) && (
               <div className="ed2-screen-empty muted small">
                 {curItem ? t("这段所在的录像已经被删掉了", "This clip's recording has been deleted") : t("时间线是空的：把左边的素材拖下来，或者选一首歌一键卡点。", "The timeline is empty: drag clips down from the left, or pick a song and auto-cut.")}
               </div>
