@@ -67,6 +67,10 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
   // restarts the flash / black overlay at a cut
   const [cutFx, setCutFx] = useState<{ n: number; kind: string }>({ n: 0, kind: "" });
   const audio = useRef<HTMLAudioElement>(null);
+  // the monitor shows the picture as it will be exported: its size, and each file's shape
+  const screenEl = useRef<HTMLDivElement>(null);
+  const [screen, setScreen] = useState({ w: 0, h: 0 });
+  const [ratios, setRatios] = useState<Record<string, number>>({});
   const docRef = useRef<EditDoc | null>(null);
   docRef.current = doc;
   const tRef = useRef(0);
@@ -146,6 +150,16 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
       .catch(() => files.forEach((f) => checked.current.delete(f)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [binFiles]);
+
+  useEffect(() => {
+    const el = screenEl.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setScreen({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    setScreen({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+    // the monitor exists once the project has loaded
+  }, [doc != null]);
 
   // ---- changing the project ----------------------------------------------
 
@@ -479,15 +493,21 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     try {
       const list = (await api.listMatches()).filter((m) => m.highlights.length > 0).sort((a, b) => b.createdAtMs - a.createdAtMs);
       const game = list[0]?.game;
-      const out: EditItem[] = [];
-      for (const m of list.filter((x) => x.game === game)) {
+      // highlights with kills from the latest matches, the most kills first
+      const cands: { m: (typeof list)[number]; h: (typeof list)[number]["highlights"][number]; kills: number }[] = [];
+      for (const m of list.filter((x) => x.game === game).slice(0, 20)) {
         for (const h of m.highlights) {
-          if (!h.kinds.some((k) => k === "kill" || k === "knock" || k === "win" || k === "objective")) continue;
-          try {
-            out.push(itemFrom(m, h));
-          } catch {
-            /* no footage */
-          }
+          const kills = m.events.filter((e) => e.kind === "kill" && !e.credited && e.t >= h.start - 0.5 && e.t <= h.end + 0.5).length;
+          if (kills > 0) cands.push({ m, h, kills });
+        }
+      }
+      cands.sort((a, b) => b.kills - a.kills || b.m.createdAtMs - a.m.createdAtMs);
+      const out: EditItem[] = [];
+      for (const c of cands) {
+        try {
+          out.push(itemFrom(c.m, c.h));
+        } catch {
+          /* no footage */
         }
         if (out.length >= 30) break;
       }
@@ -498,6 +518,14 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
       remember();
       await addToEdit(out);
       const d = await loadEdit();
+      // the new clips on the timeline: only the fighting, not the waiting or the chicken dinner screen
+      const fresh = new Set(out.map((i) => i.key));
+      const mine = d.timeline.filter((c) => fresh.has(c.item));
+      if (mine.length) {
+        const tight = tighten(mine, d.items);
+        d.timeline = [...d.timeline.filter((c) => !fresh.has(c.item)), ...tight];
+        await saveEdit(d);
+      }
       setDoc(d);
       docRef.current = d;
     } catch (e) {
@@ -588,6 +616,15 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
   const o = doc.opts;
   const setOpts = (p: Partial<EditOptions>) => update({ ...doc, opts: { ...o, ...p } });
   const busy = progress != null;
+  // the export's shape: 16:9 and vertical are cropped from the middle, the
+  // original keeps the first clip's shape (other shapes get bars)
+  const firstFile = tl[0] ? byKey.get(tl[0].item)?.file : undefined;
+  const frameRatio = o.aspect === "16:9" ? 16 / 9 : o.aspect === "9:16" ? 9 / 16 : (firstFile && ratios[firstFile]) || (curItem && ratios[curItem.file]) || 16 / 9;
+  const frameBox = (() => {
+    if (!screen.w || !screen.h) return { width: "100%", height: "100%" };
+    const w = Math.min(screen.w, screen.h * frameRatio);
+    return { width: Math.round(w), height: Math.round(w / frameRatio) };
+  })();
   const nMissing = tl.filter((c) => missing.has(byKey.get(c.item)!.matchId)).length;
 
   return (
@@ -723,7 +760,8 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
 
         {/* monitor */}
         <section className="ed2-monitor">
-          <div className="ed2-screen" onClick={() => (playing ? stop() : play())}>
+          <div className="ed2-screen" ref={screenEl} onClick={() => (playing ? stop() : play())}>
+            <div className={"ed2-frame" + (o.aspect === "source" ? "" : " is-fill")} style={frameBox}>
             {[deckA, deckB].map((r, k) => (
               <video
                 key={k}
@@ -733,6 +771,14 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                 playsInline
                 muted={front !== k}
                 onLoadStart={(e) => (e.currentTarget.dataset.err = "")}
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget;
+                  const f = v.dataset.file;
+                  if (f && v.videoWidth > 0 && v.videoHeight > 0) {
+                    const ra = v.videoWidth / v.videoHeight;
+                    setRatios((cur) => (cur[f] === ra ? cur : { ...cur, [f]: ra }));
+                  }
+                }}
                 onError={(e) => {
                   // unreadable: the loop moves on to the next clip
                   e.currentTarget.dataset.err = "1";
@@ -740,12 +786,12 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
               />
             ))}
             {cutFx.n > 0 && <div key={cutFx.n} className={"ed2-cutfx is-" + cutFx.kind} aria-hidden />}
+            </div>
             {(!curItem || missing.has(curItem.matchId)) && (
               <div className="ed2-screen-empty muted small">
                 {curItem ? t("这段所在的录像已经被删掉了", "This clip's recording has been deleted") : t("时间线是空的：把左边的素材拖下来，或者选一首歌一键卡点。", "The timeline is empty: drag clips down from the left, or pick a song and auto-cut.")}
               </div>
             )}
-            {o.aspect === "9:16" && <div className="ed-crop" aria-hidden />}
           </div>
           {song && <audio ref={audio} src={fileUrl(song.path)} preload="auto" />}
           <div className="ed2-transport">

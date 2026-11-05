@@ -45,7 +45,8 @@ interface Fight {
   win: boolean;
 }
 
-const MOMENTS = new Set(["kill", "knock", "win", "objective", "manual"]);
+/** what a fight is made of: no chicken dinner, no markers, only the fighting */
+const MOMENTS = new Set(["kill", "knock", "objective"]);
 /** seconds before a fight's first moment */
 export const LEAD = 2.2;
 /** after its last */
@@ -54,7 +55,8 @@ export const TAIL = 1.5;
 export const GAP = 4.5;
 
 function score(e: GameEvent): number {
-  let s = e.kind === "kill" ? 3 : e.kind === "knock" ? 1.2 : e.kind === "win" ? 4 : e.kind === "objective" ? 2 : 0.8;
+  // kills count most: a fight with more kills always comes first
+  let s = e.kind === "kill" ? 10 : e.kind === "knock" ? 1.2 : e.kind === "objective" ? 2 : 0;
   if (e.headshot) s += 1.5;
   if ((e.distanceM ?? 0) >= 100) s += 1.5;
   if ((e.distanceM ?? 0) >= 250) s += 1.5;
@@ -88,7 +90,9 @@ export function fights(items: EditItem[]): Fight[] {
       const item = [...its].sort((a, b) => cover(b) - cover(a))[0];
       if (cover(item) <= 0) continue;
       const kills = g.filter((e) => e.kind === "kill");
-      out.push({ item, events: g, kills, first, last, score: g.reduce((n, e) => n + score(e), 0) + Math.max(0, kills.length - 1) * 2, win: g.some((e) => e.kind === "win") });
+      // only fights with a kill in them
+      if (kills.length === 0) continue;
+      out.push({ item, events: g, kills, first, last, score: g.reduce((n, e) => n + score(e), 0) + Math.max(0, kills.length - 1) * 4, win: false });
     }
   }
   return out;
@@ -97,19 +101,31 @@ export function fights(items: EditItem[]): Fight[] {
 const snapUp = (t: number, grid: number[]) => grid.find((g) => g >= t - 0.02) ?? t;
 const snapNear = (t: number, grid: number[]) => grid.reduce((b, g) => (Math.abs(g - t) < Math.abs(b - t) ? g : b), grid[0] ?? t);
 
-/** Lay the fights on the song: the best one's first kill on the drop, the
- *  others in the order they happened (a chicken dinner last), every fight's
+/** Lay the fights on the song: the one with the most kills has its first
+ *  kill on the drop, the others in the order they happened, every fight's
  *  first kill on a beat, cuts on beats, the end on a bar. */
 export function autoCut(items: EditItem[], song: MusicInfo, o: AutoOpts): AutoCut | null {
-  const all = fights(items);
-  if (all.length === 0 || song.beats.length < 8) return null;
+  const found = fights(items);
+  if (found.length === 0 || song.beats.length < 8) return null;
   const beat = song.beat;
-  const best = [...all].sort((a, b) => b.score - a.score)[0];
-  const chrono = (a: Fight, b: Fight) => (a.win !== b.win ? (a.win ? 1 : -1) : a.item.createdAtMs - b.item.createdAtMs || a.first - b.first);
-  const before = all.filter((f) => f !== best && !f.win && chrono(f, best) < 0).sort(chrono);
-  const after = all.filter((f) => f !== best && (f.win || chrono(f, best) > 0)).sort(chrono);
   const take = (f: Fight) => Math.min(f.item.hi, f.last + TAIL) - Math.max(f.item.lo, f.first - LEAD);
   const maxLen = o.length > 0 ? o.length : song.duration;
+  // as many kills as fit: the fights with the most kills first, until the
+  // video is full; then played in the order they happened
+  const ranked = [...found].sort((a, b) => b.kills.length - a.kills.length || b.score - a.score);
+  const all: Fight[] = [];
+  let room = maxLen;
+  for (const f of ranked) {
+    const len = Math.min(take(f), Math.max(10, maxLen * 0.4));
+    if (all.length > 0 && len > room + 1) continue;
+    all.push(f);
+    room -= len;
+    if (room <= 1.5) break;
+  }
+  const best = all[0];
+  const chrono = (a: Fight, b: Fight) => a.item.createdAtMs - b.item.createdAtMs || a.first - b.first;
+  const before = all.filter((f) => f !== best && chrono(f, best) < 0).sort(chrono);
+  const after = all.filter((f) => f !== best && chrono(f, best) > 0).sort(chrono);
 
   // how much comes before the drop: a few earlier fights, at most a third
   const pre: Fight[] = [];
@@ -119,6 +135,8 @@ export function autoCut(items: EditItem[], song: MusicInfo, o: AutoOpts): AutoCu
     pre.unshift(f);
     preLen += take(f);
   }
+  // the earlier fights that didn't fit before the drop come after it
+  after.unshift(...before.filter((f) => !pre.includes(f)));
   const bestKill = (best.kills[0] ?? best.events[0]).t;
   const bestLead = Math.min(LEAD, bestKill - best.item.lo);
   // the song starts on a bar, early enough for all that
@@ -143,12 +161,24 @@ export function autoCut(items: EditItem[], song: MusicInfo, o: AutoOpts): AutoCu
     return [a, b];
   };
   const put = (f: Fight, start: number, end: number, trans: Trans) => {
+    // never into the chicken dinner screen
+    const win = f.item.events.find((e) => e.kind === "win" && e.t > f.last && e.t < end + 0.5);
+    if (win) end = Math.min(end, win.t - 0.2);
     [start, end] = free(f, start, end);
     if (end - start < 0.8) return false;
     tl.push({ key: newKey(), item: f.item.key, start, end, trans });
     used.set(f.item.matchId, [...(used.get(f.item.matchId) ?? []), [start, end]]);
     cursor += end - start;
     return true;
+  };
+  /** where a fight's clip ends in the video: on the beat nearest its end,
+   *  but never before its last kill has played out */
+  const endOnBeat = (cur: number, start: number, end: number, f: Fight) => {
+    const want = cur + (end - start);
+    const minOut = cur + Math.min(end - start, f.last + 0.6 - start);
+    const grid = beats.filter((b) => b > cur + 1);
+    const near = snapNear(want, grid);
+    return near >= minOut ? near : snapUp(minOut, grid);
   };
   const transFor = (f: Fight) => {
     const prev = tl[tl.length - 1];
@@ -163,7 +193,7 @@ export function autoCut(items: EditItem[], song: MusicInfo, o: AutoOpts): AutoCu
     let start = Math.max(f.item.lo, f.first - LEAD);
     let end = Math.min(f.item.hi, f.last + TAIL);
     if (i === 0) start = Math.max(f.item.lo, end - (drop - bestLead - (preLen - take(f))));
-    end = start + Math.max(0.8, snapNear(cursor + (end - start), beats) - cursor);
+    end = start + Math.max(0.8, endOnBeat(cursor, start, end, f) - cursor);
     put(f, start, Math.min(end, f.item.hi), transFor(f));
   });
   {
@@ -172,7 +202,7 @@ export function autoCut(items: EditItem[], song: MusicInfo, o: AutoOpts): AutoCu
     let start = bestKill - Math.max(0.5, drop - cursor);
     if (start < f.item.lo) start = f.item.lo;
     let end = Math.min(f.item.hi, f.last + TAIL, start + Math.max(10, length * 0.4));
-    end = start + Math.max(0.8, snapNear(cursor + (end - start), beats.filter((b) => b > cursor + 1)) - cursor);
+    end = start + Math.max(0.8, endOnBeat(cursor, start, end, f) - cursor);
     put(f, start, Math.min(end, f.item.hi), transFor(f));
   }
   // after: each fight's first kill on the first beat at least LEAD in
@@ -182,7 +212,7 @@ export function autoCut(items: EditItem[], song: MusicInfo, o: AutoOpts): AutoCu
     const killOut = snapUp(cursor + LEAD, beats);
     let start = Math.max(f.item.lo, k - (killOut - cursor));
     let end = Math.min(f.item.hi, f.last + TAIL, start + Math.max(10, length * 0.3));
-    end = start + Math.max(0.8, snapNear(cursor + (end - start), beats.filter((b) => b > cursor + 1)) - cursor);
+    end = start + Math.max(0.8, endOnBeat(cursor, start, end, f) - cursor);
     if (cursor + (end - start) > length) end = start + (length - cursor);
     put(f, start, Math.min(end, f.item.hi), transFor(f));
   }
@@ -194,7 +224,10 @@ export function autoCut(items: EditItem[], song: MusicInfo, o: AutoOpts): AutoCu
     let cut = total - bar;
     for (let i = tl.length - 1; i >= 0 && cut > 0; i--) {
       const c = tl[i];
-      const take = Math.min(cut, c.end - c.start - 0.8);
+      // not into a kill: the clip keeps its last kill and a moment after it
+      const it = items.find((x) => x.key === c.item);
+      const lastKill = it ? Math.max(c.start, ...it.events.filter((e) => e.kind === "kill" && e.t >= c.start && e.t <= c.end).map((e) => e.t + 0.6)) : c.start;
+      const take = Math.max(0, Math.min(cut, c.end - Math.max(c.start + 0.8, lastKill)));
       c.end -= take;
       cut -= take;
     }

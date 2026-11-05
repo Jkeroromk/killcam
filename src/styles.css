@@ -4118,12 +4118,21 @@ button.route-item:hover,
   position: relative;
   flex: 1;
   min-height: 0;
-  background: #000;
+  background: #0a0a0a;
   display: grid;
   place-items: center;
   border-radius: var(--r-md) var(--r-md) 0 0;
   overflow: hidden;
   cursor: pointer;
+}
+.ed2-frame {
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  transition: width 0.15s, height 0.15s;
+}
+.ed2-frame.is-fill video {
+  object-fit: cover;
 }
 .ed2-screen video {
   position: absolute;
@@ -4139,7 +4148,7 @@ button.route-item:hover,
   opacity: 1;
 }
 .ed2-screen-empty {
-  position: relative;
+  position: absolute;
   z-index: 1;
 }
 .ed2-cutfx {

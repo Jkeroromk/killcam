@@ -221,7 +221,8 @@ export function requests(doc: EditDoc): { clips: EditClipReq[]; music: MusicMix 
   return { clips, music };
 }
 
-const MOMENT_KINDS = new Set(["kill", "knock", "win", "objective", "manual"]);
+/** what "cut the waiting" keeps: the fighting (not the chicken dinner screen) */
+const MOMENT_KINDS = new Set(["kill", "knock", "objective"]);
 
 /** Cut the waiting out: each clip down to its moments (a little before the
  *  first, a little after the last), split where moments are far apart.
@@ -244,7 +245,10 @@ export function tighten(tl: TClip[], items: EditItem[], lead = 2.2, tail = 1.5, 
     }
     groups.forEach((g, i) => {
       const start = Math.max(c.start, g[0] - lead);
-      const end = Math.min(c.end, g[g.length - 1] + tail);
+      let end = Math.min(c.end, g[g.length - 1] + tail);
+      // stop before the chicken dinner screen
+      const win = it.events.find((e) => e.kind === "win" && e.t > g[g.length - 1] && e.t < end + 0.5);
+      if (win) end = Math.min(end, win.t - 0.2);
       if (end - start < 0.5) return;
       out.push({ key: i === 0 ? c.key : newKey(), item: c.item, start, end, trans: i === 0 ? c.trans : "" });
     });
