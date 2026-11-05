@@ -1,6 +1,6 @@
 [package]
 name = "killcam"
-version = "1.9.0"
+version = "2.0.0"
 description = "PUBG highlight recorder"
 edition = "2021"
 
