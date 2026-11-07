@@ -493,11 +493,12 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     try {
       const list = (await api.listMatches()).filter((m) => m.highlights.length > 0).sort((a, b) => b.createdAtMs - a.createdAtMs);
       const game = list[0]?.game;
-      // highlights with kills from the latest matches, the most kills first
+      // highlights with knocks or kills from the latest matches, the most first
       const cands: { m: (typeof list)[number]; h: (typeof list)[number]["highlights"][number]; kills: number }[] = [];
       for (const m of list.filter((x) => x.game === game).slice(0, 20)) {
         for (const h of m.highlights) {
-          const kills = m.events.filter((e) => e.kind === "kill" && !e.credited && e.t >= h.start - 0.5 && e.t <= h.end + 0.5).length;
+          // knocks and kills, most first
+          const kills = m.events.filter((e) => (e.kind === "kill" || e.kind === "knock") && !e.credited && e.t >= h.start - 0.5 && e.t <= h.end + 0.5).length;
           if (kills > 0) cands.push({ m, h, kills });
         }
       }
@@ -512,7 +513,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
         if (out.length >= 30) break;
       }
       if (out.length === 0) {
-        setErr(t("录像库里还没有带击杀的高光。", "There are no highlights with kills in the library yet."));
+        setErr(t("录像库里还没有带击倒或击杀的高光。", "There are no highlights with knocks or kills in the library yet."));
         return;
       }
       remember();
@@ -566,7 +567,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
       d.auto,
     );
     if (!r) {
-      setErr(t("素材里没有能用的击杀片段。", "None of the clips have kills to cut to."));
+      setErr(t("素材里没有能用的击倒或击杀片段。", "None of the clips have knocks or kills to cut to."));
       return;
     }
     stop();
