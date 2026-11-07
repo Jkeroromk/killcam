@@ -55,8 +55,8 @@ export const TAIL = 1.5;
 export const GAP = 4.5;
 
 function score(e: GameEvent): number {
-  // kills count most: a fight with more kills always comes first
-  let s = e.kind === "kill" ? 10 : e.kind === "knock" ? 1.2 : e.kind === "objective" ? 2 : 0;
+  // knocks and kills count most: a fight with more of them always comes first
+  let s = e.kind === "kill" ? 10 : e.kind === "knock" ? 8 : e.kind === "objective" ? 2 : 0;
   if (e.headshot) s += 1.5;
   if ((e.distanceM ?? 0) >= 100) s += 1.5;
   if ((e.distanceM ?? 0) >= 250) s += 1.5;
@@ -89,8 +89,8 @@ export function fights(items: EditItem[]): Fight[] {
       const cover = (it: EditItem) => Math.min(it.hi, last + TAIL) - Math.max(it.lo, first - LEAD);
       const item = [...its].sort((a, b) => cover(b) - cover(a))[0];
       if (cover(item) <= 0) continue;
-      const kills = g.filter((e) => e.kind === "kill");
-      // only fights with a kill in them
+      // knocks and kills: what the fight is ranked and cut by
+      const kills = g.filter((e) => e.kind === "kill" || e.kind === "knock");
       if (kills.length === 0) continue;
       out.push({ item, events: g, kills, first, last, score: g.reduce((n, e) => n + score(e), 0) + Math.max(0, kills.length - 1) * 4, win: false });
     }
@@ -226,7 +226,7 @@ export function autoCut(items: EditItem[], song: MusicInfo, o: AutoOpts): AutoCu
       const c = tl[i];
       // not into a kill: the clip keeps its last kill and a moment after it
       const it = items.find((x) => x.key === c.item);
-      const lastKill = it ? Math.max(c.start, ...it.events.filter((e) => e.kind === "kill" && e.t >= c.start && e.t <= c.end).map((e) => e.t + 0.6)) : c.start;
+      const lastKill = it ? Math.max(c.start, ...it.events.filter((e) => (e.kind === "kill" || e.kind === "knock") && e.t >= c.start && e.t <= c.end).map((e) => e.t + 0.6)) : c.start;
       const take = Math.max(0, Math.min(cut, c.end - Math.max(c.start + 0.8, lastKill)));
       c.end -= take;
       cut -= take;
@@ -240,7 +240,7 @@ export function autoCut(items: EditItem[], song: MusicInfo, o: AutoOpts): AutoCu
     let pick: { a: number; b: number; n: number } | null = null;
     for (const c of tl) {
       const it = items.find((i) => i.key === c.item)!;
-      const kills = it.events.filter((e) => e.kind === "kill" && !e.credited && e.t >= c.start && e.t <= c.end);
+      const kills = it.events.filter((e) => (e.kind === "kill" || e.kind === "knock") && !e.credited && e.t >= c.start && e.t <= c.end);
       const firstMoment = it.events.filter((e) => MOMENTS.has(e.kind) && e.kind !== "win" && e.t >= c.start && e.t <= c.end)[0];
       if (at > drop + 4 && kills.length >= 2 && firstMoment && (!pick || kills.length > pick.n)) {
         pick = { a: snapNear(at + (firstMoment.t - c.start) - beat, beats), b: snapNear(at + (kills[kills.length - 1].t - c.start), beats), n: kills.length };
