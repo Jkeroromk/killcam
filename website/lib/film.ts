@@ -2,7 +2,9 @@
 // flows out of the distance along a curve. Every couple of seconds one frame
 // is marked, lifted off the strip and flown to the front as a highlight card,
 // the way KillCam cuts highlights out of a whole match. Games without footage
-// on the strip get a typographic card instead.
+// on the strip get a typographic card instead. Each game with footage has its
+// own atlas of stills and its own clip; the strip takes turns between them and
+// a card always shows a still (or the clip) from its own game.
 
 import type * as T from "three";
 
@@ -12,25 +14,33 @@ export type FilmCard = {
   title: string;
   sub: string;
   game: string;
+  /** which game's footage the card shows */
+  gid: string;
   tone: "kill" | "objective" | "win" | "multi";
-  /** true when the card can show the PUBG footage from the strip */
+  /** true when the card's game has footage on the strip */
   footage: boolean;
+};
+
+export type FilmFootage = {
+  id: string;
+  /** 6×4 atlas of 16:9 stills: cells 0–21 run on the strip, 23 is the win */
+  atlas: string;
+  /** clip for the newest card of this game; empty when it shouldn't play */
+  video: { src: string; type: string }[];
 };
 
 export type FilmOptions = {
   cards: FilmCard[];
-  atlas: string;
-  /** video for the newest footage card; empty when it shouldn't play */
-  video: { src: string; type: string }[];
+  footage: FilmFootage[];
   still: boolean;
   onReady: () => void;
 };
 
-const INK = 0x161a14;
+const INK = 0x0b0b0b;
 const ATLAS_COLS = 6;
 const ATLAS_ROWS = 4;
 const STRIP_FRAMES = 22; // atlas cells 0–21 run on the strip
-const WIN_FRAME = 23; // the 大吉大利 still
+const WIN_FRAME = 23; // the 大吉大利 / victory still
 
 const FRAME_W = 2.0;
 const FRAME_H = 1.45;
@@ -39,10 +49,10 @@ const IMG_H = IMG_W * (9 / 16);
 const CARD_SCALE = 1.12;
 
 const TONE: Record<FilmCard["tone"], string> = {
-  kill: "#e5483b",
-  objective: "#bdb48a",
-  win: "#e2b93b",
-  multi: "#e8e5dc",
+  kill: "#b4ff39",
+  objective: "#bdbdbd",
+  win: "#f4f4f4",
+  multi: "#b4ff39",
 };
 
 const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
@@ -59,7 +69,7 @@ function sprocketCanvas() {
   c.width = 400;
   c.height = 290;
   const g = c.getContext("2d")!;
-  g.fillStyle = "#0d100b";
+  g.fillStyle = "#070707";
   g.fillRect(0, 0, c.width, c.height);
   g.globalCompositeOperation = "destination-out";
   const holes = 6;
@@ -92,15 +102,15 @@ function chipCanvas(card: FilmCard, display: string, body: string) {
   const subW = g.measureText(sub).width;
   const w = Math.min(c.width, 40 + Math.max(titleW, subW) + 36);
   roundRect(g, 0, 0, w, c.height, 14);
-  g.fillStyle = "rgba(22, 26, 20, 0.88)";
+  g.fillStyle = "rgba(11, 11, 11, 0.9)";
   g.fill();
   g.fillStyle = TONE[card.tone];
   g.fillRect(0, 0, 10, c.height);
-  g.fillStyle = "#e8e5dc";
+  g.fillStyle = "#f4f4f4";
   g.font = `700 64px ${display}`;
   g.textBaseline = "alphabetic";
   g.fillText(card.title, 36, 70);
-  g.fillStyle = "#a6a899";
+  g.fillStyle = "#a1a1a1";
   g.font = `500 28px ${body}`;
   g.fillText(sub, 36, 112);
   return { canvas: c, aspect: c.width / c.height, used: w / c.width };
@@ -113,12 +123,12 @@ function typeCanvas(card: FilmCard, display: string, body: string) {
   c.height = 360;
   const g = c.getContext("2d")!;
   const grd = g.createLinearGradient(0, 0, c.width, c.height);
-  grd.addColorStop(0, "#272d22");
-  grd.addColorStop(1, "#1a1f17");
+  grd.addColorStop(0, "#1d1d1d");
+  grd.addColorStop(1, "#111111");
   g.fillStyle = grd;
   g.fillRect(0, 0, c.width, c.height);
   // a faint map grid, like the page background
-  g.strokeStyle = "rgba(232, 229, 220, 0.06)";
+  g.strokeStyle = "rgba(244, 244, 244, 0.06)";
   g.lineWidth = 1;
   for (let x = 0; x <= c.width; x += 48) {
     g.beginPath();
@@ -134,10 +144,10 @@ function typeCanvas(card: FilmCard, display: string, body: string) {
   }
   g.fillStyle = TONE[card.tone];
   g.fillRect(0, 0, c.width, 8);
-  g.fillStyle = "#a6a899";
+  g.fillStyle = "#a1a1a1";
   g.font = `600 30px ${body}`;
   g.fillText(card.game, 40, 64);
-  g.fillStyle = "#e8e5dc";
+  g.fillStyle = "#f4f4f4";
   let size = 150;
   g.font = `700 ${size}px ${display}`;
   while (g.measureText(card.title).width > c.width - 80 && size > 60) {
@@ -146,7 +156,7 @@ function typeCanvas(card: FilmCard, display: string, body: string) {
   }
   g.fillText(card.title, 36, 240);
   if (card.sub) {
-    g.fillStyle = "#a6a899";
+    g.fillStyle = "#a1a1a1";
     g.font = `500 30px ${body}`;
     g.fillText(card.sub, 40, 312);
   }
@@ -172,7 +182,10 @@ type Frame = {
   img: T.Mesh<T.PlaneGeometry, T.MeshBasicMaterial>;
   base: T.Mesh<T.PlaneGeometry, T.MeshBasicMaterial>;
   mark: T.Mesh<T.PlaneGeometry, T.MeshBasicMaterial>;
+  game: string;
   cell: number;
+  /** the card this frame becomes once it's marked */
+  card: FilmCard | null;
   slot: number; // position along the strip, 0..1 (+offset)
   cutAt: number; // time it was cut, or -1
   markAt: number; // time it was marked, or -1
@@ -219,37 +232,58 @@ export function startFilm(THREE: Three, host: HTMLElement, opts: FilmOptions): (
   };
 
   // ---------- textures ----------
-  const atlas = keep(new THREE.TextureLoader().load(opts.atlas, () => {
-    render();
-    opts.onReady();
-  }));
-  atlas.colorSpace = THREE.SRGBColorSpace;
-  atlas.anisotropy = 4;
+  const games = opts.footage.map((f) => f.id);
+  const atlases = new Map<string, T.Texture>();
+  let pending = opts.footage.length;
+  for (const f of opts.footage) {
+    const tex = keep(
+      new THREE.TextureLoader().load(f.atlas, () => {
+        render();
+        if (--pending === 0) opts.onReady();
+      }),
+    );
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    atlases.set(f.id, tex);
+  }
+  const atlasOf = (g: string) => atlases.get(g) ?? atlases.get(games[0])!;
   const sprocket = keep(new THREE.CanvasTexture(sprocketCanvas()));
   sprocket.colorSpace = THREE.SRGBColorSpace;
 
-  let video: HTMLVideoElement | null = null;
-  let videoTex: T.VideoTexture | null = null;
-  if (opts.video.length && !opts.still) {
-    video = document.createElement("video");
+  const videos: HTMLVideoElement[] = [];
+  const videoTexs = new Map<string, T.VideoTexture>();
+  for (const f of opts.footage) {
+    if (!f.video.length || opts.still) continue;
+    const video = document.createElement("video");
     video.muted = true;
     video.loop = true;
     video.playsInline = true;
     video.preload = "auto";
     video.setAttribute("muted", "");
     video.setAttribute("playsinline", "");
-    for (const s of opts.video) {
+    for (const s of f.video) {
       const src = document.createElement("source");
       src.src = s.src;
       src.type = s.type;
       video.appendChild(src);
     }
-    videoTex = keep(new THREE.VideoTexture(video));
-    videoTex.colorSpace = THREE.SRGBColorSpace;
-    // the loop is 2.36:1; show a 16:9 window from its middle
-    const rx = (16 / 9) / (1280 / 542);
-    videoTex.repeat.set(rx, 1);
-    videoTex.offset.set((1 - rx) / 2, 0);
+    const tex = keep(new THREE.VideoTexture(video));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    // show a 16:9 window from the middle of the loop, whatever its shape
+    const fit = (aspect: number) => {
+      const want = 16 / 9;
+      if (aspect >= want) {
+        tex.repeat.set(want / aspect, 1);
+        tex.offset.set((1 - want / aspect) / 2, 0);
+      } else {
+        tex.repeat.set(1, aspect / want);
+        tex.offset.set(0, (1 - aspect / want) / 2);
+      }
+    };
+    fit(1280 / 542);
+    video.addEventListener("loadedmetadata", () => video.videoWidth && fit(video.videoWidth / video.videoHeight));
+    videos.push(video);
+    videoTexs.set(f.id, tex);
   }
 
   // ---------- the strip ----------
@@ -272,10 +306,11 @@ export function startFilm(THREE: Three, host: HTMLElement, opts: FilmOptions): (
   const baseGeo = keep(new THREE.PlaneGeometry(FRAME_W, FRAME_H));
   const markGeo = keep(new THREE.PlaneGeometry(IMG_W + 0.12, IMG_H + 0.12));
   const frames: Frame[] = [];
-  let nextCell = 0;
-  const takeCell = () => {
-    const c = nextCell;
-    nextCell = (nextCell + 1) % STRIP_FRAMES;
+  // each game walks through its own stills; the strip takes turns between games
+  const nextCell = new Map<string, number>();
+  const takeCell = (g: string) => {
+    const c = nextCell.get(g) ?? 0;
+    nextCell.set(g, (c + 1) % STRIP_FRAMES);
     return c;
   };
 
@@ -283,15 +318,16 @@ export function startFilm(THREE: Three, host: HTMLElement, opts: FilmOptions): (
     const group = new THREE.Group();
     const base = new THREE.Mesh(baseGeo, keep(new THREE.MeshBasicMaterial({ map: sprocket, transparent: true, alphaTest: 0.4, fog: true })));
     const imgGeo = keep(new THREE.PlaneGeometry(IMG_W, IMG_H));
-    const cell = takeCell();
+    const game = games[i % games.length];
+    const cell = takeCell(game);
     atlasUV(imgGeo, cell);
-    const img = new THREE.Mesh(imgGeo, keep(new THREE.MeshBasicMaterial({ map: atlas, transparent: true, fog: true })));
+    const img = new THREE.Mesh(imgGeo, keep(new THREE.MeshBasicMaterial({ map: atlasOf(game), transparent: true, fog: true })));
     img.position.z = 0.004;
-    const mark = new THREE.Mesh(markGeo, keep(new THREE.MeshBasicMaterial({ color: 0xe5483b, transparent: true, opacity: 0, fog: true })));
+    const mark = new THREE.Mesh(markGeo, keep(new THREE.MeshBasicMaterial({ color: 0xb4ff39, transparent: true, opacity: 0, fog: true })));
     mark.position.z = 0.002;
     group.add(base, mark, img);
     root.add(group);
-    frames.push({ group, img, base, mark, cell, slot: i * pitch, cutAt: -1, markAt: -1 });
+    frames.push({ group, img, base, mark, game, cell, card: null, slot: i * pitch, cutAt: -1, markAt: -1 });
   }
 
   // ---------- cards ----------
@@ -329,7 +365,9 @@ export function startFilm(THREE: Three, host: HTMLElement, opts: FilmOptions): (
 
     const faceGeo = new THREE.PlaneGeometry(W, H);
     let faceMat: T.MeshBasicMaterial;
-    const stillCell = card.tone === "win" ? WIN_FRAME : (frame?.cell ?? 12);
+    const atlas = atlasOf(card.gid);
+    const stillCell = card.tone === "win" ? WIN_FRAME : frame && frame.game === card.gid ? frame.cell : 12;
+    const videoTex = videoTexs.get(card.gid);
     let toStill = () => {};
     if (card.footage) {
       if (live && videoTex && card.tone !== "win") {
@@ -453,11 +491,15 @@ export function startFilm(THREE: Three, host: HTMLElement, opts: FilmOptions): (
   const LEAVE_FOR = 0.8;
 
   function cut(t: number) {
-    // the frame nearest the middle of the visible stretch
+    // the next card, and the frame of its game nearest the middle of the
+    // visible stretch
+    const card = opts.cards[cardIndex % opts.cards.length];
+    const want = card.footage && games.includes(card.gid) ? card.gid : null;
     let best: Frame | null = null;
     let bestD = Infinity;
     for (const f of frames) {
       if (f.cutAt >= 0 || f.markAt >= 0) continue;
+      if (want && f.game !== want) continue;
       const u = (f.slot + offset) % 1;
       const d = Math.abs(u - 0.6);
       if (d < bestD) {
@@ -465,11 +507,16 @@ export function startFilm(THREE: Three, host: HTMLElement, opts: FilmOptions): (
         best = f;
       }
     }
-    if (best) best.markAt = t;
+    if (best) {
+      best.markAt = t;
+      best.card = card;
+      cardIndex++;
+    }
   }
 
   function spawnFrom(f: Frame, t: number) {
-    const card = opts.cards[cardIndex++ % opts.cards.length];
+    const card = f.card ?? opts.cards[cardIndex++ % opts.cards.length];
+    f.card = null;
     // older cards move back one slot; the oldest leaves
     for (const c of cards) {
       if (c.leaving >= 0) continue;
@@ -511,7 +558,7 @@ export function startFilm(THREE: Three, host: HTMLElement, opts: FilmOptions): (
       // a frame wrapping back to the far end gets a fresh still
       if (f.cutAt >= 0 && u < 0.05 && clock - f.cutAt > 2) {
         f.cutAt = -1;
-        f.cell = takeCell();
+        f.cell = takeCell(f.game);
         atlasUV(f.img.geometry, f.cell);
       }
       if (f.markAt >= 0) {
@@ -613,11 +660,11 @@ export function startFilm(THREE: Three, host: HTMLElement, opts: FilmOptions): (
       running = true;
       last = performance.now();
       renderer.setAnimationLoop(loop);
-      video?.play().catch(() => {});
+      for (const v of videos) v.play().catch(() => {});
     } else if (!want && running) {
       running = false;
       renderer.setAnimationLoop(null);
-      video?.pause();
+      for (const v of videos) v.pause();
     }
   };
 
@@ -671,10 +718,10 @@ export function startFilm(THREE: Three, host: HTMLElement, opts: FilmOptions): (
     disposables.forEach((d) => d.dispose());
     renderer.dispose();
     renderer.domElement.remove();
-    if (video) {
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
+    for (const v of videos) {
+      v.pause();
+      v.removeAttribute("src");
+      v.load();
     }
   };
 }

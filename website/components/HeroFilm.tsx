@@ -31,13 +31,19 @@ export function HeroFilm({ cards }: { cards: FilmCard[] }) {
       if (cancelled) return;
       stop = film.startFilm(THREE, el, {
         cards,
-        atlas: "/hero/film-atlas.jpg",
-        video: saveData
-          ? []
-          : [
-              { src: `/hero/hero-${size}.mp4`, type: "video/mp4" },
-              { src: `/hero/hero-${size}.webm`, type: "video/webm" },
-            ],
+        footage: [
+          { id: "pubg", atlas: "/hero/film-atlas.jpg", base: "hero" },
+          { id: "lol", atlas: "/hero/film-atlas-lol.jpg", base: "hero-lol" },
+        ].map((g) => ({
+          id: g.id,
+          atlas: g.atlas,
+          video: saveData
+            ? []
+            : [
+                { src: `/hero/${g.base}-${size}.mp4`, type: "video/mp4" },
+                { src: `/hero/${g.base}-${size}.webm`, type: "video/webm" },
+              ],
+        })),
         still,
         onReady: () => setReady(true),
       });

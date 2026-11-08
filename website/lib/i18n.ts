@@ -18,7 +18,7 @@ type Pair = { title: string; body: string };
 
 export type Dict = {
   meta: { title: string; description: string; changelogTitle: string };
-  nav: { games: string; features: string; stats: string; install: string; faq: string; changelog: string; source: string; otherLang: string; otherLangLabel: string; skip: string };
+  nav: { games: string; features: string; edit: string; stats: string; install: string; faq: string; changelog: string; source: string; otherLang: string; otherLangLabel: string; skip: string };
   hero: {
     titleA: string;
     titleB: string;
@@ -44,6 +44,35 @@ export type Dict = {
     more: { title: string; body: string; link: string };
   };
   features: { title: string; intro: string; items: Pair[] };
+  edit: {
+    title: string;
+    body: string;
+    points: string[];
+    manualTitle: string;
+    manual: string;
+    musicNote: string;
+    demo: {
+      label: string;
+      page: string;
+      mode: string;
+      song: string;
+      music: string;
+      video: string;
+      drop: string;
+      hook: string;
+      pull: string;
+      slam: string;
+      win: string;
+      shot: (weapon: string, m: number, hs: boolean, kills: number) => string;
+      phases: Record<"hook" | "drop" | "fight" | "pull" | "slam" | "win", string>;
+      trans: Record<"flash" | "black", string>;
+      styles: Record<"cut" | "flash" | "black", string>;
+      transLabel: string;
+      lengthLabel: string;
+      lengths: Record<30 | 60, string>;
+      killLegend: string;
+    };
+  };
   shots: { match: string; home: string; mini: string };
   stats: {
     title: string;
@@ -101,12 +130,13 @@ export type Dict = {
 const zh: Dict = {
   meta: {
     title: "KillCam：免费的游戏自动高光录制",
-    description: "支持 PUBG 和英雄联盟。打开游戏就开始录，打完自动剪出击杀、多杀、吃鸡、胜利的片段。免费、无广告、开源，录像只存在你自己的电脑上。",
+    description: "支持 PUBG 和英雄联盟。打开游戏就开始录，打完自动剪出击杀、多杀、吃鸡、胜利的片段，挑一首歌还能自动卡点剪成片。免费、无广告、开源，录像只存在你自己的电脑上。",
     changelogTitle: "更新日志",
   },
   nav: {
     games: "游戏",
     features: "功能",
+    edit: "剪辑",
     stats: "数据",
     install: "安装",
     faq: "常见问题",
@@ -119,7 +149,7 @@ const zh: Dict = {
   hero: {
     titleA: "打完这一局，",
     titleB: "高光已经剪好了。",
-    sub: "KillCam 是免费、无广告的游戏自动高光录制。打开游戏就开始录，击杀、多杀、吃鸡、胜利自动剪成片段，不用记任何快捷键。",
+    sub: "KillCam 是免费、无广告的游戏自动高光录制。打开游戏就开始录，击杀、多杀、吃鸡、胜利自动剪成片段；挑一首歌，还能跟着节拍剪成一条完整的视频。",
     download: "下载 Windows 版",
     downloadFallback: "去 GitHub 下载",
     free: "免费，开源，不需要注册",
@@ -189,13 +219,55 @@ const zh: Dict = {
       { title: "自动开录", body: "开机后待在托盘里。PUBG 一打开、英雄联盟一进对局就开始录，打完就停。" },
       { title: "每局打完就剪好", body: "不用关游戏。一局结束，这局的高光就在后台剪好，回到大厅或客户端就能看。" },
       { title: "整局时间轴", body: "所有事件排在一条可缩放的时间轴上，点哪看哪。挤在一起的击杀会自动合并，点一下放大。" },
-      { title: "自带剪辑", body: "像剪映一样的时间线：拖动剪长短、换顺序、拆分、撤销。选一首歌一键卡点，最好的一波卡在歌曲高潮，不用再开别的剪辑软件。" },
+      { title: "路线和交战地图", body: "PUBG 普通对局在高清地图上画出跳点、跑图路线，以及每次击倒、击杀、被击倒和阵亡的位置，点一下就跳到录像里那一刻。" },
       { title: "声音分开录", body: "游戏声音和麦克风录在两条音轨里。导出时可以混在一起，也可以分轨，后期好处理。" },
       { title: "F9 手动标记", body: "觉得刚才那波很精彩，按一下 F9，这一段就会被留下来。" },
-      { title: "个人数据", body: "PUBG 的 K/D、伤害、吃鸡率，每把武器的战绩和击杀距离，每局的跳点、路线和交战位置；英雄联盟的胜率、KDA、补刀、常用英雄。" },
-      { title: "不占满硬盘", body: "可以只保留高光，整局录像处理完就删。旧录像会在空闲时用显卡转成 AV1，体积小一半左右；超过设定的容量会自动清理最旧的录像，收藏的不删。" },
+      { title: "个人数据", body: "PUBG 的 K/D、伤害、吃鸡率，每把武器的战绩和击杀距离；英雄联盟的胜率、KDA、补刀、常用英雄。两个游戏分开看。" },
+      { title: "不占满硬盘", body: "可以只保留高光，整局录像处理完就删。旧录像会在没开游戏时用显卡转成 AV1，体积小一半左右（RTX 40 系及以上）；超过设定的容量会自动清理最旧的录像，收藏的不删。" },
       { title: "游戏里的迷你窗口", body: "显示录制时长和识别到的击杀数，不会被录进视频。" },
     ],
+  },
+  edit: {
+    title: "挑一首歌，一键卡点",
+    body: "剪辑页先找出这首歌的节拍、小节和高潮，再从你最近的对局里挑出击杀、击倒最多的几波对枪，排成一条跟着音乐走的视频。不用排顺序，也不用一帧一帧对拍子。",
+    points: [
+      "击杀最多的一波，第一个击杀正好落在歌曲高潮",
+      "每波对枪完整保留，不会在最后一个击杀或击倒之前切掉",
+      "切点都在拍子上，结尾收在小节线上，同一段画面不会出现两次",
+      "换局才转场（闪白或黑场），同一局里都是硬切",
+      "后面最激烈的一波，音乐退下去只留枪声，最后一个击杀时再砸回来",
+    ],
+    manualTitle: "想自己剪也行",
+    manual: "像剪映一样的时间线：左边素材、中间预览、右边属性，下面是画面和音乐两条轨道。拖边缘剪长短、拖中间换位置，S 拆分、Ctrl+Z 撤销，「去掉空闲」一键剪掉击杀之间的等待。预览就是导出的画面形状（原比例、16:9 或竖屏），不到 120 帧的录像能补帧到 120 帧，也能压到 10 / 25 / 50 MB 以内直接发出去。",
+    musicNote: "用你自己的歌（mp3、m4a、wav、flac 等都行），KillCam 不自带音乐。发到视频平台时注意版权。",
+    demo: {
+      label: "KillCam 剪辑页「一键卡点」示例：歌曲的节拍和高潮，以及跟着节拍排好的高光",
+      page: "剪辑",
+      mode: "一键卡点",
+      song: "示例歌曲",
+      music: "音乐",
+      video: "画面",
+      drop: "高潮",
+      hook: "高潮前",
+      pull: "只留枪声",
+      slam: "砸回来",
+      win: "大吉大利",
+      shot: (w, m, hs, n) => `${w} ${m} 米${hs ? " 爆头" : ""}${n > 1 ? ` · ${n} 杀` : ""}`,
+      phases: {
+        hook: "高潮前：更早的几波对枪，按时间顺序",
+        drop: "歌曲高潮：击杀最多的一波从这里开始",
+        fight: "整段对枪不剪断",
+        pull: "音乐退下，只留枪声",
+        slam: "最后一个击杀，音乐砸回来",
+        win: "收在小节线上",
+      },
+      trans: { flash: "闪白", black: "黑场" },
+      styles: { cut: "硬切", flash: "闪白", black: "黑场" },
+      transLabel: "换局转场",
+      lengthLabel: "长度",
+      lengths: { 30: "30 秒", 60: "1 分钟" },
+      killLegend: "击杀，对在节拍上",
+    },
   },
   stats: {
     title: "每一局都记下来，打法自己会说话",
@@ -203,7 +275,8 @@ const zh: Dict = {
     points: [
       "最近 20 局、50 局或全部对局，随时切换",
       "每局走势，吃鸡和赢下的局单独标出来",
-      "PUBG：K/D、伤害、前十率、爆头率，常用武器和各地图战绩",
+      "PUBG：K/D、伤害、前十率、爆头率，各地图的吃鸡率和场均伤害",
+      "每把武器的击杀、击倒、爆头率和距离，击杀距离分布，你最常击杀和最常淘汰你的玩家",
       "英雄联盟：胜率、KDA、分均补刀、多杀次数和常用英雄",
     ],
     keyNote: "PUBG 的数据需要免费的 API Key（developer.pubg.com 申请，引导里有步骤），街机和自定义房间不计入。英雄联盟直接用游戏自带的数据，不用 Key。",
@@ -261,9 +334,10 @@ const zh: Dict = {
     title: "电脑要求",
     rows: [
       ["系统", "Windows 10（2004 及以上）或 Windows 11，64 位"],
-      ["显卡", "支持 NVENC 的 NVIDIA 显卡（GTX 10 系列及以上）。AMD 显卡理论上可用，还没测试过"],
+      ["显卡", "支持 NVENC 的 NVIDIA 显卡（GTX 10 系列及以上）。AMD 显卡理论上可用，还没测试过。旧录像自动压缩成 AV1 需要 RTX 40 系及以上"],
       ["PUBG", "Steam 版。读屏识别支持简体和繁体中文游戏界面、默认 HUD"],
       ["英雄联盟", "Riot 客户端（各服务器都可以），暂不支持国服 WeGame"],
+      ["界面语言", "中文或英文，设置里随时切换"],
     ],
   },
   faq: {
@@ -287,6 +361,14 @@ const zh: Dict = {
         a: "不用关游戏。每局打完，这局的高光就会在后台剪好，回到大厅或客户端就能看。剪片段只是复制视频数据、不重新编码，用的是最低优先级，不影响游戏。PUBG 填了 API Key 的话，普通对局会先按读屏剪好，几分钟后官方数据到了，再自动补上地图、排名、伤害和击杀详情。",
       },
       {
+        q: "一键卡点要自己准备音乐吗？",
+        a: "要。用你自己的歌，mp3、m4a、wav、flac 这些常见格式都可以，KillCam 不自带音乐，发到视频平台时注意版权。选好歌以后会自动找出节拍和高潮，长度可以选 30 秒、1 分钟或整首。素材可以一键从最近的对局里挑（只挑有击杀或击倒的对枪，不包括吃鸡画面），也可以去录像库自己选。",
+      },
+      {
+        q: "旧录像自动压缩会影响画质吗？",
+        a: "几乎看不出差别。超过 14 天（可以改成 7 或 30 天）的录像，会在你没开游戏的时候用显卡转成 AV1，体积一般能小一半左右。转完会先确认文件完整、确实变小了才替换原来的；一开游戏或开始录制就立刻暂停。需要支持 AV1 编码的 NVIDIA 显卡（RTX 40 系及以上），设置里能看到已经压缩了多少、省了多少空间。",
+      },
+      {
         q: "迷你窗口看不到，或者挡住了游戏？",
         a: "游戏要用「无边框窗口」模式，迷你窗口才能显示在游戏上面；用「全屏」模式的话它会被游戏挡住。有第二块屏幕可以把它拖过去，位置会被记住。不需要的话可以在「设置 → 启动和游戏时」关掉。",
       },
@@ -300,7 +382,7 @@ const zh: Dict = {
     title: "你的录像不会离开你的电脑",
     items: [
       { title: "不上传任何东西", body: "录像、截图和设置只存在你自己电脑上。KillCam 没有服务器，也不收集使用数据。" },
-      { title: "只连这几个地方", body: "填了 API Key 时去 PUBG 官方接口查你自己的对局；英雄联盟第一次遇到某个英雄时下载它的头像，之后存在本机；另外定期去 GitHub Releases 检查新版本。" },
+      { title: "只连这几个地方", body: "填了 API Key 时去 PUBG 官方接口查你自己的对局；第一次显示某张地图的路线时，从 PUBG 官方的 api-assets 仓库下载这张地图；英雄联盟第一次遇到某个英雄时下载它的头像。下载过的都存在本机。另外定期去 GitHub Releases 检查新版本。" },
       { title: "不碰游戏", body: "不注入游戏、不读写游戏内存、不修改游戏文件。" },
       { title: "代码公开", body: "全部源代码在 GitHub 上，MIT 许可证，可以自己检查或编译。" },
     ],
@@ -331,12 +413,13 @@ const zh: Dict = {
 const en: Dict = {
   meta: {
     title: "KillCam: free automatic game highlights",
-    description: "For PUBG and League of Legends. Starts recording when you play and cuts your kills, multikills, chicken dinners and wins into clips. Free, no ads, open source, and your recordings never leave your PC.",
+    description: "For PUBG and League of Legends. Starts recording when you play, cuts your kills, multikills, chicken dinners and wins into clips, and can cut them to a song of your choice. Free, no ads, open source, and your recordings never leave your PC.",
     changelogTitle: "Changelog",
   },
   nav: {
     games: "Games",
     features: "Features",
+    edit: "Edit",
     stats: "Stats",
     install: "Install",
     faq: "FAQ",
@@ -349,7 +432,7 @@ const en: Dict = {
   hero: {
     titleA: "Finish the match.",
     titleB: "The highlights are already cut.",
-    sub: "KillCam is a free, ad-free highlight recorder for your games. It starts recording when you play and cuts your kills, multikills, chicken dinners and wins into clips on its own. No hotkeys to remember.",
+    sub: "KillCam is a free, ad-free highlight recorder for your games. It starts recording when you play and cuts your kills, multikills, chicken dinners and wins into clips on its own. Pick a song and it cuts them into one video on the beat.",
     download: "Download for Windows",
     downloadFallback: "Download on GitHub",
     free: "Free, open source, no account",
@@ -419,13 +502,55 @@ const en: Dict = {
       { title: "Records on its own", body: "Waits in the tray. Starts recording when PUBG opens or a League match loads, and stops when you're done." },
       { title: "Cut as soon as the match ends", body: "No need to close the game. When a match ends, its highlights are cut in the background and waiting in the lobby or client." },
       { title: "Whole-match timeline", body: "Every event sits on one zoomable timeline; click anywhere to jump there. Kills that pile up are grouped, and one click zooms in." },
-      { title: "Built-in editor", body: "A real timeline: trim, reorder, split, undo. Pick a song and auto-cut to its beat, with the best fight landing where the song kicks in. No other editor needed." },
+      { title: "Route and fights map", body: "For regular PUBG matches, your drop, your route and every knock, kill, knock taken and death are drawn on the full-resolution map. Click one to jump to that moment in the recording." },
       { title: "Separate audio tracks", body: "Game audio and your mic are recorded on separate tracks. Export them mixed or split for editing." },
       { title: "F9 to keep a moment", body: "Did something worth keeping? Press F9 and that moment stays." },
-      { title: "Your stats", body: "K/D, damage and win rate for PUBG, every weapon's record and kill distances, and each match's drop, route and fights on the map; win rate, KDA, CS and top champions for League." },
-      { title: "Keeps your drive in check", body: "Keep only the highlights and drop full recordings once they're processed. Old recordings are re-encoded to AV1 on the GPU while idle, about half the size. Past your size limit, the oldest are cleared; favourites stay." },
+      { title: "Your stats", body: "K/D, damage and win rate for PUBG, with every weapon's record and kill distances; win rate, KDA, CS and top champions for League. Each game on its own page." },
+      { title: "Keeps your drive in check", body: "Keep only the highlights and drop full recordings once they're processed. Old recordings are re-encoded to AV1 on the GPU while you're not playing, about half the size (RTX 40 series or newer). Past your size limit, the oldest are cleared; favourites stay." },
       { title: "In-game mini window", body: "Shows recording time and kills detected. It never shows up in your recordings." },
     ],
+  },
+  edit: {
+    title: "Pick a song. One click cuts it.",
+    body: "The edit page finds the song's beat, bars and drop, takes the fights with the most kills and knocks from your latest matches and lays them out on the music. No ordering clips, no lining up cuts frame by frame.",
+    points: [
+      "The fight with the most kills lands its first kill right on the drop",
+      "Every fight stays whole, never cut before its last kill or knock",
+      "Cuts on the beat, the end on a bar line, and no footage used twice",
+      "Transitions (flash or black) only where the match changes; hard cuts everywhere else",
+      "On the biggest late fight the music steps back to the gunfire and slams back in on the last kill",
+    ],
+    manualTitle: "Rather cut it yourself?",
+    manual: "A real timeline: media on the left, preview in the middle, settings on the right, picture and music tracks below. Drag edges to trim and clips to move, S to split, Ctrl+Z to undo, and Cut the waiting drops the dead time between kills. The preview is the export's shape (original, 16:9 or vertical); anything under 120 fps can be interpolated to 120, or squeezed under 10, 25 or 50 MB to send straight away.",
+    musicNote: "Use your own song (mp3, m4a, wav, flac and so on). No music comes with KillCam, so mind the rights when you post.",
+    demo: {
+      label: "Example of the one-click cut on the KillCam edit page: a song's beat and drop, and highlights laid out on the beat",
+      page: "Edit",
+      mode: "One-click cut",
+      song: "Example song",
+      music: "Music",
+      video: "Picture",
+      drop: "Drop",
+      hook: "Before the drop",
+      pull: "Gunfire only",
+      slam: "Back in",
+      win: "Chicken dinner",
+      shot: (w, m, hs, n) => `${w}, ${m} m${hs ? ", headshot" : ""}${n > 1 ? ` · ${n} kills` : ""}`,
+      phases: {
+        hook: "Before the drop: earlier fights, in the order they happened",
+        drop: "The drop: the fight with the most kills starts here",
+        fight: "The whole fight, uncut",
+        pull: "The music steps back to the gunfire",
+        slam: "Last kill, and the music slams back in",
+        win: "Ending on a bar line",
+      },
+      trans: { flash: "Flash", black: "Black" },
+      styles: { cut: "Cut", flash: "Flash", black: "Black" },
+      transLabel: "Between matches",
+      lengthLabel: "Length",
+      lengths: { 30: "30 s", 60: "1 min" },
+      killLegend: "A kill, on the beat",
+    },
   },
   stats: {
     title: "Every match, on the record",
@@ -433,7 +558,8 @@ const en: Dict = {
     points: [
       "Last 20, last 50 or every match, one click apart",
       "Match by match, with wins marked",
-      "PUBG: K/D, damage, top 10 and headshot rates, top weapons and results by map",
+      "PUBG: K/D, damage, top 10 and headshot rates, win rate and damage on each map",
+      "Every weapon's kills, knocks, headshot rate and range, your kill distances, and who you kill most and who kills you most",
       "League: win rate, KDA, CS per minute, multikills and top champions",
     ],
     keyNote: "PUBG stats need a free API key from developer.pubg.com (the setup walks you through it); arcade and custom matches aren't counted. League uses the game's own data, no key needed.",
@@ -491,10 +617,10 @@ const en: Dict = {
     title: "Requirements",
     rows: [
       ["System", "Windows 10 (2004 or later) or Windows 11, 64-bit"],
-      ["Graphics", "NVIDIA GPU with NVENC (GTX 10 series or newer). AMD may work but hasn't been tested"],
+      ["Graphics", "NVIDIA GPU with NVENC (GTX 10 series or newer). AMD may work but hasn't been tested. Compressing old recordings to AV1 needs an RTX 40 series or newer"],
       ["PUBG", "On Steam. Screen detection needs the game in Simplified or Traditional Chinese and the default HUD, for now"],
       ["League of Legends", "The Riot client, any server except the Chinese WeGame client"],
-      ["App language", "The app itself is in Chinese for now"],
+      ["App language", "English or Chinese, switch any time in Settings"],
     ],
   },
   faq: {
@@ -503,7 +629,7 @@ const en: Dict = {
     items: [
       {
         q: "Can this get me banned?",
-        a: "KillCam doesn't inject into the game, read or write game memory, or change any game files. It records the same way OBS display capture does: Windows' own screen duplication for video, Windows audio APIs for sound, For PUBG it reads the log files the game writes locally and PUBG's public API. For League it reads the data the game serves on your own PC: during a match, the live data Riot opens to third-party tools, and at the end, the match stats from the client. All of it is read-only. That said, only the game's publisher decides what anti-cheat allows, so no one can guarantee it.",
+        a: "KillCam doesn't inject into the game, read or write game memory, or change any game files. It records the same way OBS display capture does: Windows' own screen duplication for video, Windows audio APIs for sound. For PUBG it reads the log files the game writes locally and PUBG's public API. For League it reads the data the game serves on your own PC: during a match, the live data Riot opens to third-party tools, and at the end, the match stats from the client. All of it is read-only. That said, only the game's publisher decides what anti-cheat allows, so no one can guarantee it.",
       },
       {
         q: "Will it cost me frames?",
@@ -516,6 +642,14 @@ const en: Dict = {
       {
         q: "How soon are my highlights ready?",
         a: "You don't need to close the game. When a match ends, its highlights are cut in the background and waiting when you're back in the lobby or client. Cutting only copies video data without re-encoding, at the lowest priority, so it doesn't affect the game. In PUBG with an API key, regular matches are cut from screen detection first; when the official data arrives a few minutes later, map, placement, damage and kill details are filled in automatically.",
+      },
+      {
+        q: "Do I bring my own music for the one-click cut?",
+        a: "Yes. Use your own songs; common formats like mp3, m4a, wav and flac all work. No music comes with KillCam, so mind the rights when you post. Once you pick a song, its beat and drop are found for you, and you choose 30 seconds, a minute or the whole song. The clips can come from your latest matches in one click (only fights with kills or knocks, never the chicken dinner screen), or you can pick them in the library.",
+      },
+      {
+        q: "Does compressing old recordings hurt the quality?",
+        a: "Hardly noticeably. Recordings older than 14 days (or 7 or 30, if you change it) are re-encoded to AV1 on the GPU while you're not playing, usually at about half the size. The original is only replaced once the new file checks out complete and actually smaller, and it pauses the moment you start a game or a recording. It needs an NVIDIA GPU with AV1 encoding (RTX 40 series or newer), and Settings shows how much has been compressed and how much space it saved.",
       },
       {
         q: "I can't see the mini window, or it covers the game",
@@ -531,7 +665,7 @@ const en: Dict = {
     title: "Your recordings stay on your PC",
     items: [
       { title: "Nothing is uploaded", body: "Recordings, screenshots and settings stay on your own PC. KillCam has no server and collects no usage data." },
-      { title: "Only a few connections", body: "PUBG's official API to look up your own matches when you add a key; League champion portraits, downloaded once and kept on your PC; and GitHub Releases to check for updates." },
+      { title: "Only a few connections", body: "PUBG's official API to look up your own matches when you add a key; each map image from PUBG's official api-assets repository the first time a route is drawn on it; League champion portraits. Anything downloaded is kept on your PC. And GitHub Releases, to check for updates." },
       { title: "Hands off the game", body: "No injection, no reading or writing game memory, no changes to game files." },
       { title: "Open source", body: "All of the code is on GitHub under the MIT license. Read it or build it yourself." },
     ],

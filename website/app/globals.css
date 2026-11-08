@@ -1,18 +1,24 @@
-/* KillCam site. Colours come from the app icon: olive-black, bone white,
-   and the red dot that means "recording". Gold only for a chicken dinner. */
+/* KillCam site. Black and white like the app, with one neon green for what
+   matters (download, what's live, what's selected). Red only means
+   "recording", like the dot in the icon and the REC light in the app. */
 
 :root {
-  --ink: #161a14;
-  --ink-2: #1d2219;
-  --ink-3: #272d22;
-  --line: #353c2f;
-  --line-soft: #262b21;
-  --bone: #e8e5dc;
-  --dust: #a6a899;
-  --faint: #70745f;
-  --signal: #e5483b;
-  --khaki: #bdb48a;
-  --gold: #e2b93b;
+  --ink: #0b0b0b;
+  --ink-2: #141414;
+  --ink-3: #1d1d1d;
+  --line: #2b2b2b;
+  --line-soft: #1f1f1f;
+  --bone: #f4f4f4;
+  --dust: #a1a1a1;
+  --faint: #6b6b6b;
+  /* the accent: neon green, on black only */
+  --signal: #b4ff39;
+  --signal-hover: #c8ff6b;
+  --signal-ink: #0b0b0b;
+  /* recording, and nothing else */
+  --rec: #ff4d42;
+  --khaki: #bdbdbd;
+  --gold: #f4f4f4;
 
   --font-body: var(--f-body, "Barlow"), "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", system-ui, sans-serif;
   --font-display: var(--f-display, "Barlow Condensed"), "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", system-ui, sans-serif;
@@ -148,7 +154,7 @@ h3 {
   position: sticky;
   top: 0;
   z-index: 40;
-  background: rgba(22, 26, 20, 0.86);
+  background: rgba(11, 11, 11, 0.86);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line-soft);
@@ -242,13 +248,14 @@ h3 {
 }
 
 .btn-dl {
-  background: var(--bone);
-  color: var(--ink);
-  transition: background 0.15s;
+  background: var(--signal);
+  color: var(--signal-ink);
+  transition: background 0.15s, box-shadow 0.15s;
 }
 
 .btn-dl:hover {
-  background: #ffffff;
+  background: var(--signal-hover);
+  box-shadow: 0 0 0 4px rgba(180, 255, 57, 0.16);
 }
 
 .btn-dl.is-big {
@@ -263,13 +270,13 @@ h3 {
   font-family: var(--font-mono);
   font-weight: 500;
   font-size: 13px;
-  color: #50553f;
+  color: rgba(11, 11, 11, 0.62);
 }
 
 .btn-dl-meta span + span {
   margin-left: 10px;
   padding-left: 10px;
-  border-left: 1px solid rgba(22, 26, 20, 0.25);
+  border-left: 1px solid rgba(11, 11, 11, 0.25);
 }
 
 .btn-ghost {
@@ -289,8 +296,8 @@ h3 {
   padding: 88px 0 72px;
   /* the 1 km grid of a PUBG map */
   background-image:
-    linear-gradient(to right, rgba(232, 229, 220, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(232, 229, 220, 0.035) 1px, transparent 1px);
+    linear-gradient(to right, rgba(244, 244, 244, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(244, 244, 244, 0.035) 1px, transparent 1px);
   background-size: 96px 96px;
   background-position: center top;
   border-bottom: 1px solid var(--line-soft);
@@ -337,10 +344,10 @@ h3 {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(to right, rgba(232, 229, 220, 0.045) 1px, transparent 1px) center top / 96px 96px,
-    linear-gradient(to bottom, rgba(232, 229, 220, 0.045) 1px, transparent 1px) center top / 96px 96px,
-    linear-gradient(to bottom, rgba(22, 26, 20, 0.6) 0%, rgba(22, 26, 20, 0) 22%, rgba(22, 26, 20, 0) 50%, var(--ink) 96%),
-    linear-gradient(to right, rgba(22, 26, 20, 0.9) 0%, rgba(22, 26, 20, 0.7) 42%, rgba(22, 26, 20, 0.38) 100%);
+    linear-gradient(to right, rgba(244, 244, 244, 0.045) 1px, transparent 1px) center top / 96px 96px,
+    linear-gradient(to bottom, rgba(244, 244, 244, 0.045) 1px, transparent 1px) center top / 96px 96px,
+    linear-gradient(to bottom, rgba(11, 11, 11, 0.6) 0%, rgba(11, 11, 11, 0) 22%, rgba(11, 11, 11, 0) 50%, var(--ink) 96%),
+    linear-gradient(to right, rgba(11, 11, 11, 0.9) 0%, rgba(11, 11, 11, 0.7) 42%, rgba(11, 11, 11, 0.38) 100%);
 }
 
 /* the 3D film fills the whole hero; its canvas fades in over the still */
@@ -368,10 +375,10 @@ h3 {
 
 .hero-media.is-film::after {
   background:
-    linear-gradient(to right, rgba(232, 229, 220, 0.04) 1px, transparent 1px) center top / 96px 96px,
-    linear-gradient(to bottom, rgba(232, 229, 220, 0.04) 1px, transparent 1px) center top / 96px 96px,
-    linear-gradient(to bottom, rgba(22, 26, 20, 0.5) 0%, rgba(22, 26, 20, 0) 18%, rgba(22, 26, 20, 0) 78%, var(--ink) 100%),
-    linear-gradient(to right, rgba(22, 26, 20, 0.92) 0%, rgba(22, 26, 20, 0.72) 34%, rgba(22, 26, 20, 0.1) 62%, rgba(22, 26, 20, 0) 100%);
+    linear-gradient(to right, rgba(244, 244, 244, 0.04) 1px, transparent 1px) center top / 96px 96px,
+    linear-gradient(to bottom, rgba(244, 244, 244, 0.04) 1px, transparent 1px) center top / 96px 96px,
+    linear-gradient(to bottom, rgba(11, 11, 11, 0.5) 0%, rgba(11, 11, 11, 0) 18%, rgba(11, 11, 11, 0) 78%, var(--ink) 100%),
+    linear-gradient(to right, rgba(11, 11, 11, 0.92) 0%, rgba(11, 11, 11, 0.72) 34%, rgba(11, 11, 11, 0.1) 62%, rgba(11, 11, 11, 0) 100%);
 }
 
 .hero:has(.is-film) {
@@ -385,7 +392,7 @@ h3 {
 }
 
 .hero-copy {
-  text-shadow: 0 1px 18px rgba(22, 26, 20, 0.55);
+  text-shadow: 0 1px 18px rgba(11, 11, 11, 0.55);
 }
 
 .hero-copy {
@@ -444,7 +451,7 @@ h3 {
 
 .scene {
   margin-top: 64px;
-  background: rgba(29, 34, 25, 0.92);
+  background: rgba(20, 20, 20, 0.92);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 18px 24px 22px;
@@ -518,8 +525,8 @@ h3 {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--signal);
-  box-shadow: 0 0 0 4px rgba(229, 72, 59, 0.16);
+  background: var(--rec);
+  box-shadow: 0 0 0 4px rgba(255, 77, 66, 0.16);
 }
 
 .rec-dot.is-off {
@@ -584,14 +591,14 @@ h3 {
   top: 54px;
   height: 38px;
   min-width: 6px;
-  background: rgba(232, 229, 220, 0.04);
+  background: rgba(244, 244, 244, 0.04);
   border-top: 1px solid transparent;
   transition: background 0.3s, border-color 0.3s;
 }
 
 .band.is-lit {
-  background: rgba(232, 229, 220, 0.13);
-  border-top-color: rgba(232, 229, 220, 0.45);
+  background: rgba(244, 244, 244, 0.13);
+  border-top-color: rgba(244, 244, 244, 0.45);
 }
 
 .pin {
@@ -647,14 +654,20 @@ h3 {
   color: var(--ink);
 }
 
+.pin-kill.is-lit .pin-chip {
+  background: var(--signal);
+  border-color: var(--signal);
+  box-shadow: 0 0 14px rgba(180, 255, 57, 0.35);
+}
+
 .pin.is-lit .pin-stem {
-  background: rgba(232, 229, 220, 0.45);
+  background: rgba(244, 244, 244, 0.45);
 }
 
 .pin.is-lit .pin-count {
   background: var(--signal);
   border-color: var(--signal);
-  color: #fff;
+  color: var(--signal-ink);
 }
 
 .pin-knock.is-lit .pin-chip {
@@ -688,7 +701,7 @@ h3 {
   width: 2px;
   margin-left: -1px;
   background: var(--signal);
-  box-shadow: 0 0 12px rgba(229, 72, 59, 0.5);
+  box-shadow: 0 0 12px rgba(180, 255, 57, 0.5);
 }
 
 .playhead::before {
@@ -1006,6 +1019,407 @@ h3 {
   text-underline-offset: 4px;
 }
 
+/* cut to music */
+
+.edit-demo {
+  margin-bottom: 52px;
+}
+
+.is-edit .bc {
+  background: var(--ink);
+}
+
+.edit-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 56px;
+  align-items: start;
+}
+
+.edit-points {
+  margin-top: 0;
+}
+
+.edit-manual p {
+  margin-top: 10px;
+  color: var(--dust);
+  font-size: 16px;
+}
+
+.edit-manual .stats-note {
+  margin-top: 22px;
+  font-size: 14px;
+  color: var(--faint);
+}
+
+.bc {
+  background: rgba(20, 20, 20, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 22px 18px;
+}
+
+.bc-head {
+  display: flex;
+  align-items: center;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+}
+
+.bc-page {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.bc-mode {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--bone);
+  border-radius: 4px;
+  padding: 1px 8px;
+}
+
+.bc-song {
+  font-size: 14px;
+  color: var(--dust);
+}
+
+.bc-note {
+  color: var(--signal);
+  margin-right: 6px;
+}
+
+.bc-clock {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--dust);
+  font-variant-numeric: tabular-nums;
+}
+
+.bc-scroll {
+  margin: 0 -8px;
+  padding: 0 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.bc-tracks {
+  position: relative;
+  min-width: 760px;
+  margin: 18px 6px 0;
+  padding-bottom: 30px;
+}
+
+.bc-lane-label {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  line-height: 1;
+}
+
+.bc-music {
+  position: relative;
+  height: 78px;
+}
+
+.bc-wave {
+  position: absolute;
+  inset: 18px 0 0;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  gap: 2px;
+  align-items: end;
+}
+
+.bc-wave li {
+  height: calc(var(--h) * 100%);
+  background: rgba(244, 244, 244, 0.14);
+  border-radius: 2px 2px 0 0;
+  transition: background 0.25s;
+}
+
+.bc-wave li.is-past {
+  background: rgba(244, 244, 244, 0.6);
+}
+
+.bc-wave li.is-ducked.is-past {
+  background: rgba(244, 244, 244, 0.32);
+}
+
+.bc-pull {
+  position: absolute;
+  top: 18px;
+  bottom: 0;
+  background: repeating-linear-gradient(135deg, rgba(244, 244, 244, 0.07) 0 5px, transparent 5px 11px);
+  border-top: 1px dashed var(--line);
+}
+
+.bc-pull span {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  font-size: 11px;
+  color: var(--dust);
+  white-space: nowrap;
+}
+
+.bc-drop,
+.bc-slam {
+  position: absolute;
+  top: 0;
+  bottom: -16px;
+  width: 0;
+  border-left: 2px solid var(--signal);
+  z-index: 1;
+}
+
+.bc-slam {
+  border-left: 2px dashed var(--bone);
+}
+
+.bc-drop span,
+.bc-slam span {
+  position: absolute;
+  top: -2px;
+  left: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--signal);
+}
+
+.bc-slam span {
+  color: var(--bone);
+}
+
+.bc-grid {
+  position: relative;
+  height: 12px;
+  margin: 4px 0 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.bc-grid span {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 5px;
+  background: var(--line);
+}
+
+.bc-grid span.is-bar {
+  height: 10px;
+  background: var(--faint);
+}
+
+.bc-video {
+  position: relative;
+  height: 56px;
+  margin-top: 10px;
+}
+
+.bc-shot {
+  --c: #b4ff39;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  margin-left: 1px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--c) 32%, transparent);
+  background: color-mix(in srgb, var(--c) 9%, transparent);
+  transition: background 0.25s, border-color 0.25s;
+}
+
+/* the match with the best fight is the green one */
+.is-a {
+  --c: #b4ff39;
+}
+
+.is-b {
+  --c: #f4f4f4;
+}
+
+.is-c {
+  --c: #8f8f8f;
+}
+
+.is-d {
+  --c: #c8c8c8;
+}
+
+.bc-shot.is-on {
+  background: color-mix(in srgb, var(--c) 26%, transparent);
+  border-color: color-mix(in srgb, var(--c) 80%, transparent);
+}
+
+.bc-shot-map {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--c);
+}
+
+.bc-shot i {
+  position: absolute;
+  top: 9px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  transform: rotate(45deg);
+  background: var(--faint);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.bc-shot i.is-hit {
+  background: var(--bone);
+  box-shadow: 0 0 0 3px rgba(244, 244, 244, 0.22);
+}
+
+.bc-hook {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  height: 7px;
+  border: 1px solid var(--faint);
+  border-top: 0;
+  border-radius: 0 0 3px 3px;
+}
+
+.bc-hook span {
+  position: absolute;
+  top: 11px;
+  left: 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--dust);
+  white-space: nowrap;
+}
+
+.bc-trans {
+  position: absolute;
+  top: -10px;
+  z-index: 2;
+  transform: translateX(-50%);
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--dust);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.bc-trans.is-on {
+  color: var(--bone);
+  border-color: var(--bone);
+}
+
+.bc-trans.is-flash.is-on {
+  background: var(--bone);
+  color: var(--ink);
+}
+
+.bc-trans.is-black.is-on {
+  background: #000;
+}
+
+.bc-playhead {
+  position: absolute;
+  top: 17px;
+  bottom: 30px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--bone);
+  box-shadow: 0 0 0 1px rgba(11, 11, 11, 0.7);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.bc-playhead::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: -4px;
+  border: 5px solid transparent;
+  border-top-color: var(--bone);
+}
+
+.bc-foot {
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+
+.bc-now {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  flex: 1 1 340px;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.bc-swatch {
+  align-self: center;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--c);
+}
+
+.bc-now-what {
+  font-weight: 600;
+}
+
+.bc-now-phase {
+  color: var(--dust);
+}
+
+.bc-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bc-legend {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.bc-legend i {
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  background: var(--bone);
+}
+
 /* stats */
 
 .stats {
@@ -1056,7 +1470,7 @@ h3 {
 }
 
 .sd {
-  background: rgba(29, 34, 25, 0.92);
+  background: rgba(20, 20, 20, 0.92);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 18px 22px 22px;
@@ -1189,7 +1603,7 @@ h3 {
 }
 
 .sd-bars li.is-win span {
-  background: var(--bone);
+  background: var(--signal);
 }
 
 .sd-legend {
@@ -1392,7 +1806,7 @@ h3 {
   height: 17px;
   border-radius: 50%;
   background: var(--signal);
-  color: #fff;
+  color: var(--signal-ink);
   font-size: 11px;
   font-weight: 700;
   text-decoration: none;
@@ -1524,8 +1938,8 @@ h3 {
   padding: 96px 0;
   border-top: 1px solid var(--line-soft);
   background-image:
-    linear-gradient(to right, rgba(232, 229, 220, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(232, 229, 220, 0.035) 1px, transparent 1px);
+    linear-gradient(to right, rgba(244, 244, 244, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(244, 244, 244, 0.035) 1px, transparent 1px);
   background-size: 96px 96px;
 }
 
@@ -1645,7 +2059,7 @@ h3 {
 .cl-item.is-latest .cl-rail::after {
   background: var(--signal);
   border-color: var(--signal);
-  box-shadow: 0 0 0 4px rgba(229, 72, 59, 0.18);
+  box-shadow: 0 0 0 4px rgba(180, 255, 57, 0.18);
 }
 
 .cl-body {
@@ -1853,6 +2267,11 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
 /* ---------- responsive ---------- */
 
 @media (max-width: 980px) {
+  .edit-copy {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 36px;
+  }
+
   .games {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
@@ -1904,8 +2323,8 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
 
   .hero-media::after {
     background:
-      linear-gradient(to bottom, rgba(22, 26, 20, 0.55) 0%, rgba(22, 26, 20, 0.72) 45%, var(--ink) 94%),
-      rgba(22, 26, 20, 0.25);
+      linear-gradient(to bottom, rgba(11, 11, 11, 0.55) 0%, rgba(11, 11, 11, 0.72) 45%, var(--ink) 94%),
+      rgba(11, 11, 11, 0.25);
   }
 
   /* phones: text on top, the film and its cards below it */
@@ -1921,7 +2340,7 @@ html[data-reveal="on"] .cl-item[data-reveal]:not(.is-in) .cl-rail::after {
 
   .hero-media.is-film::after {
     background:
-      linear-gradient(to bottom, rgba(22, 26, 20, 0.86) 0%, rgba(22, 26, 20, 0.8) 52%, rgba(22, 26, 20, 0.1) 70%, rgba(22, 26, 20, 0) 92%, var(--ink) 100%);
+      linear-gradient(to bottom, rgba(11, 11, 11, 0.86) 0%, rgba(11, 11, 11, 0.8) 52%, rgba(11, 11, 11, 0.1) 70%, rgba(11, 11, 11, 0) 92%, var(--ink) 100%);
   }
 
   .hero-sub {
