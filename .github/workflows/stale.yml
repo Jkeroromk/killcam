@@ -1,0 +1,28 @@
+# 没人动的 PR 别一直堆着：23 天没动静先标 stale 并留言，
+# 再过 7 天还是没动静就自动关掉。想留着的话回一句就行。
+name: 清理没动静的 PR
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          days-before-issue-stale: -1
+          days-before-issue-close: -1
+          days-before-pr-stale: 23
+          days-before-pr-close: 7
+          stale-pr-message: '这个 PR 23 天没动静了，先标记一下，7 天后还是没动静就自动关掉。还想留着的话回一句就行。'
+          close-pr-message: '30 天没动静，自动关了。想继续的话随时可以重开。'
+          stale-pr-label: 'stale'
+          exempt-pr-labels: 'keep'
+          operations-per-run: 30
