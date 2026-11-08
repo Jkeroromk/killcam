@@ -1,9 +1,9 @@
-﻿# Usage: npm run release -- 0.2.0
+# Usage: npm run release -- 0.2.0
 # Sets the version everywhere, commits, tags v<version> and pushes.
 # GitHub Actions then builds and publishes the release.
 param([Parameter(Mandatory = $true)][string]$Version)
 $ErrorActionPreference = "Stop"
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "版本号格式：0.2.0" }
+if ($Version -notmatch '^\d+\.\d+(\.\d+)?$') { throw "版本号格式：2.1 或 2.1.0" }
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 $utf8 = New-Object System.Text.UTF8Encoding($false)   # no BOM: Cargo / Tauri read these
