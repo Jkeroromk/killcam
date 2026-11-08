@@ -101,7 +101,7 @@ export function timecode(t: number): string {
 
 
 /** games whose footage runs on the hero's film strip */
-const FOOTAGE: GameId[] = ["pubg"];
+const FOOTAGE: GameId[] = ["pubg", "lol"];
 
 /** The notable moments of every example match, taking turns between games. */
 export function filmCards(d: Dict, locale: Locale): FilmCard[] {
@@ -119,7 +119,7 @@ export function filmCards(d: Dict, locale: Locale): FilmCard[] {
         const tone: FilmCard["tone"] =
           e.kind === "win" ? "win" : e.kind === "objective" ? "objective" : e.note && e.note !== "firstBlood" ? "multi" : "kill";
         const weight = e.note === "penta" ? 0 : e.note === "baronSteal" || e.detail?.hs ? 1 : e.kind === "win" ? 4 : e.kind === "knock" ? 3 : 2;
-        return { title, sub, game: g.name, tone, footage: FOOTAGE.includes(game), weight };
+        return { title, sub, game: g.name, gid: game, tone, footage: FOOTAGE.includes(game), weight };
       })
       // the most impressive moments come first
       .sort((a, b) => a.weight - b.weight)
