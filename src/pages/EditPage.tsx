@@ -250,6 +250,10 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     frontRef.current = 1 - frontRef.current;
     setFront(frontRef.current);
     const now = fv();
+    // shown at once, not on the next render: the old player may start
+    // loading the clip after next in this same frame
+    now?.classList.add("is-front");
+    old?.classList.remove("is-front");
     if (now) {
       now.muted = false;
       if (play) now.play().catch(() => {});
@@ -321,12 +325,71 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lay]);
 
+  /** one step of playing with a song: the playhead is where the music is,
+   *  and the players are put where that is in the footage */
+  const followMusic = (a: HTMLAudioElement, offset: number) => {
+    pendingSwap.current = null;
+    const master = Math.max(0, a.currentTime - offset);
+    if (master >= total - 0.01) {
+      stop();
+      setT(total);
+      return;
+    }
+    const i = at(master);
+    const l = lay[i];
+    const it = byKey.get(l.c.item)!;
+    const tag = tagOf(l.c);
+    const want = Math.max(0, l.c.start + (master - l.at) - it.fileStart);
+    tRef.current = master;
+    setT(master);
+    levels(master);
+    let f = fv();
+    if (!f || f.dataset.tag !== tag) {
+      const b = bv();
+      if (isReady(b, tag)) {
+        swap(true, l.c.trans);
+        f = fv();
+      } else {
+        // the next clip isn't ready yet: hold the last picture (not the footage after the cut)
+        if (f && !f.paused) f.pause();
+        if (b && b.dataset.tag !== tag) {
+          b.muted = true;
+          cue(b, it.file, want, tag);
+        }
+        return;
+      }
+    }
+    if (f && !f.seeking && f.readyState >= 1) {
+      const room = Number.isFinite(f.duration) ? f.duration - 0.05 : Infinity;
+      // the picture drifted from the music: put it back where the music is
+      if (want < room && Math.abs(f.currentTime - want) > 0.2) f.currentTime = want;
+      if (f.paused && want < room) f.play().catch(() => {});
+    }
+    // the next clip waits in the back player
+    const next = lay[i + 1];
+    const b = bv();
+    if (next && b && b.dataset.tag !== tagOf(next.c)) {
+      const nit = byKey.get(next.c.item)!;
+      b.muted = true;
+      cue(b, nit.file, Math.max(0, next.c.start - nit.fileStart), tagOf(next.c));
+    }
+  };
+
   // one loop: finishes cuts waiting on the back player, moves the playhead,
   // loads the next clip in the back, and cuts to it the moment a clip ends
   useEffect(() => {
     let raf = 0;
     let moved = performance.now();
     const tick = () => {
+      // with a song the music is the clock: it never jumps, the picture
+      // follows it (a late player catches up by skipping, not the music by replaying)
+      const a = audio.current;
+      const d = docRef.current;
+      if (playingRef.current && a && d?.song && !a.paused && !a.ended && a.readyState >= 2 && lay.length) {
+        followMusic(a, d.musicOffset);
+        raf = requestAnimationFrame(tick);
+        return;
+      }
       const ps = pendingSwap.current;
       if (ps && isReady(bv(), ps.tag)) {
         pendingSwap.current = null;
@@ -354,10 +417,6 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
               if (b.dataset.tag !== nt) cue(b, byKey.get(next.c.item)!.file, Math.max(0, next.c.start - byKey.get(next.c.item)!.fileStart), nt);
               pendingSwap.current = { tag: nt, play: true, trans: next.c.trans };
             }
-            // the music keeps going; only re-sync when it has drifted
-            const a = audio.current;
-            const d = docRef.current;
-            if (a && d?.song && Math.abs(a.currentTime - (d.musicOffset + next.at)) > 0.15) a.currentTime = d.musicOffset + next.at;
             moved = performance.now();
           } else {
             stop();
