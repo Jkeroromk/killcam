@@ -1,4 +1,4 @@
-//! Chinese / English for messages KillCam shows while it runs (progress,
+//! Chinese / English for messages KeroCam shows while it runs (progress,
 //! notices, errors, the tray menu). Labels stored in recordings stay Chinese;
 //! the UI translates those when it shows them.
 

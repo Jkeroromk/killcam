@@ -118,7 +118,7 @@ function UpdateDialog(props: { update: UpdateInfo; current: string; recording: b
     setBusy(true);
     setErr(null);
     try {
-      // on success the installer closes KillCam and starts the new version
+      // on success the installer closes KeroCam and starts the new version
       await api.installUpdate();
     } catch (e) {
       setErr(errText(e));
@@ -130,7 +130,7 @@ function UpdateDialog(props: { update: UpdateInfo; current: string; recording: b
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && props.onClose()}>
       <div className="modal update-modal" role="dialog" aria-modal="true" aria-labelledby="update-title">
         <header>
-          <h2 id="update-title">{t("KillCam 有新版本了", "A new version of KillCam is out")}</h2>
+          <h2 id="update-title">{t("KeroCam 有新版本了", "A new version of KeroCam is out")}</h2>
           <span className="grow" />
           {!busy && (
             <button type="button" className="icon-btn" onClick={props.onClose} aria-label={t("关闭", "Close")}>
@@ -163,8 +163,8 @@ function UpdateDialog(props: { update: UpdateInfo; current: string; recording: b
             </div>
             <p className="muted small">
               {t(
-                "下载完 KillCam 会自己关掉、装好新版本再打开，录像和设置都会保留。",
-                "Once downloaded, KillCam closes, installs the new version and reopens. Your recordings and settings are kept.",
+                "下载完 KeroCam 会自己关掉、装好新版本再打开，录像和设置都会保留。",
+                "Once downloaded, KeroCam closes, installs the new version and reopens. Your recordings and settings are kept.",
               )}
             </p>
           </div>
@@ -173,8 +173,8 @@ function UpdateDialog(props: { update: UpdateInfo; current: string; recording: b
             {props.recording
               ? t("正在录制，这局录完再更新。", "Recording now. Update after this match.")
               : t(
-                  "更新时 KillCam 会自己关掉、装好再打开，录像和设置都会保留。",
-                  "KillCam closes, installs the update and reopens. Your recordings and settings are kept.",
+                  "更新时 KeroCam 会自己关掉、装好再打开，录像和设置都会保留。",
+                  "KeroCam closes, installs the update and reopens. Your recordings and settings are kept.",
                 )}
           </p>
         )}

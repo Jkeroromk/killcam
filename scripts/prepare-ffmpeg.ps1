@@ -32,8 +32,8 @@ if ($onPath -and (Test-Ffmpeg $onPath.Source)) {
 
 # a released version, not "master": master changes options under us
 $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-8.1.zip"
-$zip = Join-Path $env:TEMP "killcam-ffmpeg.zip"
-$tmp = Join-Path $env:TEMP "killcam-ffmpeg"
+$zip = Join-Path $env:TEMP "kerocam-ffmpeg.zip"
+$tmp = Join-Path $env:TEMP "kerocam-ffmpeg"
 Write-Host "下载 ffmpeg：$url"
 Invoke-WebRequest -Uri $url -OutFile $zip
 if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }

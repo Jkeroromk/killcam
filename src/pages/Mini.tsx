@@ -98,10 +98,10 @@ export default function Mini() {
             <AlertTriangle size={14} />
           </span>
         )}
-        <button type="button" className="iconbtn xs" title={t("打开 KillCam", "Open KillCam")} onClick={() => api.showMainWindow()}>
+        <button type="button" className="iconbtn xs" title={t("打开 KeroCam", "Open KeroCam")} onClick={() => api.showMainWindow()}>
           <Maximize2 size={13} />
         </button>
-        <button type="button" className="iconbtn xs" title={t("关掉小窗口（把 KillCam 最小化或关到托盘时会再出现）", "Close the mini window (it comes back when KillCam is minimized or closed to the system tray)")} onClick={() => api.closeMini()}>
+        <button type="button" className="iconbtn xs" title={t("关掉小窗口（把 KeroCam 最小化或关到托盘时会再出现）", "Close the mini window (it comes back when KeroCam is minimized or closed to the system tray)")} onClick={() => api.closeMini()}>
           <X size={14} />
         </button>
       </div>

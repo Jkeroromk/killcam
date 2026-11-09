@@ -6,6 +6,6 @@ src-tauri/bin/
 *.log
 mon*.png
 test.mp4
-killcam.tgz
+kerocam.tgz
 .patch/
 开发笔记.md

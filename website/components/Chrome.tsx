@@ -16,9 +16,9 @@ export function SiteNav({ d, lang, path }: { d: Dict; lang: Locale; path: string
       <div className="nav-inner">
         <Link href={home} className="brand">
           <Image src="/brand.png" alt="" width={28} height={28} priority />
-          <span>KillCam</span>
+          <span>KeroCam</span>
         </Link>
-        <nav className="nav-links" aria-label="KillCam">
+        <nav className="nav-links" aria-label="KeroCam">
           <Link href={`${home}#games`}>{d.nav.games}</Link>
           <Link href={`${home}#features`}>{d.nav.features}</Link>
           <Link href={`${home}#edit`}>{d.nav.edit}</Link>
@@ -64,7 +64,7 @@ export function SiteFooter({ d, lang }: { d: Dict; lang: Locale }) {
       <div className="foot-inner">
         <Link href={`/${lang}`} className="brand is-small">
           <Image src="/brand.png" alt="" width={22} height={22} />
-          <span>KillCam</span>
+          <span>KeroCam</span>
         </Link>
         <ul className="foot-links">
           <li>

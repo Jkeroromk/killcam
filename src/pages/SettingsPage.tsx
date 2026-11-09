@@ -27,7 +27,7 @@ function DiagnosticsField() {
   const run = async () => {
     const d = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
-    const name = `KillCam-${t("诊断", "diagnostics")}-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.txt`;
+    const name = `KeroCam-${t("诊断", "diagnostics")}-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.txt`;
     const path = await saveDialog({ defaultPath: name, filters: [{ name: t("文本", "Text"), extensions: ["txt"] }] });
     if (!path) return;
     setState({ busy: true });
@@ -119,7 +119,7 @@ export default function SettingsPage(props: { game: GameId; settings: Settings; 
     setDraft((d) => ({ ...d, pubg: props.settings.pubg }));
   }, [props.settings.pubg]);
 
-  // KillCam switches the encoder by itself when the chosen one can't record this screen
+  // KeroCam switches the encoder by itself when the chosen one can't record this screen
   useEffect(() => {
     setDraft((d) => ({ ...d, video: { ...d.video, encoder: props.settings.video.encoder } }));
   }, [props.settings.video.encoder]);
@@ -302,8 +302,8 @@ export default function SettingsPage(props: { game: GameId; settings: Settings; 
         <Field
           label={t("迷你录制窗口", "Mini recording window")}
           hint={t(
-            "打开游戏时自动最小化 KillCam，换成一个小窗口显示录制状态；关掉游戏后小窗口消失，KillCam 回来",
-            "Minimizes KillCam when a game opens and shows recording status in a small window; when the game closes, the window goes away and KillCam comes back",
+            "打开游戏时自动最小化 KeroCam，换成一个小窗口显示录制状态；关掉游戏后小窗口消失，KeroCam 回来",
+            "Minimizes KeroCam when a game opens and shows recording status in a small window; when the game closes, the window goes away and KeroCam comes back",
           )}
         >
           <Toggle checked={draft.miniWindow} onChange={(v) => set((s) => ({ ...s, miniWindow: v }))} label={draft.miniWindow ? t("开启", "On") : t("关闭", "Off")} />
@@ -384,7 +384,7 @@ export default function SettingsPage(props: { game: GameId; settings: Settings; 
       </Card>
 
       <Card id="advanced" title={t("高级", "Advanced")}>
-        <Field label={t("FFmpeg 位置", "FFmpeg location")} hint={t("留空会自动在 PATH 和 KillCam 目录里找", "Leave empty to look in PATH and the KillCam folder")}>
+        <Field label={t("FFmpeg 位置", "FFmpeg location")} hint={t("留空会自动在 PATH 和 KeroCam 目录里找", "Leave empty to look in PATH and the KeroCam folder")}>
           <input
             className="input mono"
             value={draft.ffmpegPath ?? ""}

@@ -1,4 +1,4 @@
-/* KillCam — black & white by default; thumbnails and video are the colour. */
+/* KeroCam — black & white by default; thumbnails and video are the colour. */
 
 :root {
   /* default: black & white */
@@ -831,17 +831,9 @@ code,
 .brand-mark {
   width: 26px;
   height: 26px;
-  border-radius: 8px;
-  background: var(--accent);
-  position: relative;
+  border-radius: 6px;
+  background: url("/brand.svg") center / cover no-repeat;
   flex: none;
-}
-.brand-mark::after {
-  content: "";
-  position: absolute;
-  inset: 7px;
-  border-radius: 50%;
-  border: 2.5px solid var(--accent-ink);
 }
 .brand-name {
   font-size: 17px;

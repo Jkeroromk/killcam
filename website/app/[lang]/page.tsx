@@ -50,7 +50,7 @@ export default async function Home({ params }: { params: Promise<{ lang: string 
           </div>
         </section>
 
-        <section className="shots" aria-label="KillCam">
+        <section className="shots" aria-label="KeroCam">
           <div className="wrap shots-grid">
             <figure className="shot shot-main" data-reveal>
               <Image src="/screens/match.jpg" alt={d.shots.match} width={1600} height={1000} sizes="(max-width: 900px) 100vw, 860px" priority />

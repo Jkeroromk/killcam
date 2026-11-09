@@ -155,7 +155,7 @@ pub fn compress_file(ff: &Path, file: &Path, enc: &str, stop: &dyn Fn() -> bool)
         let _ = fs::remove_file(&tmp);
         return Err(tr("录像在压缩期间被改动了，下次再试", "The recording changed while compressing; will retry"));
     }
-    // fails while the file is open elsewhere (playing in KillCam, Explorer preview): retried later
+    // fails while the file is open elsewhere (playing in KeroCam, Explorer preview): retried later
     fs::rename(&tmp, file).map_err(|e| {
         let _ = fs::remove_file(&tmp);
         tr(format!("替换原文件失败：{e}"), format!("Couldn't replace the original: {e}"))

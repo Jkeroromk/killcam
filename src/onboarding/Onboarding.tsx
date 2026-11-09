@@ -171,7 +171,7 @@ export default function Onboarding(props: {
       <aside className="ob-rail">
         <div className="brand">
           <span className="brand-mark" aria-hidden />
-          <span className="brand-name">KillCam</span>
+          <span className="brand-name">KeroCam</span>
         </div>
         <ol className="ob-steps">
           {STEPS.map((s, i) => (
@@ -253,8 +253,8 @@ export default function Onboarding(props: {
             <Step
               title={t("连接 PUBG 账号", "Connect your PUBG account")}
               lead={t(
-                "每局结束几分钟后，KillCam 会从 PUBG 官方数据里读出你的每一次击倒、击杀和淘汰，精确到毫秒，还带武器和距离。不填也能用，只是只有手动标记。",
-                "A few minutes after each match, KillCam reads every knock, kill and elimination from PUBG's official data, to the millisecond, with weapon and distance. You can skip this, but then you only get markers.",
+                "每局结束几分钟后，KeroCam 会从 PUBG 官方数据里读出你的每一次击倒、击杀和淘汰，精确到毫秒，还带武器和距离。不填也能用，只是只有手动标记。",
+                "A few minutes after each match, KeroCam reads every knock, kill and elimination from PUBG's official data, to the millisecond, with weapon and distance. You can skip this, but then you only get markers.",
               )}
             >
               <PubgSection settings={settings} set={set} />
@@ -282,7 +282,7 @@ export default function Onboarding(props: {
             </Button>
           ) : null}
           <Button kind="primary" onClick={next} disabled={!canNext || saving}>
-            {key === "welcome" ? t("开始设置", "Start setup") : key === "done" ? t("开始使用", "Start using KillCam") : t("下一步", "Next")}
+            {key === "welcome" ? t("开始设置", "Start setup") : key === "done" ? t("开始使用", "Start using KeroCam") : t("下一步", "Next")}
           </Button>
         </footer>
       </main>
@@ -332,8 +332,8 @@ function Welcome(props: { onLanguage: (l: "zh" | "en") => void }) {
       <h1 className="display">{t("每一枪都留下来", "Keep every shot")}</h1>
       <p className="lead">
         {t(
-          "KillCam 在你玩 PUBG 时用显卡在后台录制，结束后自动把击倒、击杀和吃鸡找出来，排在整局时间轴上。",
-          "KillCam records in the background on your GPU while you play PUBG. Afterwards it finds your knocks, kills and Chicken Dinners and lays them out on the match timeline.",
+          "KeroCam 在你玩 PUBG 时用显卡在后台录制，结束后自动把击倒、击杀和吃鸡找出来，排在整局时间轴上。",
+          "KeroCam records in the background on your GPU while you play PUBG. Afterwards it finds your knocks, kills and Chicken Dinners and lays them out on the match timeline.",
         )}
       </p>
       <ul className="welcome-points">
@@ -389,8 +389,8 @@ function HardwareStep(props: { hw: HardwareInfo | null; err: string | null; sett
           {!hw.ffmpeg && (
             <p className="warn-text">
               {t(
-                "从 gyan.dev 下载 ffmpeg-git-full，把 ffmpeg.exe 放进 PATH 或 KillCam 同目录，然后重新打开 KillCam。",
-                "Download ffmpeg-git-full from gyan.dev, put ffmpeg.exe on your PATH or next to KillCam, then reopen KillCam.",
+                "从 gyan.dev 下载 ffmpeg-git-full，把 ffmpeg.exe 放进 PATH 或 KeroCam 同目录，然后重新打开 KeroCam。",
+                "Download ffmpeg-git-full from gyan.dev, put ffmpeg.exe on your PATH or next to KeroCam, then reopen KeroCam.",
               )}
             </p>
           )}
@@ -661,8 +661,8 @@ function DoneStep(props: { settings: Settings; perf: PerfResult | null; gpuScale
     <Step
       title={t("都设好了", "All set")}
       lead={t(
-        "KillCam 会待在系统托盘里。打开 PUBG 它就开始录，每局结束几分钟后高光会出现在录像库。",
-        "KillCam stays in the system tray. Open PUBG and it starts recording; highlights show up in the Library a few minutes after each match.",
+        "KeroCam 会待在系统托盘里。打开 PUBG 它就开始录，每局结束几分钟后高光会出现在录像库。",
+        "KeroCam stays in the system tray. Open PUBG and it starts recording; highlights show up in the Library a few minutes after each match.",
       )}
     >
       <dl className="summary">

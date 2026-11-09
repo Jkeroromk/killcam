@@ -129,7 +129,7 @@ export type Dict = {
 
 const zh: Dict = {
   meta: {
-    title: "KillCam：免费的游戏自动高光录制",
+    title: "KeroCam：免费的游戏自动高光录制",
     description: "支持 PUBG 和英雄联盟。打开游戏就开始录，打完自动剪出击杀、多杀、吃鸡、胜利的片段，挑一首歌还能自动卡点剪成片。免费、无广告、开源，录像只存在你自己的电脑上。",
     changelogTitle: "更新日志",
   },
@@ -149,14 +149,14 @@ const zh: Dict = {
   hero: {
     titleA: "打完这一局，",
     titleB: "高光已经剪好了。",
-    sub: "KillCam 是免费、无广告的游戏自动高光录制。打开游戏就开始录，击杀、多杀、吃鸡、胜利自动剪成片段；挑一首歌，还能跟着节拍剪成一条完整的视频。",
+    sub: "KeroCam 是免费、无广告的游戏自动高光录制。打开游戏就开始录，击杀、多杀、吃鸡、胜利自动剪成片段；挑一首歌，还能跟着节拍剪成一条完整的视频。",
     download: "下载 Windows 版",
     downloadFallback: "去 GitHub 下载",
     free: "免费，开源，不需要注册",
     source: "查看源代码",
   },
   timeline: {
-    label: "一局对局的时间轴示例：KillCam 识别到的事件和剪出的高光片段",
+    label: "一局对局的时间轴示例：KeroCam 识别到的事件和剪出的高光片段",
     clips: "已剪出 {n} 段高光",
     events: {
       kill: "击杀",
@@ -208,7 +208,7 @@ const zh: Dict = {
     },
     more: {
       title: "更多游戏",
-      body: "接下来会继续加新游戏。想让 KillCam 支持哪个游戏，来 GitHub 告诉我们。",
+      body: "接下来会继续加新游戏。想让 KeroCam 支持哪个游戏，来 GitHub 告诉我们。",
       link: "提议一个游戏",
     },
   },
@@ -239,9 +239,9 @@ const zh: Dict = {
     ],
     manualTitle: "想自己剪也行",
     manual: "像剪映一样的时间线：左边素材、中间预览、右边属性，下面是画面和音乐两条轨道。拖边缘剪长短、拖中间换位置，S 拆分、Ctrl+Z 撤销，「去掉空闲」一键剪掉击杀之间的等待。预览就是导出的画面形状（原比例、16:9 或竖屏），不到 120 帧的录像能补帧到 120 帧，也能压到 10 / 25 / 50 MB 以内直接发出去。",
-    musicNote: "用你自己的歌（mp3、m4a、wav、flac 等都行），KillCam 不自带音乐。发到视频平台时注意版权。",
+    musicNote: "用你自己的歌（mp3、m4a、wav、flac 等都行），KeroCam 不自带音乐。发到视频平台时注意版权。",
     demo: {
-      label: "KillCam 剪辑页「一键卡点」示例：歌曲的节拍和高潮，以及跟着节拍排好的高光",
+      label: "KeroCam 剪辑页「一键卡点」示例：歌曲的节拍和高潮，以及跟着节拍排好的高光",
       page: "剪辑",
       mode: "一键卡点",
       song: "示例歌曲",
@@ -271,7 +271,7 @@ const zh: Dict = {
   },
   stats: {
     title: "每一局都记下来，打法自己会说话",
-    body: "KillCam 把每局的数据存在你电脑上，在「数据」页里按游戏汇总给你看。",
+    body: "KeroCam 把每局的数据存在你电脑上，在「数据」页里按游戏汇总给你看。",
     points: [
       "最近 20 局、50 局或全部对局，随时切换",
       "每局走势，吃鸡和赢下的局单独标出来",
@@ -280,7 +280,7 @@ const zh: Dict = {
       "英雄联盟：胜率、KDA、分均补刀、多杀次数和常用英雄",
     ],
     keyNote: "PUBG 的数据需要免费的 API Key（developer.pubg.com 申请，引导里有步骤），街机和自定义房间不计入。英雄联盟直接用游戏自带的数据，不用 Key。",
-    panelLabel: "KillCam 数据页示例",
+    panelLabel: "KeroCam 数据页示例",
     page: "数据",
     range: (n) => `最近 ${n} 局`,
     tiles: {
@@ -313,12 +313,12 @@ const zh: Dict = {
   install: {
     title: "安装",
     steps: [
-      { title: "下载安装包", body: "点上面的下载按钮，或者去 GitHub Releases 下载 KillCam_x.x.x_x64-setup.exe。" },
+      { title: "下载安装包", body: "点上面的下载按钮，或者去 GitHub Releases 下载 KeroCam_x.x.x_x64-setup.exe。" },
       { title: "双击安装", body: "不需要管理员权限。FFmpeg 已经打包在里面，不用另外装。" },
-      { title: "如果 Windows 拦截了", body: "点「更多信息」，再点「仍要运行」。KillCam 是免费的个人项目，还没有购买微软的代码签名证书。源代码都公开在 GitHub 上，可以自己检查。" },
+      { title: "如果 Windows 拦截了", body: "点「更多信息」，再点「仍要运行」。KeroCam 是免费的个人项目，还没有购买微软的代码签名证书。源代码都公开在 GitHub 上，可以自己检查。" },
       { title: "跟着引导设置", body: "第一次打开会带你选显示器、画质、声音来源和录像保存位置，最后跑一次性能测试，确认不掉帧。" },
     ],
-    after: "以后有新版本，KillCam 会自己提示，点一下就装好，不用再回来下载。",
+    after: "以后有新版本，KeroCam 会自己提示，点一下就装好，不用再回来下载。",
     smart: {
       heading: "Windows 已保护你的电脑",
       text: "Microsoft Defender SmartScreen 阻止了无法识别的应用启动。运行此应用可能会导致你的电脑存在风险。",
@@ -346,7 +346,7 @@ const zh: Dict = {
     items: [
       {
         q: "会不会被封号？",
-        a: "KillCam 不注入游戏、不读写游戏内存、不修改任何游戏文件。录屏和 OBS 的「显示器采集」用的是同一种方法：Windows 自带的屏幕复制功能，声音用 Windows 的音频接口。PUBG 读的是游戏自己写在本地的日志文件和官方公开的 API；英雄联盟读的是游戏在你电脑上提供的数据接口：对局中是 Riot 开放给第三方工具的实时数据，结算时从客户端读本局统计，都是只读。不过反作弊的规则只有游戏公司说了算，这里没办法给出保证。",
+        a: "KeroCam 不注入游戏、不读写游戏内存、不修改任何游戏文件。录屏和 OBS 的「显示器采集」用的是同一种方法：Windows 自带的屏幕复制功能，声音用 Windows 的音频接口。PUBG 读的是游戏自己写在本地的日志文件和官方公开的 API；英雄联盟读的是游戏在你电脑上提供的数据接口：对局中是 Riot 开放给第三方工具的实时数据，结算时从客户端读本局统计，都是只读。不过反作弊的规则只有游戏公司说了算，这里没办法给出保证。",
       },
       {
         q: "会掉帧吗？",
@@ -362,7 +362,7 @@ const zh: Dict = {
       },
       {
         q: "一键卡点要自己准备音乐吗？",
-        a: "要。用你自己的歌，mp3、m4a、wav、flac 这些常见格式都可以，KillCam 不自带音乐，发到视频平台时注意版权。选好歌以后会自动找出节拍和高潮，长度可以选 30 秒、1 分钟或整首。素材可以一键从最近的对局里挑（只挑有击杀或击倒的对枪，不包括吃鸡画面），也可以去录像库自己选。",
+        a: "要。用你自己的歌，mp3、m4a、wav、flac 这些常见格式都可以，KeroCam 不自带音乐，发到视频平台时注意版权。选好歌以后会自动找出节拍和高潮，长度可以选 30 秒、1 分钟或整首。素材可以一键从最近的对局里挑（只挑有击杀或击倒的对枪，不包括吃鸡画面），也可以去录像库自己选。",
       },
       {
         q: "旧录像自动压缩会影响画质吗？",
@@ -374,14 +374,14 @@ const zh: Dict = {
       },
       {
         q: "录像和设置存在哪？怎么卸载？",
-        a: "录像存在第一次引导时选的文件夹里，设置存在 %APPDATA%\\com.jkeroro.killcam。在 Windows「设置 → 应用」里卸载 KillCam 即可，录像文件夹不会被删除，需要的话自己删。",
+        a: "录像存在第一次引导时选的文件夹里，设置存在 %APPDATA%\\com.jkeroro.killcam。在 Windows「设置 → 应用」里卸载 KeroCam 即可，录像文件夹不会被删除，需要的话自己删。",
       },
     ],
   },
   privacy: {
     title: "你的录像不会离开你的电脑",
     items: [
-      { title: "不上传任何东西", body: "录像、截图和设置只存在你自己电脑上。KillCam 没有服务器，也不收集使用数据。" },
+      { title: "不上传任何东西", body: "录像、截图和设置只存在你自己电脑上。KeroCam 没有服务器，也不收集使用数据。" },
       { title: "只连这几个地方", body: "填了 API Key 时去 PUBG 官方接口查你自己的对局；第一次显示某张地图的路线时，从 PUBG 官方的 api-assets 仓库下载这张地图；英雄联盟第一次遇到某个英雄时下载它的头像。下载过的都存在本机。另外定期去 GitHub Releases 检查新版本。" },
       { title: "不碰游戏", body: "不注入游戏、不读写游戏内存、不修改游戏文件。" },
       { title: "代码公开", body: "全部源代码在 GitHub 上，MIT 许可证，可以自己检查或编译。" },
@@ -395,12 +395,12 @@ const zh: Dict = {
     license: "MIT 许可证",
     issues: "反馈问题",
     releases: "所有版本",
-    by: "由 Jkeroro 制作。KillCam 是个人项目，与 KRAFTON、PUBG 官方或 Riot Games 无关。",
-    riot: "KillCam was created under Riot Games' \"Legal Jibber Jabber\" policy using assets owned by Riot Games. Riot Games does not endorse or sponsor this project.",
+    by: "由 Jkeroro 制作。KeroCam 是个人项目，与 KRAFTON、PUBG 官方或 Riot Games 无关。",
+    riot: "KeroCam was created under Riot Games' \"Legal Jibber Jabber\" policy using assets owned by Riot Games. Riot Games does not endorse or sponsor this project.",
   },
   changelog: {
     title: "更新日志",
-    intro: "每个版本都发布在 GitHub Releases。已经装了 KillCam 的话，它会自己提示更新。",
+    intro: "每个版本都发布在 GitHub Releases。已经装了 KeroCam 的话，它会自己提示更新。",
     latest: "最新版",
     download: "下载安装包",
     noNotes: "这个版本没有写更新说明。",
@@ -412,7 +412,7 @@ const zh: Dict = {
 
 const en: Dict = {
   meta: {
-    title: "KillCam: free automatic game highlights",
+    title: "KeroCam: free automatic game highlights",
     description: "For PUBG and League of Legends. Starts recording when you play, cuts your kills, multikills, chicken dinners and wins into clips, and can cut them to a song of your choice. Free, no ads, open source, and your recordings never leave your PC.",
     changelogTitle: "Changelog",
   },
@@ -432,14 +432,14 @@ const en: Dict = {
   hero: {
     titleA: "Finish the match.",
     titleB: "The highlights are already cut.",
-    sub: "KillCam is a free, ad-free highlight recorder for your games. It starts recording when you play and cuts your kills, multikills, chicken dinners and wins into clips on its own. Pick a song and it cuts them into one video on the beat.",
+    sub: "KeroCam is a free, ad-free highlight recorder for your games. It starts recording when you play and cuts your kills, multikills, chicken dinners and wins into clips on its own. Pick a song and it cuts them into one video on the beat.",
     download: "Download for Windows",
     downloadFallback: "Download on GitHub",
     free: "Free, open source, no account",
     source: "View the source",
   },
   timeline: {
-    label: "Example match timeline: the events KillCam detected and the highlight clips it cut",
+    label: "Example match timeline: the events KeroCam detected and the highlight clips it cut",
     clips: "{n} highlights cut",
     events: {
       kill: "Kill",
@@ -491,7 +491,7 @@ const en: Dict = {
     },
     more: {
       title: "More games",
-      body: "More games are on the way. Tell us on GitHub which one you'd like KillCam to support next.",
+      body: "More games are on the way. Tell us on GitHub which one you'd like KeroCam to support next.",
       link: "Suggest a game",
     },
   },
@@ -522,9 +522,9 @@ const en: Dict = {
     ],
     manualTitle: "Rather cut it yourself?",
     manual: "A real timeline: media on the left, preview in the middle, settings on the right, picture and music tracks below. Drag edges to trim and clips to move, S to split, Ctrl+Z to undo, and Cut the waiting drops the dead time between kills. The preview is the export's shape (original, 16:9 or vertical); anything under 120 fps can be interpolated to 120, or squeezed under 10, 25 or 50 MB to send straight away.",
-    musicNote: "Use your own song (mp3, m4a, wav, flac and so on). No music comes with KillCam, so mind the rights when you post.",
+    musicNote: "Use your own song (mp3, m4a, wav, flac and so on). No music comes with KeroCam, so mind the rights when you post.",
     demo: {
-      label: "Example of the one-click cut on the KillCam edit page: a song's beat and drop, and highlights laid out on the beat",
+      label: "Example of the one-click cut on the KeroCam edit page: a song's beat and drop, and highlights laid out on the beat",
       page: "Edit",
       mode: "One-click cut",
       song: "Example song",
@@ -554,7 +554,7 @@ const en: Dict = {
   },
   stats: {
     title: "Every match, on the record",
-    body: "KillCam keeps each match's data on your PC and sums it up on the Stats page, one game at a time.",
+    body: "KeroCam keeps each match's data on your PC and sums it up on the Stats page, one game at a time.",
     points: [
       "Last 20, last 50 or every match, one click apart",
       "Match by match, with wins marked",
@@ -563,7 +563,7 @@ const en: Dict = {
       "League: win rate, KDA, CS per minute, multikills and top champions",
     ],
     keyNote: "PUBG stats need a free API key from developer.pubg.com (the setup walks you through it); arcade and custom matches aren't counted. League uses the game's own data, no key needed.",
-    panelLabel: "Example of the KillCam stats page",
+    panelLabel: "Example of the KeroCam stats page",
     page: "Stats",
     range: (n) => `Last ${n}`,
     tiles: {
@@ -596,12 +596,12 @@ const en: Dict = {
   install: {
     title: "Install",
     steps: [
-      { title: "Download the installer", body: "Use the download button above, or grab KillCam_x.x.x_x64-setup.exe from GitHub Releases." },
+      { title: "Download the installer", body: "Use the download button above, or grab KeroCam_x.x.x_x64-setup.exe from GitHub Releases." },
       { title: "Run it", body: "No admin rights needed. FFmpeg is bundled, so there's nothing else to install." },
-      { title: "If Windows blocks it", body: "Click “More info”, then “Run anyway”. KillCam is a free personal project without a paid Microsoft code-signing certificate. All the source code is public on GitHub if you'd like to check it." },
+      { title: "If Windows blocks it", body: "Click “More info”, then “Run anyway”. KeroCam is a free personal project without a paid Microsoft code-signing certificate. All the source code is public on GitHub if you'd like to check it." },
       { title: "Follow the setup", body: "The first launch walks you through display, quality, audio sources and where to save recordings, then runs a quick test to make sure you don't drop frames." },
     ],
-    after: "New versions show up inside KillCam. One click installs them; you won't need to come back here.",
+    after: "New versions show up inside KeroCam. One click installs them; you won't need to come back here.",
     smart: {
       heading: "Windows protected your PC",
       text: "Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.",
@@ -629,7 +629,7 @@ const en: Dict = {
     items: [
       {
         q: "Can this get me banned?",
-        a: "KillCam doesn't inject into the game, read or write game memory, or change any game files. It records the same way OBS display capture does: Windows' own screen duplication for video, Windows audio APIs for sound. For PUBG it reads the log files the game writes locally and PUBG's public API. For League it reads the data the game serves on your own PC: during a match, the live data Riot opens to third-party tools, and at the end, the match stats from the client. All of it is read-only. That said, only the game's publisher decides what anti-cheat allows, so no one can guarantee it.",
+        a: "KeroCam doesn't inject into the game, read or write game memory, or change any game files. It records the same way OBS display capture does: Windows' own screen duplication for video, Windows audio APIs for sound. For PUBG it reads the log files the game writes locally and PUBG's public API. For League it reads the data the game serves on your own PC: during a match, the live data Riot opens to third-party tools, and at the end, the match stats from the client. All of it is read-only. That said, only the game's publisher decides what anti-cheat allows, so no one can guarantee it.",
       },
       {
         q: "Will it cost me frames?",
@@ -637,7 +637,7 @@ const en: Dict = {
       },
       {
         q: "Do I need a PUBG API key?",
-        a: "No. Without one, KillCam still finds kills, knocks, deaths and wins from the screen and cuts highlights. With one, regular matches also get map, placement, damage, weapon, distance and headshots, with more precise timing. Keys are free at developer.pubg.com, and the setup shows you how.",
+        a: "No. Without one, KeroCam still finds kills, knocks, deaths and wins from the screen and cuts highlights. With one, regular matches also get map, placement, damage, weapon, distance and headshots, with more precise timing. Keys are free at developer.pubg.com, and the setup shows you how.",
       },
       {
         q: "How soon are my highlights ready?",
@@ -645,7 +645,7 @@ const en: Dict = {
       },
       {
         q: "Do I bring my own music for the one-click cut?",
-        a: "Yes. Use your own songs; common formats like mp3, m4a, wav and flac all work. No music comes with KillCam, so mind the rights when you post. Once you pick a song, its beat and drop are found for you, and you choose 30 seconds, a minute or the whole song. The clips can come from your latest matches in one click (only fights with kills or knocks, never the chicken dinner screen), or you can pick them in the library.",
+        a: "Yes. Use your own songs; common formats like mp3, m4a, wav and flac all work. No music comes with KeroCam, so mind the rights when you post. Once you pick a song, its beat and drop are found for you, and you choose 30 seconds, a minute or the whole song. The clips can come from your latest matches in one click (only fights with kills or knocks, never the chicken dinner screen), or you can pick them in the library.",
       },
       {
         q: "Does compressing old recordings hurt the quality?",
@@ -664,7 +664,7 @@ const en: Dict = {
   privacy: {
     title: "Your recordings stay on your PC",
     items: [
-      { title: "Nothing is uploaded", body: "Recordings, screenshots and settings stay on your own PC. KillCam has no server and collects no usage data." },
+      { title: "Nothing is uploaded", body: "Recordings, screenshots and settings stay on your own PC. KeroCam has no server and collects no usage data." },
       { title: "Only a few connections", body: "PUBG's official API to look up your own matches when you add a key; each map image from PUBG's official api-assets repository the first time a route is drawn on it; League champion portraits. Anything downloaded is kept on your PC. And GitHub Releases, to check for updates." },
       { title: "Hands off the game", body: "No injection, no reading or writing game memory, no changes to game files." },
       { title: "Open source", body: "All of the code is on GitHub under the MIT license. Read it or build it yourself." },
@@ -678,12 +678,12 @@ const en: Dict = {
     license: "MIT license",
     issues: "Report a problem",
     releases: "All releases",
-    by: "Made by Jkeroro. KillCam is a personal project, not affiliated with KRAFTON, PUBG or Riot Games.",
-    riot: "KillCam was created under Riot Games' \"Legal Jibber Jabber\" policy using assets owned by Riot Games. Riot Games does not endorse or sponsor this project.",
+    by: "Made by Jkeroro. KeroCam is a personal project, not affiliated with KRAFTON, PUBG or Riot Games.",
+    riot: "KeroCam was created under Riot Games' \"Legal Jibber Jabber\" policy using assets owned by Riot Games. Riot Games does not endorse or sponsor this project.",
   },
   changelog: {
     title: "Changelog",
-    intro: "Every version is published on GitHub Releases. If KillCam is already installed, it will offer the update itself.",
+    intro: "Every version is published on GitHub Releases. If KeroCam is already installed, it will offer the update itself.",
     latest: "Latest",
     download: "Download installer",
     noNotes: "No release notes for this version.",

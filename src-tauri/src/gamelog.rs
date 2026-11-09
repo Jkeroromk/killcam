@@ -30,7 +30,7 @@ impl Join {
         self.mode == "BATTLEROYALE"
     }
 
-    /// Modes whose games show up in PUBG's API as well: KillCam waits for
+    /// Modes whose games show up in PUBG's API as well: KeroCam waits for
     /// their match data before a record is final.
     pub fn in_api(&self) -> bool {
         self.official() || self.mode == "TDM"

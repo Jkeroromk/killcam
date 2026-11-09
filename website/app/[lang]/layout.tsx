@@ -19,7 +19,7 @@ export const viewport: Viewport = {
   colorScheme: "dark",
 };
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://killcam.vercel.app";
+const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://kerocam.vercel.app";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
   const d = getDict(lang);
   return {
     metadataBase: new URL(SITE),
-    title: { default: d.meta.title, template: `%s | KillCam` },
+    title: { default: d.meta.title, template: `%s | KeroCam` },
     description: d.meta.description,
     alternates: {
       canonical: `/${lang}`,
@@ -35,7 +35,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
     },
     openGraph: {
       type: "website",
-      siteName: "KillCam",
+      siteName: "KeroCam",
       title: d.meta.title,
       description: d.meta.description,
       locale: lang === "zh" ? "zh_CN" : "en_US",

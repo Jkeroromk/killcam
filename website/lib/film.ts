@@ -1,7 +1,7 @@
 // The hero's 3D scene (three.js): a strip of film made of real match stills
 // flows out of the distance along a curve. Every couple of seconds one frame
 // is marked, lifted off the strip and flown to the front as a highlight card,
-// the way KillCam cuts highlights out of a whole match. Games without footage
+// the way KeroCam cuts highlights out of a whole match. Games without footage
 // on the strip get a typographic card instead. Each game with footage has its
 // own atlas of stills and its own clip; the strip takes turns between them and
 // a card always shows a still (or the clip) from its own game.

@@ -59,7 +59,7 @@ fn apply_launch_at_login(app: &AppHandle, on: bool) -> Result<(), String> {
 
 /// The tray menu, in the current language.
 fn tray_menu<R: tauri::Runtime, M: tauri::Manager<R>>(app: &M) -> tauri::Result<Menu<R>> {
-    let open = MenuItem::with_id(app, "open", i18n::tr("打开 KillCam", "Open KillCam"), true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", i18n::tr("打开 KeroCam", "Open KeroCam"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", i18n::tr("退出", "Quit"), true, None::<&str>)?;
     Menu::with_items(app, &[&open, &quit])
 }
@@ -218,7 +218,7 @@ struct Status {
     warnings: Vec<String>,
     notices: Vec<String>,
     onboarded: bool,
-    /// a newer KillCam is published
+    /// a newer KeroCam is published
     update: Option<UpdateInfo>,
     version: String,
 }
@@ -383,8 +383,8 @@ fn refresh_monitor_size(app: &AppHandle, st: &St, ff: &Path) {
         push_notice(
             st,
             i18n::tr(
-                format!("屏幕分辨率变成了 {nw}×{nh}，KillCam 已经跟着调整好了"),
-                format!("Screen resolution changed to {nw}×{nh}; KillCam has adjusted to it"),
+                format!("屏幕分辨率变成了 {nw}×{nh}，KeroCam 已经跟着调整好了"),
+                format!("Screen resolution changed to {nw}×{nh}; KeroCam has adjusted to it"),
             ),
         );
     }
@@ -609,8 +609,8 @@ fn spawn_status_loop(app: AppHandle, st: St) {
                                 let enc_failed = quick && ffmpeg::encoder_failed(&tail);
                                 if bad_args {
                                     give_up = Some(i18n::tr(
-                                        format!("这个 FFmpeg 不认 KillCam 的录制参数（版本不兼容）\n{tail}"),
-                                        format!("This FFmpeg doesn't accept KillCam's recording options (incompatible version)\n{tail}"),
+                                        format!("这个 FFmpeg 不认 KeroCam 的录制参数（版本不兼容）\n{tail}"),
+                                        format!("This FFmpeg doesn't accept KeroCam's recording options (incompatible version)\n{tail}"),
                                     ));
                                 } else if enc_failed
                                     && !r.cpu_feed()
@@ -1964,9 +1964,9 @@ async fn export_diagnostics(st: State<'_, St>, path: String) -> Result<(), Strin
         let line = |o: &mut String, k: &str, v: &str| {
             let _ = writeln!(o, "{k}: {v}");
         };
-        let _ = writeln!(out, "===== KillCam 诊断信息 =====");
+        let _ = writeln!(out, "===== KeroCam 诊断信息 =====");
         line(&mut out, "导出时间", &chrono::Local::now().format("%Y-%m-%d %H:%M:%S %z").to_string());
-        line(&mut out, "KillCam 版本", &st.version);
+        line(&mut out, "KeroCam 版本", &st.version);
         line(
             &mut out,
             "系统",
@@ -2149,14 +2149,14 @@ fn default_library_dir(app: AppHandle) -> String {
         .max_by_key(|d| d.free);
     if let Some(d) = best {
         return PathBuf::from(&d.mount)
-            .join("KillCam")
+            .join("KeroCam")
             .to_string_lossy()
             .to_string();
     }
     app.path()
         .video_dir()
-        .map(|p| p.join("KillCam").to_string_lossy().to_string())
-        .unwrap_or_else(|_| "C:\\KillCam".into())
+        .map(|p| p.join("KeroCam").to_string_lossy().to_string())
+        .unwrap_or_else(|_| "C:\\KeroCam".into())
 }
 
 // ---------------------------------------------------------------------------
@@ -2219,7 +2219,7 @@ async fn check_update(app: AppHandle, st: State<'_, St>) -> Result<Option<Update
     Ok(found)
 }
 
-/// Download, then hand over to the installer (it closes KillCam, updates and
+/// Download, then hand over to the installer (it closes KeroCam, updates and
 /// starts it again).
 #[tauri::command]
 async fn install_update(app: AppHandle, st: State<'_, St>) -> Result<(), String> {
@@ -2397,7 +2397,7 @@ pub fn run() {
             // tray
             let menu = tray_menu(app)?;
             let mut tray = TrayIconBuilder::with_id("main-tray")
-                .tooltip("KillCam")
+                .tooltip("KeroCam")
                 .menu(&menu);
             if let Some(icon) = app.default_window_icon() {
                 tray = tray.icon(icon.clone());
@@ -2487,5 +2487,5 @@ pub fn run() {
             default_library_dir,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running KillCam");
+        .expect("error while running KeroCam");
 }
