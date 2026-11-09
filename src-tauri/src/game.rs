@@ -6,7 +6,7 @@ use sysinfo::{ProcessesToUpdate, System};
 
 pub const GAME_EXE: &str = "TslGame.exe";
 
-/// The games KillCam records.
+/// The games KeroCam records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Game {
     Pubg,

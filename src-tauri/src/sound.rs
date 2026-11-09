@@ -1,6 +1,6 @@
 //! Short confirmation sounds (F9 marker), played by Windows itself.
 //!
-//! They come from KillCam's own process, so with the default "record the
+//! They come from KeroCam's own process, so with the default "record the
 //! game's sound only" setting they don't end up in the recording.
 
 use std::sync::OnceLock;

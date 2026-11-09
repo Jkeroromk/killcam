@@ -3,7 +3,7 @@
 // Set GITHUB_TOKEN in Vercel if you ever hit the anonymous rate limit (60/h);
 // a fine-grained token with no permissions at all is enough for a public repo.
 
-export const REPO = "Jkeroromk/killcam";
+export const REPO = "Jkeroromk/kerocam";
 export const REPO_URL = `https://github.com/${REPO}`;
 export const RELEASES_URL = `${REPO_URL}/releases`;
 export const LATEST_URL = `${REPO_URL}/releases/latest`;

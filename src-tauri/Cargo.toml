@@ -1,11 +1,11 @@
 [package]
-name = "killcam"
+name = "kerocam"
 version = "2.1.0"
 description = "PUBG highlight recorder"
 edition = "2021"
 
 [lib]
-name = "killcam_lib"
+name = "kerocam_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

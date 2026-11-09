@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "KillCam",
+  "productName": "KeroCam",
   "version": "2.1.0",
   "identifier": "com.jkeroro.killcam",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "KillCam",
+        "title": "KeroCam",
         "width": 1280,
         "height": 820,
         "minWidth": 1040,
@@ -49,7 +49,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI3Mzk4NEExMzJDNTExMDkKUldRSkVjVXlvWVE1SjBTdHlacURPY2JDUVphcUJqWUlseVE1NUpQREJibFBBeGF4UDB3cGV5RVEK",
       "endpoints": [
-        "https://github.com/Jkeroromk/killcam/releases/latest/download/latest.json"
+        "https://github.com/Jkeroromk/kerocam/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

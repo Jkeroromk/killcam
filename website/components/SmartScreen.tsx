@@ -23,7 +23,7 @@ export function SmartScreen({ s, file }: { s: Dict["install"]["smart"]; file?: s
         <dl className="ss-meta">
           <div>
             <dt>{s.app}</dt>
-            <dd>{file ?? "KillCam_x.x.x_x64-setup.exe"}</dd>
+            <dd>{file ?? "KeroCam_x.x.x_x64-setup.exe"}</dd>
           </div>
           <div>
             <dt>{s.publisher}</dt>

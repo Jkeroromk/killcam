@@ -245,7 +245,7 @@ impl Lib {
         fs::remove_dir_all(self.matches_dir().join(id)).map_err(|e| e.to_string())
     }
 
-    /// Hide KillCam's working folders in Explorer; only `matches` and `exports`
+    /// Hide KeroCam's working folders in Explorer; only `matches` and `exports`
     /// are meant for people.
     pub fn hide_internal_dirs(&self) {
         #[cfg(windows)]

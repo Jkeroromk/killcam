@@ -2,7 +2,7 @@
   "bundle": {
     "publisher": "Jkeroro",
     "shortDescription": "PUBG 高光录制",
-    "longDescription": "KillCam：自动录制 PUBG，识别击杀、击倒、阵亡和吃鸡，生成高光片段。",
+    "longDescription": "KeroCam：自动录制 PUBG，识别击杀、击倒、阵亡和吃鸡，生成高光片段。",
     "resources": {
       "bin/ffmpeg.exe": "ffmpeg.exe"
     },
@@ -11,7 +11,8 @@
         "installMode": "currentUser",
         "languages": ["SimpChinese", "English"],
         "displayLanguageSelector": false,
-        "installerIcon": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "windows/hooks.nsi"
       }
     }
   }

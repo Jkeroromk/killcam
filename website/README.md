@@ -1,6 +1,6 @@
-# KillCam 官网
+# KeroCam 官网
 
-KillCam 的官方网站，Next.js 15 + TypeScript，中英双语（`/zh`、`/en`），部署在 Vercel。
+KeroCam 的官方网站，Next.js 15 + TypeScript，中英双语（`/zh`、`/en`），部署在 Vercel。
 
 ## 本地运行
 
@@ -14,11 +14,11 @@ npm run dev
 
 ## 部署到 Vercel
 
-1. Vercel → Add New → Project → 导入 `Jkeroromk/killcam`。
+1. Vercel → Add New → Project → 导入 `Jkeroromk/kerocam`。
 2. **Root Directory 选 `website`**（仓库根目录是桌面应用，不是网站）。
 3. Framework 会自动识别为 Next.js，其他保持默认，点 Deploy。
 4. 可选的环境变量：
-   - `NEXT_PUBLIC_SITE_URL`：正式域名，比如 `https://killcam.jkeroro.com`，用于分享卡片和 canonical 链接。
+   - `NEXT_PUBLIC_SITE_URL`：正式域名，比如 `https://kerocam.jkeroro.com`，用于分享卡片和 canonical 链接。
    - `GITHUB_TOKEN`：只在 GitHub API 匿名额度（每小时 60 次）不够用时才需要。建一个不带任何权限的 fine-grained token 就行。
 
 只改了 `src/` 或 `src-tauri/` 的提交不需要重新部署网站，可以在 Vercel 项目设置 → Git → Ignored Build Step 里填：

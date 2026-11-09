@@ -1,11 +1,15 @@
 <div align="center">
 
-# KillCam
+<img src="docs/logo.svg" width="96" alt="KeroCam" />
+
+# KeroCam
 
 **免费、无广告的 PUBG / 英雄联盟自动高光录制。**
 打开游戏就开始录，打完自动剪出击杀、多杀、吃鸡、胜利的片段。
 
-[下载最新版](https://github.com/Jkeroromk/killcam/releases/latest) · [常见问题](#常见问题) · [反馈问题](https://github.com/Jkeroromk/killcam/issues)
+[下载最新版](https://github.com/Jkeroromk/kerocam/releases/latest) · [常见问题](#常见问题) · [反馈问题](https://github.com/Jkeroromk/kerocam/issues)
+
+> KillCam 已改名为 **KeroCam**。已经装了旧版的不用重新下载，照常更新就行，设置和录像都会保留。
 
 </div>
 
@@ -38,13 +42,13 @@
 
 ## 下载安装
 
-1. 到 [Releases](https://github.com/Jkeroromk/killcam/releases/latest) 下载 `KillCam_x.x.x_x64-setup.exe`。
+1. 到 [Releases](https://github.com/Jkeroromk/kerocam/releases/latest) 下载 `KeroCam_x.x.x_x64-setup.exe`。
 2. 双击安装。不需要管理员权限，FFmpeg 已经打包在里面，不用另外装。
 3. 如果弹出 **「Windows 已保护你的电脑」**：点 **「更多信息」→「仍要运行」**。
-   这是因为 KillCam 是免费的个人项目，还没有购买微软的代码签名证书。代码全部公开在这个仓库里，可以自己检查。
+   这是因为 KeroCam 是免费的个人项目，还没有购买微软的代码签名证书。代码全部公开在这个仓库里，可以自己检查。
 4. 第一次打开会有一个引导，带你选显示器、画质、声音来源、录像保存位置，最后跑一次性能测试确认不掉帧。
 
-以后有新版本，KillCam 会自己提示，不用再来这里下载。
+以后有新版本，KeroCam 会自己提示，不用再来这里下载。
 
 ### 电脑要求
 
@@ -60,7 +64,7 @@
 <details>
 <summary><b>会不会被封号？</b></summary>
 
-KillCam 不注入游戏、不读写游戏内存、不修改任何游戏文件。它用的方法和 OBS 的「显示器采集」一样：通过 Windows 自带的屏幕复制功能录屏，用 Windows 的音频接口录声音，PUBG 读的是游戏自己写在本地的日志文件和官方公开的 API；英雄联盟读的是游戏在你电脑上提供的数据接口：对局中是 Riot 开放给第三方工具的实时数据（Live Client Data），结算时从客户端读本局统计，都是只读。
+KeroCam 不注入游戏、不读写游戏内存、不修改任何游戏文件。它用的方法和 OBS 的「显示器采集」一样：通过 Windows 自带的屏幕复制功能录屏，用 Windows 的音频接口录声音，PUBG 读的是游戏自己写在本地的日志文件和官方公开的 API；英雄联盟读的是游戏在你电脑上提供的数据接口：对局中是 Riot 开放给第三方工具的实时数据（Live Client Data），结算时从客户端读本局统计，都是只读。
 不过反作弊的规则只有游戏公司说了算，这里没办法给出保证。
 </details>
 
@@ -94,16 +98,16 @@ KillCam 不注入游戏、不读写游戏内存、不修改任何游戏文件。
 <summary><b>录像和设置存在哪？怎么卸载？</b></summary>
 
 录像存在第一次引导时选的文件夹里，设置存在 `%APPDATA%\com.jkeroro.killcam`。
-在 Windows「设置 → 应用」里卸载 KillCam 即可；录像文件夹不会被删除，需要的话自己删。
+在 Windows「设置 → 应用」里卸载 KeroCam 即可；录像文件夹不会被删除，需要的话自己删。
 </details>
 
 ## 反馈
 
-遇到问题或者有想要的功能，欢迎在 [Issues](https://github.com/Jkeroromk/killcam/issues) 里提。附上截图和大概发生的时间会更好查。
+遇到问题或者有想要的功能，欢迎在 [Issues](https://github.com/Jkeroromk/kerocam/issues) 里提。附上截图和大概发生的时间会更好查。
 
 ## 隐私与安全
 
-- **不上传任何东西**：录像、截图、设置都只存在你自己电脑上，KillCam 没有服务器，也不收集使用数据。
+- **不上传任何东西**：录像、截图、设置都只存在你自己电脑上，KeroCam 没有服务器，也不收集使用数据。
 - **只连这几个地方**：填了 API Key 时去 PUBG 官方接口查你自己的对局数据；英雄联盟第一次遇到某个英雄时，从 CommunityDragon 下载它的头像；PUBG 第一次显示某张地图的路线时，从 PUBG 官方的 [api-assets](https://github.com/pubg/api-assets) 仓库下载这张地图的图片（高清版每张约 100 MB，只下一次），之后都存在本机；另外定期去本仓库的 Releases 检查有没有新版本。
 - **API Key 只存在本机**：保存在你电脑的设置文件里，不会发给除 PUBG 官方以外的任何地方。
 - **不碰游戏**：不注入游戏、不读写游戏内存、不修改游戏文件（见上面的[常见问题](#常见问题)）。
@@ -113,6 +117,6 @@ KillCam 不注入游戏、不读写游戏内存、不修改任何游戏文件。
 
 [MIT](LICENSE)
 
-KillCam 是个人项目，与 KRAFTON、PUBG 官方或 Riot Games 无关。
+KeroCam 是个人项目，与 KRAFTON、PUBG 官方或 Riot Games 无关。
 
-KillCam was created under Riot Games' "Legal Jibber Jabber" policy using assets owned by Riot Games. Riot Games does not endorse or sponsor this project.
+KeroCam was created under Riot Games' "Legal Jibber Jabber" policy using assets owned by Riot Games. Riot Games does not endorse or sponsor this project.

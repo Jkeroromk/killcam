@@ -1,6 +1,6 @@
 # Push a tag like v1.2 (scripts/release.ps1 does it) -> GitHub builds the
 # installer, signs the update and publishes a release with latest.json, which
-# installed copies of KillCam check for updates.
+# installed copies of KeroCam check for updates.
 name: Release
 
 on:
@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
         run: ./scripts/prepare-ffmpeg.ps1
 
-      - name: FFmpeg smoke test (the options KillCam records with)
+      - name: FFmpeg smoke test (the options KeroCam records with)
         shell: pwsh
         run: |
           $ff = "src-tauri/bin/ffmpeg.exe"
@@ -56,7 +56,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "ffmpeg raw audio input options failed" }
           Remove-Item smoke* -ErrorAction SilentlyContinue
 
-      # What changed, shown on the Release page and in KillCam's update prompt:
+      # What changed, shown on the Release page and in KeroCam's update prompt:
       # the notes written on the Release page if it was created there first,
       # otherwise the commit messages since the previous version.
       - name: Release notes
@@ -74,11 +74,11 @@ jobs:
               body="$(git log "$prev..$tag" --no-merges --pretty='- %s' | grep -v -E '^- (v[0-9]+\.[0-9]+(\.[0-9]+)?$|Website)' || true)"
             fi
           fi
-          [ -z "$body" ] && body="KillCam $tag"
+          [ -z "$body" ] && body="KeroCam $tag"
           {
-            echo "body<<__KILLCAM_NOTES__"
+            echo "body<<__KEROCAM_NOTES__"
             echo "$body"
-            echo "__KILLCAM_NOTES__"
+            echo "__KEROCAM_NOTES__"
           } >> "$GITHUB_OUTPUT"
           echo "$body"
 
@@ -90,7 +90,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: KillCam ${{ github.ref_name }}
+          releaseName: KeroCam ${{ github.ref_name }}
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false

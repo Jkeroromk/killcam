@@ -183,7 +183,7 @@ pub struct EncoderInfo {
 /// it are capped (see `effective_video`).
 pub const SOFTWARE_ENCODER: &str = "libx264";
 
-/// Encoders KillCam can record with: (id, label, vendor). Software last.
+/// Encoders KeroCam can record with: (id, label, vendor). Software last.
 pub const ENCODERS: [(&str, &str, &str); 7] = [
     ("h264_nvenc", "H.264 (NVENC)", "nvidia"),
     ("hevc_nvenc", "HEVC / H.265 (NVENC)", "nvidia"),

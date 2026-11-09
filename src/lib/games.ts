@@ -13,7 +13,7 @@ export interface GameDef {
   name: string;
   /** text badge when no icon is available */
   short: string;
-  /** icon shipped with KillCam (otherwise the installed game's own icon is used) */
+  /** icon shipped with KeroCam (otherwise the installed game's own icon is used) */
   logo?: string;
   /** what the highlight rules offer, in order */
   rules: RuleKind[];

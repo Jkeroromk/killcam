@@ -142,7 +142,7 @@ export interface Status {
   warnings: string[];
   notices: string[];
   onboarded: boolean;
-  /** a newer KillCam is published */
+  /** a newer KeroCam is published */
   update: UpdateInfo | null;
   version: string;
 }

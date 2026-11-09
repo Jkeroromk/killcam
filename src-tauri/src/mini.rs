@@ -79,7 +79,7 @@ pub fn open(app: &AppHandle, config_dir: &Path, game_size: (u32, u32)) -> Result
         return Ok(());
     }
     let mut b = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
-        .title("KillCam")
+        .title("KeroCam")
         .inner_size(W, H)
         .resizable(false)
         .maximizable(false)

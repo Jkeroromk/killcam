@@ -89,7 +89,7 @@ export default function App() {
       <aside className="rail">
         <div className="brand">
           <span className="brand-mark" aria-hidden />
-          <span className="brand-name">KillCam</span>
+          <span className="brand-name">KeroCam</span>
         </div>
         <nav className="rail-nav">
           <button type="button" className={current === "home" ? "is-on" : ""} onClick={() => nav("home")}>
