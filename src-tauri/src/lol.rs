@@ -113,6 +113,60 @@ pub fn is_me(me: &[String], name: &str) -> bool {
         .any(|m| m.eq_ignore_ascii_case(name) || m.eq_ignore_ascii_case(bare))
 }
 
+/// Game time 0 on the wall clock.
+///
+/// Each answer from the game gives (when it arrived - its game time): game
+/// time 0 plus however late the answer was, so the smallest is the truest.
+/// But the game's clock can also start over (some modes count the loading
+/// screen on a clock of its own, then start again at 0 — taking the smallest
+/// then put every kill tens of seconds early) or stand still (a pause). Then
+/// the answers all come out later than the best; a few in a row, and they are
+/// the clock from then on.
+#[derive(Debug, Default)]
+struct Clock {
+    best: Option<i64>,
+    /// answers clearly later than `best`, in a row
+    later: Vec<i64>,
+}
+
+#[derive(Debug, PartialEq)]
+enum Moved {
+    No,
+    /// a better (less delayed) answer
+    Earlier,
+    /// the game's clock started over or stood still
+    Restarted,
+}
+
+/// more than any answer is late by (requests time out after 2 s)
+const CLOCK_JUMP_MS: i64 = 2_500;
+const CLOCK_CONFIRM: usize = 3;
+
+impl Clock {
+    fn feed(&mut self, est: i64) -> Moved {
+        match self.best {
+            Some(b) if est > b + CLOCK_JUMP_MS => {
+                self.later.push(est);
+                if self.later.len() < CLOCK_CONFIRM {
+                    return Moved::No;
+                }
+                self.best = self.later.iter().min().copied();
+                self.later.clear();
+                Moved::Restarted
+            }
+            Some(b) if est >= b => {
+                self.later.clear();
+                Moved::No
+            }
+            _ => {
+                self.best = Some(est);
+                self.later.clear();
+                Moved::Earlier
+            }
+        }
+    }
+}
+
 /// Follow one match. Runs until the game stops answering (or `stop` is set and
 /// it never answered), then fetches the end-of-game stats from the client and
 /// calls `on_done`. `league_dir` is the League install folder (lockfile).
@@ -145,21 +199,25 @@ pub fn watch<S, P, D>(
         let mut n = 0u64;
         let mut score = Score::default();
         let mut game_time = 0.0f64;
+        let mut clock = Clock {
+            best: log.game_start_ms,
+            ..Default::default()
+        };
+        // when the events were last read
+        let mut last_look: Option<i64> = None;
         // answers without an active player (replays, spectating)
         let mut no_player = 0u32;
         loop {
             n += 1;
             let mut dirty = false;
-            // game time -> wall clock: the smallest (now - game time) seen is the
-            // one with the least request delay in it
-            let sent = now_ms();
             let stats = get(&c, &format!("{LIVE}/gamestats"));
+            // game time -> wall clock, from when the answer arrived
+            let got = now_ms();
             if let Some(gt) = stats.as_ref().and_then(|v| v.get("gameTime")).and_then(|x| x.as_f64()) {
                 game_time = gt;
                 if gt > 0.0 {
-                    let est = sent - (gt * 1000.0) as i64;
-                    if log.game_start_ms.map(|g| est < g).unwrap_or(true) {
-                        log.game_start_ms = Some(est);
+                    if clock.feed(got - (gt * 1000.0) as i64) != Moved::No {
+                        log.game_start_ms = clock.best;
                         dirty = true;
                     }
                 }
@@ -193,6 +251,7 @@ pub fn watch<S, P, D>(
             }
             if stats.is_some() {
                 if let Some(ev) = get(&c, &format!("{LIVE}/eventdata")) {
+                    let got_ev = now_ms();
                     let list = ev.get("Events").and_then(|x| x.as_array()).cloned().unwrap_or_default();
                     for mut e in list {
                         let id = e.get("EventID").and_then(|x| x.as_i64()).unwrap_or(-1);
@@ -201,13 +260,20 @@ pub fn watch<S, P, D>(
                         }
                         last_id = id;
                         let t = e.get("EventTime").and_then(|x| x.as_f64()).unwrap_or(0.0);
-                        let at = log.game_start_ms.map(|g| g + (t * 1000.0) as i64).unwrap_or_else(now_ms);
+                        // on the game clock, but never outside the time since the last
+                        // look: it wasn't there then and is now, whatever the clock says
+                        let mut at = log.game_start_ms.map(|g| g + (t * 1000.0) as i64).unwrap_or(got_ev);
+                        if let Some(prev) = last_look {
+                            at = at.max(prev - 500);
+                        }
+                        at = at.min(got_ev);
                         if let Some(o) = e.as_object_mut() {
                             o.insert("atMs".into(), Value::from(at));
                         }
                         log.events.push(e);
                         dirty = true;
                     }
+                    last_look = Some(got_ev);
                 }
                 if dirty && !log.me.is_empty() {
                     let mut sc = Score::default();
@@ -789,6 +855,26 @@ pub fn summarize(dir: &Path) -> Option<Summary> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn clock_follows_a_restart() {
+        let mut c = Clock::default();
+        // loading screen on its own clock: game time 0 at 5 s
+        assert_eq!(c.feed(5_300), Moved::Earlier);
+        assert_eq!(c.feed(5_100), Moved::Earlier);
+        assert_eq!(c.feed(5_900), Moved::No);
+        // a slow answer is not a restart
+        assert_eq!(c.feed(7_000), Moved::No);
+        assert_eq!(c.feed(5_200), Moved::No);
+        // the real game: game time 0 at 47 s
+        assert_eq!(c.feed(47_400), Moved::No);
+        assert_eq!(c.feed(47_100), Moved::No);
+        assert_eq!(c.feed(47_300), Moved::Restarted);
+        assert_eq!(c.best, Some(47_100));
+        assert_eq!(c.feed(47_050), Moved::Earlier);
+        assert_eq!(c.feed(47_600), Moved::No);
+        assert_eq!(c.best, Some(47_050));
+    }
 
     #[test]
     fn reads_a_match() {
