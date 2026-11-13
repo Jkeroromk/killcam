@@ -181,6 +181,34 @@ export function itemFrom(m: MatchRecord, h: Highlight | { start: number; end: nu
   };
 }
 
+/** what an imported video's item is marked with */
+const IMPORTED = "file";
+
+/** a video from outside the library (not a recorded match) */
+export const isImported = (it: EditItem) => it.game === IMPORTED;
+
+/** A video file from anywhere as a bin clip: all of it, on its own clock. */
+export function itemFromFile(path: string, duration: number): EditItem {
+  const name = path.split(/[\\/]/).pop() ?? path;
+  return {
+    key: newKey(),
+    matchId: `file:${path}`,
+    game: IMPORTED,
+    mapLabel: t("导入的视频", "Imported video"),
+    createdAtMs: Date.now(),
+    title: name.replace(/\.[^.]+$/, ""),
+    kinds: [],
+    thumb: null,
+    file: path,
+    fileStart: 0,
+    start: 0,
+    end: duration,
+    lo: 0,
+    hi: duration,
+    events: [],
+  };
+}
+
 /** Add clips to the bin and the end of the timeline, skipping ones already in. */
 export async function addToEdit(items: EditItem[]): Promise<{ added: number; total: number }> {
   const doc = await loadEdit();
@@ -215,7 +243,8 @@ export function requests(doc: EditDoc): { clips: EditClipReq[]; music: MusicMix 
   const clips = tl.map((c, i) => {
     const next = tl[i + 1];
     const out = next?.trans === "black" ? "black" : i === tl.length - 1 && doc.song ? "black" : "";
-    return { matchId: byKey.get(c.item)!.matchId, start: c.start, end: c.end, captions: [], slow: [], transIn: i === 0 ? "" : c.trans, transOut: out };
+    const it = byKey.get(c.item)!;
+    return { matchId: it.matchId, file: isImported(it) ? it.file : undefined, start: c.start, end: c.end, captions: [], slow: [], transIn: i === 0 ? "" : c.trans, transOut: out };
   });
   const music = doc.song ? { path: doc.song.path, start: doc.musicOffset, volume: doc.musicVol, game: doc.gameVol, pulls: doc.pulls } : null;
   return { clips, music };

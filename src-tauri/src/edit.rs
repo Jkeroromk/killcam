@@ -39,6 +39,9 @@ pub struct Caption {
 #[serde(rename_all = "camelCase", default)]
 pub struct EditClip {
     pub match_id: String,
+    /// a video imported from elsewhere (absolute path; start / end are its own
+    /// times); empty for footage from the library
+    pub file: String,
     /// match time
     pub start: f64,
     pub end: f64,
@@ -187,9 +190,13 @@ fn caption_font() -> Option<PathBuf> {
     c.into_iter().find(|p| p.exists())
 }
 
+#[derive(Debug, Clone)]
 pub struct Probe {
     pub fps: f64,
     pub audio: bool,
+    /// picture size, 0 when unknown
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Frame rate and whether there is sound, from `ffmpeg -i`.
@@ -201,9 +208,16 @@ pub fn probe(ff: &Path, file: &Path) -> Probe {
         .ok()
         .and_then(|re| re.captures(&err).and_then(|c| c[1].parse::<f64>().ok()))
         .unwrap_or(60.0);
+    // "Video: h264 ..., yuv420p, 1920x1080 [SAR 1:1 DAR 16:9], ..."
+    let (width, height) = regex::Regex::new(r"Video:.*?, (\d{2,5})x(\d{2,5})")
+        .ok()
+        .and_then(|re| re.captures(&err).map(|c| (c[1].parse().unwrap_or(0), c[2].parse().unwrap_or(0))))
+        .unwrap_or((0, 0));
     Probe {
         fps,
         audio: err.contains("Audio:"),
+        width,
+        height,
     }
 }
 
@@ -500,6 +514,18 @@ pub fn export(
     let mut recs: HashMap<String, MatchRecord> = HashMap::new();
     let mut plan: Vec<(PathBuf, f64, f64, &EditClip)> = Vec::new();
     for c in clips {
+        if !c.file.is_empty() {
+            // imported: the file itself, its own times
+            let src = PathBuf::from(&c.file);
+            if !src.exists() {
+                return Err(tr("有一段导入的视频找不到了", "An imported video is missing"));
+            }
+            if c.end - c.start < 0.5 {
+                return Err(tr("有一段太短了（至少 0.5 秒）", "A clip is too short (at least 0.5 s)"));
+            }
+            plan.push((src, c.start.max(0.0), c.end, c));
+            continue;
+        }
         if !recs.contains_key(&c.match_id) {
             let r = lib
                 .get(&c.match_id)
@@ -521,21 +547,26 @@ pub fn export(
     // one size, frame rate and bitrate for all parts
     let total: f64 = plan.iter().map(|(_, a, b, c)| out_len(b - a, &rel(&c.slow, c.start))).sum();
     let budget: Option<Budget> = if o.size_mb > 0 { Some(library::budget_for(o.size_mb, total, 0.88)?) } else { None };
-    let first = &recs[&clips[0].match_id];
     let mut height = o.height;
     if let Some(b) = budget {
         if height == 0 || height > b.max_height {
             height = b.max_height;
         }
     }
-    let size = out_size(first.width, first.height, &o.aspect, height);
-    let fill = o.aspect == "16:9" || o.aspect == "9:16";
     let mut probes: HashMap<PathBuf, Probe> = HashMap::new();
     for (src, ..) in &plan {
         if !probes.contains_key(src) {
             probes.insert(src.clone(), probe(ff, src));
         }
     }
+    // the first clip's shape is the video's
+    let (fw, fh) = match recs.get(&clips[0].match_id) {
+        Some(r) if clips[0].file.is_empty() => (r.width, r.height),
+        _ => probes.get(&plan[0].0).map(|p| (p.width, p.height)).unwrap_or((0, 0)),
+    };
+    let (fw, fh) = if fw == 0 || fh == 0 { (1920, 1080) } else { (fw, fh) };
+    let size = out_size(fw, fh, &o.aspect, height);
+    let fill = o.aspect == "16:9" || o.aspect == "9:16";
     // the smoothest clip sets the frame rate (a 60 fps clip next to 120 fps ones gets doubled frames)
     let src_fps = probes.values().map(|p| p.fps).fold(0.0, f64::max);
     let interpolate = o.fps120 && budget.is_none();
@@ -571,7 +602,7 @@ pub fn export(
         let mut jobs: Vec<(Vec<String>, f64)> = Vec::new();
         for (i, (src, a, b, c)) in plan.iter().enumerate() {
             let dur = b - a;
-            let p = probes.get(src).map(|p| Probe { fps: p.fps, audio: p.audio }).unwrap_or_else(|| probe(ff, src));
+            let p = probes.get(src).cloned().unwrap_or_else(|| probe(ff, src));
             let caps: Vec<(f64, String)> = c
                 .captions
                 .iter()

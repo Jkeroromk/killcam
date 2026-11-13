@@ -3,12 +3,12 @@
 // video track and a music track underneath.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clapperboard, Download, Magnet, Minus, Music, Pause, Play, Plus, Redo2, Scissors, Trash2, Undo2, Wand2, X, Zap } from "lucide-react";
+import { Clapperboard, Download, FilePlus, Magnet, Minus, Music, Pause, Play, Plus, Redo2, Scissors, Trash2, Undo2, Wand2, X, Zap } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api, errText, fileUrl, on, type EditOptions, type EditProgress } from "../lib/api";
 import { clock, when } from "../lib/format";
 import { label, plural, t, title } from "../lib/i18n";
-import { addToEdit, itemFrom, layout, loadEdit, newKey, repeats, requests, saveEdit, tclipAfter, tighten, totalLen, type EditDoc, type EditItem, type TClip, type Trans } from "../lib/edit";
+import { addToEdit, isImported, itemFrom, itemFromFile, layout, loadEdit, newKey, repeats, requests, saveEdit, tclipAfter, tighten, totalLen, type EditDoc, type EditItem, type TClip, type Trans } from "../lib/edit";
 import { autoCut } from "../lib/beatcut";
 import { Button, KindIcon, Range, Segmented, Spinner, Toggle } from "../components/ui";
 
@@ -83,7 +83,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
           .listMatches()
           .then((list) => {
             const ids = new Set(list.map((m) => m.id));
-            setMissing(new Set(d.items.filter((i) => !ids.has(i.matchId)).map((i) => i.matchId)));
+            setMissing(new Set(d.items.filter((i) => !isImported(i) && !ids.has(i.matchId)).map((i) => i.matchId)));
           })
           .catch(() => {});
       }
@@ -124,6 +124,9 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
         const d = docRef.current;
         if (!d) return;
         const len = new Map(files.map((f, i) => [f, r[i]]));
+        // an imported video moved or deleted
+        const lost = d.items.filter((it) => isImported(it) && len.get(it.file) === 0).map((it) => it.matchId);
+        if (lost.length) setMissing((m) => new Set([...m, ...lost]));
         const limit = (it: EditItem) => {
           const l = len.get(it.file);
           return l && l > 0 ? it.fileStart + l - 0.02 : Infinity;
@@ -595,6 +598,39 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
     }
   };
 
+  /** videos from anywhere (other recorders, phone clips…) into the bin and onto the timeline */
+  const importVideos = async () => {
+    const f = await openDialog({
+      multiple: true,
+      directory: false,
+      filters: [{ name: t("视频", "Video"), extensions: ["mp4", "mkv", "mov", "webm", "avi", "flv", "ts", "m4v", "wmv"] }],
+    });
+    const paths = !f ? [] : Array.isArray(f) ? f : [f];
+    if (paths.length === 0) return;
+    setErr(null);
+    setBusyMsg(t("正在读取视频…", "Reading the videos…"));
+    try {
+      const lens = await api.videoDurations(paths);
+      const fresh = paths.map((p, i) => [p, lens[i]] as const).filter(([, l]) => l >= 0.5);
+      const d = docRef.current!;
+      const have = new Set(d.items.filter(isImported).map((i) => i.file));
+      const items2 = fresh.filter(([p]) => !have.has(p)).map(([p, l]) => itemFromFile(p, l));
+      if (items2.length === 0) {
+        setErr(fresh.length === 0 ? t("读不了这些视频", "Couldn't read these videos") : t("这些视频已经在素材里了", "These videos are already in the media"));
+        return;
+      }
+      const all = [...d.items, ...items2];
+      let timeline = d.timeline;
+      for (const it of items2) timeline = [...timeline, tclipAfter(it, timeline[timeline.length - 1], all)];
+      edit({ items: all, timeline });
+      if (fresh.length < paths.length) setErr(t(`有 ${paths.length - fresh.length} 个视频读不了，已跳过`, `Skipped ${paths.length - fresh.length} unreadable video(s)`));
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusyMsg(null);
+    }
+  };
+
   const pickSong = async () => {
     const f = await openDialog({
       multiple: false,
@@ -708,6 +744,9 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
             <b>{t("素材", "Media")}</b>
             <span className="faint small">{items.length}</span>
             <span className="grow" />
+            <button type="button" className="iconbtn sm" title={t("导入其他视频（别的录屏软件、手机拍的…）", "Import other videos (other recorders, phone clips…)")} onClick={importVideos} disabled={!!busyMsg}>
+              <FilePlus size={15} />
+            </button>
             <button type="button" className="iconbtn sm" title={t("从最近对局挑素材", "Pick from recent matches")} onClick={autoPick} disabled={!!busyMsg}>
               <Wand2 size={15} />
             </button>
@@ -743,6 +782,9 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
               <p className="small muted">{t("在对局页点「加入剪辑」，或者从最近的对局里自动挑。", 'Add clips from a match with "Add to edit", or pick them from your latest matches.')}</p>
               <Button small kind="primary" onClick={autoPick} disabled={!!busyMsg}>
                 <Wand2 size={14} /> {t("从最近对局挑", "Pick from recent")}
+              </Button>
+              <Button small onClick={importVideos} disabled={!!busyMsg}>
+                <FilePlus size={14} /> {t("导入视频", "Import videos")}
               </Button>
               <Button small onClick={props.openLibrary}>
                 {t("去录像库", "Go to the library")}
@@ -791,12 +833,16 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                       title={t("选中，可以一次删掉几段", "Select, to delete several at once")}
                     />
                     <span className="ed2-bin-thumb">
-                      {it.thumb && <img src={fileUrl(it.thumb)} alt="" loading="lazy" draggable={false} />}
+                      {it.thumb ? (
+                        <img src={fileUrl(it.thumb)} alt="" loading="lazy" draggable={false} />
+                      ) : (
+                        isImported(it) && !gone && <video src={fileUrl(it.file) + "#t=1"} preload="metadata" muted draggable={false} />
+                      )}
                       <span className="dur">{clock(it.end - it.start)}</span>
                     </span>
                     <span className="ed2-bin-info">
                       <span className="ed2-bin-title">{title(it.title)}</span>
-                      <span className="faint small">{gone ? t("录像已删除", "Recording deleted") : `${label(it.mapLabel)} · ${when(it.createdAtMs)}`}</span>
+                      <span className="faint small">{gone ? (isImported(it) ? t("视频文件找不到了", "Video file not found") : t("录像已删除", "Recording deleted")) : `${label(it.mapLabel)} · ${when(it.createdAtMs)}`}</span>
                       <span className="ed2-bin-kinds">
                         {it.kinds.slice(0, 6).map((k, i) => (
                           <KindIcon key={i} kind={k} small game={it.game} />
@@ -849,7 +895,7 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
             </div>
             {(!curItem || missing.has(curItem.matchId)) && (
               <div className="ed2-screen-empty muted small">
-                {curItem ? t("这段所在的录像已经被删掉了", "This clip's recording has been deleted") : t("时间线是空的：把左边的素材拖下来，或者选一首歌一键卡点。", "The timeline is empty: drag clips down from the left, or pick a song and auto-cut.")}
+                {curItem ? (isImported(curItem) ? t("这段导入的视频文件找不到了", "This imported video's file is missing") : t("这段所在的录像已经被删掉了", "This clip's recording has been deleted")) : t("时间线是空的：把左边的素材拖下来，或者选一首歌一键卡点。", "The timeline is empty: drag clips down from the left, or pick a song and auto-cut.")}
               </div>
             )}
           </div>
@@ -941,9 +987,11 @@ export default function EditPage(props: { openLibrary: () => void; openMatch: (i
                     <Trash2 size={14} /> {t("删除", "Delete")}
                   </Button>
                 </div>
-                <button type="button" className="link small" onClick={() => props.openMatch(selItem.matchId)} disabled={missing.has(selItem.matchId)}>
-                  {t("打开这局", "Open match")}
-                </button>
+                {!isImported(selItem) && (
+                  <button type="button" className="link small" onClick={() => props.openMatch(selItem.matchId)} disabled={missing.has(selItem.matchId)}>
+                    {t("打开这局", "Open match")}
+                  </button>
+                )}
                 <p className="faint small">{t("拖动时间线上片段的两边可以剪长短，拖动中间可以换位置。S 拆分，Delete 删除，Ctrl+Z 撤销，← → 逐帧。", "Drag a clip's edges on the timeline to trim, its middle to move it. S splits, Delete removes, Ctrl+Z undoes, ← → step a frame.")}</p>
               </div>
             ) : (
