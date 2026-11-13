@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BarChart3, Clapperboard, Crosshair, Film, Settings2 } from "lucide-react";
 import { api, on, type GameId, type Settings, type Status } from "./lib/api";
-import { clock, gameName } from "./lib/format";
+import { clock, gameName, shortVersion } from "./lib/format";
 import Onboarding from "./onboarding/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Library from "./pages/Library";
@@ -13,6 +13,7 @@ import { loadEdit } from "./lib/edit";
 import { Spinner } from "./components/ui";
 import { UpdateCard } from "./components/UpdateCard";
 import { AccountButton } from "./components/AccountButton";
+import { AboutDialog, lastSeenVersion } from "./components/AboutDialog";
 import { label, resolveLang, setLang, t } from "./lib/i18n";
 
 type Page = { name: "home" } | { name: "library" } | { name: "match"; id: string } | { name: "stats" } | { name: "edit" } | { name: "settings" };
@@ -65,6 +66,22 @@ export default function App() {
     };
   }, []);
 
+  // 关于 KeroCam; opens by itself once after an update
+  const [about, setAbout] = useState<null | "about" | "updated">(null);
+  // set up before this run: a fresh install has nothing new to announce
+  const setUpBefore = useRef<boolean | null>(null);
+  if (settings && setUpBefore.current === null) setUpBefore.current = settings.onboarded;
+  const version = status?.version;
+  const busy = !!status?.gameRunning || !!status?.recording;
+  const announced = useRef(false);
+  useEffect(() => {
+    if (announced.current || !version || setUpBefore.current === null || busy) return;
+    announced.current = true;
+    const now = shortVersion(version);
+    const seen = lastSeenVersion(now);
+    if (setUpBefore.current && seen !== now) setAbout("updated");
+  }, [version, busy, settings != null]);
+
   // every text below reads the language when it renders
   const uiLang = settings ? resolveLang(settings.language) : null;
   if (uiLang) setLang(uiLang);
@@ -87,10 +104,10 @@ export default function App() {
   return (
     <div className="shell" key={uiLang}>
       <aside className="rail">
-        <div className="brand">
+        <button type="button" className="brand" onClick={() => setAbout("about")} title={t("关于 KeroCam", "About KeroCam")}>
           <span className="brand-mark" aria-hidden />
           <span className="brand-name">KeroCam</span>
-        </div>
+        </button>
         <nav className="rail-nav">
           <button type="button" className={current === "home" ? "is-on" : ""} onClick={() => nav("home")}>
             <Crosshair size={18} /> {t("总览", "Overview")}
@@ -142,8 +159,9 @@ export default function App() {
         {page.name === "match" && <MatchView id={page.id} back={() => nav("library")} libVersion={libVersion} openEdit={() => nav("edit")} />}
         {page.name === "edit" && <EditPage openLibrary={() => nav("library")} openMatch={(id) => setPage({ name: "match", id })} />}
         {page.name === "stats" && <StatsPage game={game} setGame={setGame} libVersion={libVersion} openMatch={(id) => setPage({ name: "match", id })} />}
-        {page.name === "settings" && <SettingsPage game={game} settings={settings} onSaved={setSettings} status={status} />}
+        {page.name === "settings" && <SettingsPage game={game} settings={settings} onSaved={setSettings} status={status} onAbout={() => setAbout("about")} />}
       </main>
+      {about && <AboutDialog version={version} updated={about === "updated"} onClose={() => setAbout(null)} />}
     </div>
   );
 }

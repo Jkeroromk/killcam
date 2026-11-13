@@ -2190,6 +2190,61 @@ async fn check_for_update(app: &AppHandle) -> Result<Option<UpdateInfo>, String>
     }))
 }
 
+/// One published version and what it changed, as written on its GitHub release.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ReleaseNote {
+    /// "2.2"
+    version: String,
+    /// "2026-11-13"
+    date: String,
+    notes: String,
+}
+
+/// Every published version, newest first, for 关于 KeroCam. Asked once per run.
+#[tauri::command]
+async fn release_notes() -> Result<Vec<ReleaseNote>, String> {
+    static CACHE: Mutex<Option<Vec<ReleaseNote>>> = Mutex::new(None);
+    if let Some(list) = lk(&CACHE).clone() {
+        return Ok(list);
+    }
+    let list = blocking(|| {
+        let c = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent("KeroCam")
+            .build()
+            .map_err(|e| e.to_string())?;
+        let r = c
+            .get("https://api.github.com/repos/Jkeroromk/kerocam/releases?per_page=50")
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .map_err(|e| e.to_string())?;
+        if !r.status().is_success() {
+            return Err(format!("HTTP {}", r.status()));
+        }
+        let v: serde_json::Value = r.json().map_err(|e| e.to_string())?;
+        let str_of = |x: &serde_json::Value, k: &str| x.get(k).and_then(|y| y.as_str()).unwrap_or("").to_string();
+        Ok(v.as_array()
+            .map(|a| {
+                a.iter()
+                    .filter(|x| x.get("draft").and_then(|y| y.as_bool()) != Some(true))
+                    .filter(|x| x.get("prerelease").and_then(|y| y.as_bool()) != Some(true))
+                    .map(|x| ReleaseNote {
+                        version: str_of(x, "tag_name").trim_start_matches(['v', 'V']).to_string(),
+                        date: str_of(x, "published_at").chars().take(10).collect(),
+                        notes: str_of(x, "body"),
+                    })
+                    .filter(|n| !n.version.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default())
+    })
+    .await
+    .map_err(|e| i18n::tr(format!("读不到更新记录：{e}"), format!("Couldn't load the release notes: {e}")))?;
+    *lk(&CACHE) = Some(list.clone());
+    Ok(list)
+}
+
 /// Look for a new release shortly after launch and then every 6 hours.
 /// Debug builds don't (they would offer to install over the dev setup).
 fn spawn_update_checker(app: AppHandle, st: St) {
@@ -2482,6 +2537,7 @@ pub fn run() {
             reveal,
             export_diagnostics,
             open_url,
+            release_notes,
             storage_info,
             check_ffmpeg,
             default_library_dir,

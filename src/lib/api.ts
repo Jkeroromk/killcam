@@ -153,6 +153,14 @@ export interface UpdateInfo {
   notes: string | null;
 }
 
+export interface ReleaseNote {
+  /** "2.2" */
+  version: string;
+  /** "2026-11-13" */
+  date: string;
+  notes: string;
+}
+
 export interface FfmpegInfo {
   path: string;
   version: string;
@@ -463,6 +471,7 @@ export const api = {
   reveal: (path: string) => invoke<void>("reveal", { path }),
   exportDiagnostics: (path: string) => invoke<void>("export_diagnostics", { path }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
+  releaseNotes: () => invoke<ReleaseNote[]>("release_notes"),
   storageInfo: () => invoke<StorageInfo>("storage_info"),
   compressInfo: () => invoke<CompressInfo>("compress_info"),
   compressNow: () => invoke<void>("compress_now"),

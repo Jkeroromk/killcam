@@ -197,7 +197,7 @@ function UpdateDialog(props: { update: UpdateInfo; current: string; recording: b
 }
 
 /** Release notes as written on GitHub: "- " lines become a list, "#" lines headings. */
-function Notes(props: { text: string }) {
+export function Notes(props: { text: string }) {
   const out: ReactNode[] = [];
   let items: string[] = [];
   const flush = () => {

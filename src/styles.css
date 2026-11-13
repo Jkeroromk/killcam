@@ -827,6 +827,15 @@ code,
   align-items: center;
   gap: 10px;
   padding: 2px 8px 22px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.brand:hover .brand-name {
+  opacity: 0.8;
 }
 .brand-mark {
   width: 26px;
@@ -3132,6 +3141,107 @@ button.st-best:hover {
 .update-notes-list p {
   margin: 0 0 6px;
 }
+/* 关于 KeroCam */
+.about-modal {
+  width: min(560px, 100%);
+  gap: 16px;
+  padding: 24px 26px;
+}
+.about-modal > * {
+  flex-shrink: 0;
+}
+.about-modal > header {
+  gap: 12px;
+}
+.about-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+}
+.about-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.about-title h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.about-modal .update-notes-box {
+  max-height: 300px;
+}
+.about-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.about-empty {
+  margin: 0;
+}
+.about-older-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 0;
+  cursor: pointer;
+}
+.about-older-toggle:hover {
+  color: var(--text);
+}
+.about-older-toggle svg {
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
+}
+.about-older-toggle svg.is-open {
+  transform: none;
+}
+.about-older-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-soft);
+}
+.about-release h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-family: var(--mono);
+}
+.about-features h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.about-features dl {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.about-features dl > div {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.about-features dt {
+  font-weight: 600;
+}
+.about-features dd {
+  margin: 0;
+  color: var(--muted);
+}
+
 .update-progress-lg {
   gap: 8px;
 }
