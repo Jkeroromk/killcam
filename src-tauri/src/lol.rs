@@ -578,10 +578,26 @@ pub fn mode_label(queue_type: &str, game_mode: &str) -> String {
     label.into()
 }
 
-fn champion_key(p: &Value) -> String {
-    // "game_character_displayname_MonkeyKing" -> "MonkeyKing"
+/// The champion's Data Dragon key ("MonkeyKing"), or its numeric id when the
+/// game's name for it can't be read; both find the portrait.
+fn champion_key(p: &Value, eog: Option<&Value>) -> String {
+    // "game_character_displayname_MonkeyKing" -> "MonkeyKing"; some clients
+    // add a suffix ("..._Aatrox_Name"), so the first word after the prefix
     let raw = s(p, "rawChampionName");
-    raw.rsplit('_').next().unwrap_or("").to_string()
+    let key = raw
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .find(|w| !matches!(w.to_ascii_lowercase().as_str(), "game" | "character" | "characters" | "displayname" | "name"))
+        .unwrap_or("")
+        .to_string();
+    if !key.is_empty() {
+        return key;
+    }
+    eog.and_then(|e| e.get("championId"))
+        .and_then(|x| x.as_i64())
+        .filter(|&id| id > 0)
+        .map(|id| id.to_string())
+        .unwrap_or_default()
 }
 
 fn u(v: Option<&Value>) -> u32 {
@@ -752,7 +768,7 @@ pub fn summarize(dir: &Path) -> Option<Summary> {
                     let n = s(p, "riotIdGameName");
                     if n.is_empty() { s(p, "summonerName") } else { n }
                 },
-                champion_key: champion_key(p),
+                champion_key: champion_key(p, e),
                 champion,
                 team: s(p, "team"),
                 level: u(p.get("level")),
@@ -855,6 +871,15 @@ pub fn summarize(dir: &Path) -> Option<Summary> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn champion_keys() {
+        let k = |raw: &str| champion_key(&json!({ "rawChampionName": raw }), None);
+        assert_eq!(k("game_character_displayname_MonkeyKing"), "MonkeyKing");
+        assert_eq!(k("game_character_displayname_Aatrox_Name"), "Aatrox");
+        assert_eq!(k(""), "");
+        assert_eq!(champion_key(&json!({}), Some(&json!({ "championId": 266 }))), "266");
+    }
 
     #[test]
     fn clock_follows_a_restart() {
