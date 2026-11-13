@@ -20,6 +20,7 @@ import {
 import { PerfStep } from "../onboarding/Onboarding";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { t, type LangSetting } from "../lib/i18n";
+import { shortVersion } from "../lib/format";
 
 /** One text file with versions, hardware, encoder test and recent logs, for bug reports. */
 function DiagnosticsField() {
@@ -90,7 +91,7 @@ type Tab = "general" | GameId;
 // language), which would reset the tab; this brings the user back to "general".
 let reopenGeneral = false;
 
-export default function SettingsPage(props: { game: GameId; settings: Settings; onSaved: (s: Settings) => void; status: Status | null }) {
+export default function SettingsPage(props: { game: GameId; settings: Settings; onSaved: (s: Settings) => void; status: Status | null; onAbout: () => void }) {
   // opens on the game being played / looked at, like the library and stats
   const [tab, setTab] = useState<Tab>(reopenGeneral ? "general" : props.game);
   useEffect(() => {
@@ -416,6 +417,17 @@ export default function SettingsPage(props: { game: GameId; settings: Settings; 
           </Button>
         </Field>
         <DiagnosticsField />
+      </Card>
+
+      <Card id="about" title={t("关于 KeroCam", "About KeroCam")}>
+        <Field label={t("当前版本", "Version")} hint={t("这一版更新了什么、以前的版本、KeroCam 能做什么", "What changed in this version, earlier versions, and what KeroCam does")}>
+          <div className="row">
+            <span className="mono">v{shortVersion(props.status?.version)}</span>
+            <Button kind="ghost" small onClick={props.onAbout}>
+              {t("查看版本说明", "See what's new")}
+            </Button>
+          </div>
+        </Field>
       </Card>
       </>
       )}
