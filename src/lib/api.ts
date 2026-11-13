@@ -374,6 +374,8 @@ export interface EditCaption {
 /** One clip as the export gets it. */
 export interface EditClipReq {
   matchId: string;
+  /** a video imported from elsewhere: its path (start / end are its own times) */
+  file?: string;
   start: number;
   end: number;
   captions: EditCaption[];
